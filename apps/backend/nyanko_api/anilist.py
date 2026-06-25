@@ -259,7 +259,8 @@ query Popular(
   $format: MediaFormat,
   $year: Int,
   $status: MediaStatus,
-  $isAdult: Boolean
+  $isAdult: Boolean,
+  $sort: [MediaSort!]
 ) {
   Page(page: $page, perPage: $perPage) {
     pageInfo { hasNextPage }
@@ -270,7 +271,7 @@ query Popular(
       seasonYear: $year
       status: $status
       isAdult: $isAdult
-      sort: [POPULARITY_DESC]
+      sort: $sort
     ) {
       id format status episodes averageScore popularity
       title { userPreferred }
@@ -287,7 +288,8 @@ query PopularManga(
   $genre: String,
   $format: MediaFormat,
   $status: MediaStatus,
-  $isAdult: Boolean
+  $isAdult: Boolean,
+  $sort: [MediaSort!]
 ) {
   Page(page: $page, perPage: $perPage) {
     pageInfo { hasNextPage }
@@ -297,7 +299,7 @@ query PopularManga(
       format: $format
       status: $status
       isAdult: $isAdult
-      sort: [POPULARITY_DESC]
+      sort: $sort
     ) {
       id format status chapters volumes averageScore popularity
       title { userPreferred }
@@ -469,6 +471,7 @@ class AniListClient:
                     },
                 )
             else:
+                anilist_sort = ["SCORE_DESC"] if filters.sort == "SCORE" else ["POPULARITY_DESC"]
                 data = await self.graphql(
                     token,
                     POPULAR_MANGA_QUERY,
@@ -479,6 +482,7 @@ class AniListClient:
                         "format": filters.format,
                         "status": filters.status,
                         "isAdult": filters.is_adult,
+                        "sort": anilist_sort,
                     },
                 )
         else:
@@ -494,6 +498,7 @@ class AniListClient:
                     },
                 )
             else:
+                anilist_sort = ["SCORE_DESC"] if filters.sort == "SCORE" else ["POPULARITY_DESC"]
                 data = await self.graphql(
                     token,
                     POPULAR_QUERY,
@@ -505,6 +510,7 @@ class AniListClient:
                         "year": filters.year,
                         "status": filters.status,
                         "isAdult": filters.is_adult,
+                        "sort": anilist_sort,
                     },
                 )
         page = data["Page"]
