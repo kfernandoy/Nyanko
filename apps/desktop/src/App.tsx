@@ -23,6 +23,8 @@ import type {
   PlaybackCandidate,
   PlaybackMatchResponse,
   PlaybackPreferences,
+  ProviderCapabilities,
+  ProviderInfo,
   SearchFilters,
   SearchResult,
   SeasonMedia,
@@ -43,7 +45,7 @@ const VIEW_COPY: Record<View, { eyebrow: string; title: string }> = {
   manga: { eyebrow: "TU MANGA", title: "Lecturas en curso." },
   "now-playing": { eyebrow: "REPRODUCIENDO", title: "Detectado en este momento." },
   history: { eyebrow: "HISTORIAL LOCAL", title: "Decisiones y progreso detectado." },
-  activity: { eyebrow: "ACTIVIDAD RECIENTE", title: "Tu historial en AniList." },
+  activity: { eyebrow: "ACTIVIDAD RECIENTE", title: "Tu actividad reciente." },
   seasons: { eyebrow: "TEMPORADA", title: "Anime de la temporada." },
   statistics: { eyebrow: "ESTADÍSTICAS", title: "Tu tiempo entre historias." },
   discovery: { eyebrow: "DESCUBRIMIENTO", title: "Busca y filtra anime." },
@@ -58,6 +60,17 @@ function currentAnimeSeason(): { season: Season; year: number } {
 function errorMessage(reason: unknown, fallback: string): string {
   return reason instanceof Error ? reason.message : typeof reason === "string" ? reason : fallback;
 }
+
+const DEFAULT_CAPABILITIES: ProviderCapabilities = {
+  library: true,
+  search: true,
+  details: true,
+  mutations: true,
+  activity: true,
+  statistics: true,
+  seasons: true,
+  manga: true,
+};
 
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
@@ -96,6 +109,7 @@ export default function App() {
     statistics: null,
     details: null,
   });
+  const [capabilities, setCapabilities] = useState<ProviderCapabilities>(DEFAULT_CAPABILITIES);
 
   const setCacheStatus = useCallback((view: CacheableView, status: CacheStatus | null) => {
     setViewCacheStatus((previous) => ({ ...previous, [view]: status }));
@@ -109,6 +123,9 @@ export default function App() {
       const selected = accounts.find((account) => account.is_primary && account.authenticated)
         ?? accounts.find((account) => account.authenticated);
       setActiveAccount(selected?.provider ?? "anilist", selected?.alias ?? "default");
+      const providerList = await api.providers();
+      const activeProvider = providerList.find(p => p.name === (selected?.provider ?? "anilist"));
+      setCapabilities(activeProvider?.capabilities ?? DEFAULT_CAPABILITIES);
       const service = await api.health();
       setHealth(service);
       if (service.authenticated) {
@@ -315,6 +332,18 @@ export default function App() {
     void fetchStatus();
     return () => { cancelled = true; };
   }, [health?.authenticated, season.season, season.year, view]);
+
+  useEffect(() => {
+    setView((current) => {
+      const unsupported = new Set<View>([
+        ...(!capabilities.manga      ? (["manga"]       as View[]) : []),
+        ...(!capabilities.activity   ? (["activity"]    as View[]) : []),
+        ...(!capabilities.seasons    ? (["seasons"]     as View[]) : []),
+        ...(!capabilities.statistics ? (["statistics"]  as View[]) : []),
+      ]);
+      return unsupported.has(current) ? "library" : current;
+    });
+  }, [capabilities]);
 
   const connectAccount = async (provider = "anilist", alias = "default") => {
     try {
@@ -536,15 +565,15 @@ export default function App() {
         <div className="brand"><span>猫</span><strong>Nyanko</strong></div>
         <nav>
           {([
-            ["library", "Biblioteca"],
-            ["manga", "Manga"],
+            ["library",     "Anime"],
+            ...(capabilities.manga      ? [["manga",       "Manga"]]        : []),
             ["now-playing", "Reproduciendo"],
-            ["history", "Registro"],
-            ["activity", "Actividad"],
-            ["seasons", "Temporadas"],
-            ["statistics", "Estadísticas"],
-            ["discovery", "Descubrir"],
-            ["settings", "Ajustes"],
+            ["history",     "Registro"],
+            ...(capabilities.activity   ? [["activity",    "Actividad"]]    : []),
+            ...(capabilities.seasons    ? [["seasons",     "Temporadas"]]   : []),
+            ...(capabilities.statistics ? [["statistics",  "Estadísticas"]] : []),
+            ["discovery",   "Descubrir"],
+            ["settings",    "Ajustes"],
           ] as [View, string][]).map(([key, label]) => (
             <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)}>
               {label}
@@ -581,7 +610,7 @@ export default function App() {
             <CacheBadge status={viewCacheStatus[view as CacheableView]} />
           )}
           </div>
-          {!health?.authenticated && <button className="primary" onClick={() => void connectAccount()}>Conectar AniList</button>}
+          {!health?.authenticated && <button className="primary" onClick={() => void connectAccount()}>Conectar cuenta</button>}
         </header>
 
         {error && (
@@ -592,7 +621,7 @@ export default function App() {
         )}
 
         {!health?.authenticated && view !== "settings" ? (
-          <Empty title="Conecta tu cuenta de AniList" detail="Tu información aparecerá aquí." />
+          <Empty title="Conecta tu cuenta" detail="Tu información aparecerá aquí." />
         ) : view === "library" ? (
           <LibraryView items={media} filter={filter} query={query} loading={loading} setFilter={setFilter} setQuery={setQuery} onSelect={openDetails} />
         ) : view === "manga" ? (
