@@ -1857,6 +1857,7 @@ async def global_search(
     status: str | None = None,
     is_adult: bool = False,
     media_type: str = "ANIME",
+    sort: str = "POPULARITY",
     provider: str = "anilist",
     account: str = "default",
     token: str = Depends(require_token),
@@ -1868,6 +1869,8 @@ async def global_search(
         raise HTTPException(status_code=422, detail="Invalid page size")
     if media_type not in {"ANIME", "MANGA"}:
         raise HTTPException(status_code=422, detail="Invalid media type")
+    if sort not in {"POPULARITY", "SCORE"}:
+        raise HTTPException(status_code=422, detail="Invalid sort")
     media_provider = _get_provider(settings, provider)
     if media_type == "MANGA" and not media_provider.capabilities.manga:
         raise HTTPException(
@@ -1884,6 +1887,7 @@ async def global_search(
         status=status,
         is_adult=is_adult,
         media_type=media_type,  # type: ignore[arg-type]
+        sort=sort,
     )
     return await media_provider.discover(token, filters)
 

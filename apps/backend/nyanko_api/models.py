@@ -468,6 +468,7 @@ class SearchFilters(BaseModel):
     status: str | None = None
     is_adult: bool = False
     media_type: Literal["ANIME", "MANGA"] = "ANIME"
+    sort: Literal["POPULARITY", "SCORE"] = "POPULARITY"
 
 
 class GlobalSearchResponse(BaseModel):

@@ -649,3 +649,17 @@ async def test_refresh_mal_if_needed_refreshes_expired(monkeypatch):
     assert MyAnimeListCredential.loads(result).access_token == "new-token"
     stored = get_provider_credential("mal", "default")
     assert MyAnimeListCredential.loads(stored).access_token == "new-token"
+
+
+def test_search_filters_rejects_invalid_sort():
+    from pydantic import ValidationError
+    from nyanko_api.models import SearchFilters
+    with pytest.raises(ValidationError):
+        SearchFilters(sort="INVALID")
+
+
+def test_search_filters_accepts_valid_sort():
+    from nyanko_api.models import SearchFilters
+    assert SearchFilters(sort="POPULARITY").sort == "POPULARITY"
+    assert SearchFilters(sort="SCORE").sort == "SCORE"
+    assert SearchFilters().sort == "POPULARITY"
