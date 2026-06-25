@@ -1,0 +1,757 @@
+import asyncio
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
+
+import pytest
+from pydantic import BaseModel
+
+from nyanko_api.database import Database
+from nyanko_api.main import _cache_refreshes, cached_list, cached_value
+from nyanko_api.models import MediaItem
+
+
+class _SampleValue(BaseModel):
+    value: str
+
+
+def memory_database(monkeypatch) -> Database:
+    database = Database(Path(":memory:"))
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+
+    @contextmanager
+    def connect():
+        yield connection
+        connection.commit()
+
+    monkeypatch.setattr(database, "connect", connect)
+    database.initialize()
+    return database
+
+
+def test_initialize_migrates_legacy_cache_table(monkeypatch):
+    database = Database(Path(":memory:"))
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute(
+        "CREATE TABLE cache (key TEXT PRIMARY KEY, payload TEXT NOT NULL, expires_at INTEGER NOT NULL)"
+    )
+
+    @contextmanager
+    def connect():
+        yield connection
+        connection.commit()
+
+    monkeypatch.setattr(database, "connect", connect)
+    database.initialize()
+    columns = {row["name"] for row in connection.execute("PRAGMA table_info(cache)")}
+
+    assert {"created_at", "updated_at", "accessed_at"}.issubset(columns)
+
+
+def test_initialize_creates_canonical_provider_schema(monkeypatch):
+    database = memory_database(monkeypatch)
+
+    with database.connect() as connection:
+        tables = {
+            row["name"]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        version = connection.execute(
+            "SELECT MAX(version) AS version FROM schema_migrations"
+        ).fetchone()["version"]
+        provider = connection.execute(
+            "SELECT display_name FROM providers WHERE id = 'anilist'"
+        ).fetchone()
+
+    assert {
+        "accounts",
+        "media",
+        "media_titles",
+        "external_identities",
+        "library_entries",
+        "remote_library_entries",
+        "media_seasons",
+        "episodes",
+        "association_candidates",
+        "extension_clients",
+    }.issubset(tables)
+    assert version == 6
+    assert provider["display_name"] == "AniList"
+
+
+def test_extension_token_lifecycle(monkeypatch):
+    database = memory_database(monkeypatch)
+    monkeypatch.setattr("nyanko_api.database.time.time", lambda: 100)
+    client_id = database.create_extension_client("Firefox", "old-hash", 200)
+
+    assert database.validate_extension_token("old-hash") is True
+    assert database.rotate_extension_token("old-hash", "new-hash", 300)
+    assert database.validate_extension_token("old-hash") is False
+    assert database.validate_extension_token("new-hash") is True
+    assert database.revoke_extension_client(client_id)
+    assert database.validate_extension_token("new-hash") is False
+
+
+def test_sync_provider_library_reuses_canonical_media(monkeypatch):
+    database = memory_database(monkeypatch)
+    first = MediaItem(
+        id=42,
+        title="Example",
+        status="CURRENT",
+        progress=3,
+        episodes=12,
+    )
+    updated = first.model_copy(update={"progress": 4})
+
+    initial_mapping = database.sync_provider_library("anilist", "AniList", [first])
+    updated_mapping = database.sync_provider_library("anilist", "AniList", [updated])
+
+    assert initial_mapping == updated_mapping
+    assert database.canonical_media_id("anilist", 42) == initial_mapping["42"]
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM media").fetchone()[0] == 1
+        remote = connection.execute(
+            "SELECT progress FROM remote_library_entries"
+        ).fetchone()
+        local = connection.execute("SELECT progress FROM library_entries").fetchone()
+    assert remote["progress"] == 4
+    assert local["progress"] == 4
+
+
+def test_cross_provider_import_reuses_high_confidence_canonical_media(monkeypatch):
+    database = memory_database(monkeypatch)
+    anilist = MediaItem(
+        id=10,
+        title="Sousou no Frieren",
+        title_english="Frieren: Beyond Journey's End",
+        status="CURRENT",
+        progress=12,
+        episodes=28,
+        year=2023,
+        format="TV",
+    )
+    mal = MediaItem(
+        id=52991,
+        title="Sousou no Frieren",
+        title_english="Frieren: Beyond Journey's End",
+        status="COMPLETED",
+        progress=28,
+        episodes=28,
+        year=2023,
+        format="TV",
+    )
+
+    anilist_mapping = database.sync_provider_library("anilist", "AniList", [anilist])
+    mal_mapping = database.sync_provider_library("mal", "MyAnimeList", [mal])
+
+    assert anilist_mapping["10"] == mal_mapping["52991"]
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM media").fetchone()[0] == 1
+        identities = connection.execute(
+            "SELECT provider_id, confidence FROM external_identities ORDER BY provider_id"
+        ).fetchall()
+    assert [row["provider_id"] for row in identities] == ["anilist", "mal"]
+    assert identities[1]["confidence"] >= 0.9
+
+    enriched = database.enrich_provider_library("anilist", [anilist])
+    assert enriched[0].canonical_id == anilist_mapping["10"]
+    assert enriched[0].provider == "anilist"
+    assert "Frieren: Beyond Journey's End" in [
+        enriched[0].title_english, *enriched[0].synonyms
+    ]
+
+
+def test_cross_provider_import_does_not_merge_ambiguous_titles(monkeypatch):
+    database = memory_database(monkeypatch)
+    first = MediaItem(
+        id=1,
+        title="First Work",
+        synonyms=["Shared Title"],
+        status="CURRENT",
+        progress=1,
+        episodes=12,
+        year=2020,
+        format="TV",
+    )
+    second = first.model_copy(update={"id": 2, "title": "Second Work"})
+    incoming = first.model_copy(
+        update={"id": 3, "title": "Shared Title", "synonyms": []}
+    )
+
+    database.sync_provider_library("anilist", "AniList", [first, second])
+    database.sync_provider_library("mal", "MyAnimeList", [incoming])
+
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM media").fetchone()[0] == 3
+    candidates = database.get_association_candidates()
+    assert len(candidates) == 2
+    assert all(candidate["confidence"] >= 0.9 for candidate in candidates)
+
+
+def test_manual_association_and_separation_preserve_remote_entries(monkeypatch):
+    database = memory_database(monkeypatch)
+    first = MediaItem(
+        id=1,
+        title="First Work",
+        synonyms=["Shared Title"],
+        status="CURRENT",
+        progress=1,
+        episodes=12,
+        year=2020,
+        format="TV",
+    )
+    second = first.model_copy(update={"id": 2, "title": "Second Work"})
+    incoming = first.model_copy(
+        update={"id": 3, "title": "Shared Title", "synonyms": [], "progress": 5}
+    )
+    database.sync_provider_library("anilist", "AniList", [first, second])
+    incoming_mapping = database.sync_provider_library(
+        "mal", "MyAnimeList", [incoming]
+    )
+    source_media_id = incoming_mapping["3"]
+    event_id = database.insert_playback_event(
+        "browser",
+        "Shared Title - 01",
+        "Shared Title",
+        1,
+        provider_id="mal",
+        canonical_media_id=source_media_id,
+    )
+    database.set_match_correction("shared title", 3, "mal")
+    candidate = database.get_association_candidates()[0]
+
+    resolved_media_id = database.resolve_association_candidate(candidate["id"])
+
+    assert resolved_media_id != source_media_id
+    assert database.canonical_media_id("mal", 3) == resolved_media_id
+    with database.connect() as connection:
+        remote = connection.execute(
+            "SELECT media_id, progress FROM remote_library_entries "
+            "JOIN accounts ON accounts.id = remote_library_entries.account_id "
+            "WHERE accounts.provider_id = 'mal'"
+        ).fetchone()
+        assert connection.execute(
+            "SELECT COUNT(*) FROM media WHERE id = ?", (source_media_id,)
+        ).fetchone()[0] == 0
+    assert dict(remote) == {"media_id": resolved_media_id, "progress": 5}
+    linked = [
+        identity
+        for identity in database.get_linked_identities()
+        if identity["media_id"] == resolved_media_id
+    ]
+    assert {identity["provider"] for identity in linked} == {"anilist", "mal"}
+
+    mal_identity = next(identity for identity in linked if identity["provider"] == "mal")
+    separated_media_id = database.separate_external_identity(mal_identity["identity_id"])
+
+    assert separated_media_id != resolved_media_id
+    assert database.canonical_media_id("mal", 3) == separated_media_id
+    assert database.get_playback_event(event_id)["canonical_media_id"] == separated_media_id
+    with database.connect() as connection:
+        remote_media_id = connection.execute(
+            "SELECT media_id FROM remote_library_entries "
+            "JOIN accounts ON accounts.id = remote_library_entries.account_id "
+            "WHERE accounts.provider_id = 'mal'"
+        ).fetchone()[0]
+        correction_media_id = connection.execute(
+            "SELECT canonical_media_id FROM match_corrections "
+            "WHERE raw_pattern = 'shared title'"
+        ).fetchone()[0]
+    assert remote_media_id == separated_media_id
+    assert correction_media_id == separated_media_id
+
+
+def test_dismiss_association_candidate(monkeypatch):
+    database = memory_database(monkeypatch)
+    original = MediaItem(
+        id=1,
+        title="Same Name",
+        status="CURRENT",
+        progress=1,
+        episodes=None,
+    )
+    possible_match = original.model_copy(update={"id": 2})
+    database.sync_provider_library("anilist", "AniList", [original])
+    database.sync_provider_library("mal", "MyAnimeList", [possible_match])
+    candidate = database.get_association_candidates()[0]
+
+    assert database.dismiss_association_candidate(candidate["id"])
+    assert database.get_association_candidates() == []
+    assert len(database.get_association_candidates("dismissed")) == 1
+
+
+def test_cross_provider_import_rejects_conflicting_metadata(monkeypatch):
+    database = memory_database(monkeypatch)
+    original = MediaItem(
+        id=1,
+        title="Same Name",
+        status="CURRENT",
+        progress=1,
+        episodes=12,
+        year=2000,
+        format="TV",
+    )
+    remake = original.model_copy(
+        update={"id": 2, "episodes": 24, "year": 2025}
+    )
+
+    database.sync_provider_library("anilist", "AniList", [original])
+    database.sync_provider_library("mal", "MyAnimeList", [remake])
+
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM media").fetchone()[0] == 2
+
+
+def test_scoped_cache_records_provider_account_and_origin(monkeypatch):
+    database = memory_database(monkeypatch)
+
+    database.set_cache("anilist:personal:list", [{"id": 1}], 60)
+    record = database.get_cache_record("anilist:personal:list")
+    status = database.get_cache_status()[0]
+
+    assert record is not None
+    assert record.provider_id == "anilist"
+    assert record.account_alias == "personal"
+    assert record.resource == "list"
+    assert record.refresh_reason == "network_refresh"
+    assert status["account_alias"] == "personal"
+
+
+def test_cache_prunes_least_recently_used_details_per_account(monkeypatch):
+    database = memory_database(monkeypatch)
+    monkeypatch.setattr("nyanko_api.database.CACHE_RESOURCE_LIMITS", {"media:": 2})
+    clock = iter([1, 2, 3, 4, 5, 6])
+    monkeypatch.setattr("nyanko_api.database.time.time", lambda: next(clock))
+
+    database.set_cache("anilist:one:media:1", {}, 60)
+    database.set_cache("anilist:one:media:2", {}, 60)
+    assert database.get_cache("anilist:one:media:1") == {}
+    database.set_cache("anilist:one:media:3", {}, 60)
+
+    assert database.get_cache_record("anilist:one:media:2") is None
+    assert {item["key"] for item in database.get_cache_status()} == {
+        "anilist:one:media:1",
+        "anilist:one:media:3",
+    }
+
+
+def test_accounts_have_one_primary_and_can_be_updated(monkeypatch):
+    database = memory_database(monkeypatch)
+
+    first = database.ensure_account("anilist", "first")
+    second = database.ensure_account("anilist", "second")
+    accounts = database.get_accounts()
+
+    assert sum(bool(account["is_primary"]) for account in accounts) == 1
+    assert next(account for account in accounts if account["id"] == first)["is_primary"]
+
+    updated = database.update_account(second, sync_direction="import", is_primary=True)
+
+    assert updated is not None
+    assert updated["sync_direction"] == "import"
+    assert updated["is_primary"] == 1
+    assert sum(bool(account["is_primary"]) for account in database.get_accounts()) == 1
+
+
+def test_only_primary_account_updates_canonical_library(monkeypatch):
+    database = memory_database(monkeypatch)
+    first = MediaItem(id=42, title="Example", status="CURRENT", progress=3)
+    second = first.model_copy(update={"status": "COMPLETED", "progress": 12})
+
+    database.sync_provider_library("anilist", "AniList", [first], "first")
+    database.sync_provider_library("anilist", "AniList", [second], "second")
+
+    with database.connect() as connection:
+        canonical = connection.execute(
+            "SELECT status, progress FROM library_entries"
+        ).fetchone()
+    assert dict(canonical) == {"status": "CURRENT", "progress": 3}
+
+    second_account = next(
+        account for account in database.get_accounts() if account["alias"] == "second"
+    )
+    database.update_account(second_account["id"], is_primary=True)
+
+    with database.connect() as connection:
+        canonical = connection.execute(
+            "SELECT status, progress FROM library_entries"
+        ).fetchone()
+    assert dict(canonical) == {"status": "COMPLETED", "progress": 12}
+
+
+def test_sync_media_details_adds_titles_season_and_episode_slots(monkeypatch):
+    database = memory_database(monkeypatch)
+
+    class Details:
+        def model_dump(self, mode):
+            assert mode == "json"
+            return {
+                "format": "TV",
+                "episodes": 3,
+                "site_url": "https://anilist.co/anime/99",
+                "title_romaji": "Romaji title",
+                "title_english": "English title",
+                "title_native": "Native title",
+                "season": "SPRING",
+                "season_year": 2026,
+            }
+
+    media_id = database.sync_media_details("anilist", 99, Details())
+
+    assert media_id is not None
+    with database.connect() as connection:
+        titles = connection.execute(
+            "SELECT COUNT(*) FROM media_titles WHERE media_id = ?", (media_id,)
+        ).fetchone()[0]
+        seasons = connection.execute(
+            "SELECT COUNT(*) FROM media_seasons WHERE media_id = ?", (media_id,)
+        ).fetchone()[0]
+        episodes = connection.execute(
+            "SELECT COUNT(*) FROM episodes WHERE media_id = ?", (media_id,)
+        ).fetchone()[0]
+    assert titles == 3
+    assert seasons == 1
+    assert episodes == 3
+
+
+def test_cache_round_trip_and_invalidation(monkeypatch):
+    database = memory_database(monkeypatch)
+
+    database.set_cache("anilist:list", [{"id": 1}], 60)
+    database.set_cache("anilist:season:WINTER:2026", [{"id": 2}], 60)
+
+    assert database.get_cache("anilist:list") == [{"id": 1}]
+    database.invalidate_cache("anilist:list")
+    assert database.get_cache("anilist:list") is None
+    assert database.get_cache("anilist:season:WINTER:2026") == [{"id": 2}]
+
+
+def test_expired_cache_is_not_returned(monkeypatch):
+    database = memory_database(monkeypatch)
+    monkeypatch.setattr("nyanko_api.database.time.time", lambda: 100)
+    database.set_cache("expired", {"value": True}, 10)
+
+    monkeypatch.setattr("nyanko_api.database.time.time", lambda: 111)
+    assert database.get_cache("expired") is None
+    record = database.get_cache_record("expired")
+    assert record is not None
+    assert record.stale is True
+    assert record.payload == {"value": True}
+
+
+def test_corrupt_cache_is_discarded(monkeypatch):
+    database = memory_database(monkeypatch)
+    with database.connect() as connection:
+        connection.execute(
+            "INSERT INTO cache (key, payload, expires_at) VALUES (?, ?, ?)",
+            ("corrupt", "{", 9999999999),
+        )
+
+    assert database.get_cache_record("corrupt") is None
+    assert database.get_cache_status() == []
+
+
+def test_clear_all_data_removes_settings_cache_and_events(monkeypatch):
+    database = memory_database(monkeypatch)
+    database.set_setting("anilist_access_token", "secret")
+    database.set_cache("anilist:list", [{"id": 1}], 60)
+    with database.connect() as connection:
+        connection.execute(
+            "INSERT INTO playback_events (source, raw_title) VALUES (?, ?)",
+            ("test", "Test - Episode 1"),
+        )
+
+    database.clear_all_data()
+
+    assert database.get_setting("anilist_access_token") is None
+    assert database.get_cache("anilist:list") is None
+
+
+def test_clear_all_data_removes_match_corrections(monkeypatch):
+    database = memory_database(monkeypatch)
+    database.set_match_correction("wrong title", 42)
+
+    database.clear_all_data()
+
+    assert database.get_match_correction("wrong title") is None
+
+
+def test_match_correction_round_trip(monkeypatch):
+    database = memory_database(monkeypatch)
+    assert database.get_match_correction("raw title") is None
+
+    database.set_match_correction("raw title", 42)
+    assert database.get_match_correction("raw title") == 42
+
+    database.set_match_correction("raw title", 7)
+    assert database.get_match_correction("raw title") == 7
+
+    database.delete_match_correction("raw title")
+    assert database.get_match_correction("raw title") is None
+
+
+def test_playback_history_filters_and_clear(monkeypatch):
+    database = memory_database(monkeypatch)
+    first = database.insert_playback_event("vlc", "Show - 01", "Show", 1)
+    database.update_playback_event(first, status="confirmed", media_id=10, progress_after=1)
+    database.insert_playback_event("mpv", "Other - 02", "Other", 2, status="ignored")
+
+    assert database.get_playback_event(first)["media_id"] == 10
+    assert len(database.get_recent_playback_events(status="confirmed")) == 1
+    assert len(database.get_recent_playback_events(source="mpv")) == 1
+    assert database.get_recent_matching_playback_event("vlc", "Show - 01", 1, 300)["id"] == first
+
+    database.clear_playback_events()
+    assert database.get_recent_playback_events() == []
+
+
+def test_playback_history_date_filter_and_retention(monkeypatch):
+    database = memory_database(monkeypatch)
+    old = database.insert_playback_event("vlc", "Old - 01", "Old", 1)
+    recent = database.insert_playback_event("mpv", "Recent - 01", "Recent", 1)
+    with database.connect() as connection:
+        connection.execute(
+            "UPDATE playback_events SET detected_at = '2020-01-15 12:00:00' WHERE id = ?",
+            (old,),
+        )
+
+    assert [event["id"] for event in database.get_recent_playback_events(date_from="2026-01-01")] == [recent]
+    assert database.prune_playback_events(90) == 1
+    assert database.get_playback_event(old) is None
+
+
+@pytest.mark.asyncio
+async def test_stale_cache_is_used_when_refresh_fails(monkeypatch):
+    database = memory_database(monkeypatch)
+    monkeypatch.setattr("nyanko_api.database.time.time", lambda: 100)
+    database.set_cache(
+        "anilist:list",
+        [{"id": 1, "title": "Cached", "status": "CURRENT", "progress": 1}],
+        10,
+    )
+    monkeypatch.setattr("nyanko_api.database.time.time", lambda: 111)
+
+    async def unavailable():
+        raise RuntimeError("AniList unavailable")
+
+    items, status = await cached_list(database, "anilist:list", 60, MediaItem, unavailable)
+    await asyncio.sleep(0)
+    assert items[0].title == "Cached"
+    assert status == "stale"
+    assert database.get_cache_status()[0]["stale"] is True
+
+
+@pytest.mark.asyncio
+async def test_stale_cache_returns_before_background_refresh(monkeypatch):
+    database = memory_database(monkeypatch)
+    monkeypatch.setattr("nyanko_api.database.time.time", lambda: 100)
+    database.set_cache("key", {"value": "cached"}, 10)
+    monkeypatch.setattr("nyanko_api.database.time.time", lambda: 111)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def loader():
+        started.set()
+        await release.wait()
+        return _SampleValue(value="remote")
+
+    value, status = await cached_value(database, "key", 60, _SampleValue, loader)
+
+    assert value.value == "cached"
+    assert status == "stale"
+    await started.wait()
+    refresh = next(iter(_cache_refreshes.values()))
+    release.set()
+    await refresh
+    assert database.get_cache_record("key").payload == {"value": "remote"}
+
+
+def test_sync_provider_library_stores_genres_and_enrich_returns_them(monkeypatch):
+    database = memory_database(monkeypatch)
+    item = MediaItem(
+        id=55,
+        title="Genre Test",
+        status="CURRENT",
+        progress=1,
+        genres=["Action", "Fantasy"],
+    )
+
+    database.sync_provider_library("anilist", "AniList", [item])
+    enriched = database.enrich_provider_library("anilist", [item])
+
+    assert enriched[0].genres == ["Action", "Fantasy"]
+    with database.connect() as connection:
+        genres = {
+            row["genre"]
+            for row in connection.execute(
+                "SELECT genre FROM media_genres WHERE media_id = ?",
+                (enriched[0].canonical_id,),
+            ).fetchall()
+        }
+    assert genres == {"Action", "Fantasy"}
+
+
+def test_enrich_provider_library_does_not_reuse_closed_connection(monkeypatch):
+    database = Database(Path(":memory:"))
+    uri = "file:nyanko-closed-connection-test?mode=memory&cache=shared"
+    anchor = sqlite3.connect(uri, uri=True)
+
+    @contextmanager
+    def connect():
+        connection = sqlite3.connect(uri, uri=True)
+        connection.row_factory = sqlite3.Row
+        try:
+            yield connection
+            connection.commit()
+        finally:
+            connection.close()
+
+    monkeypatch.setattr(database, "connect", connect)
+    try:
+        database.initialize()
+        item = MediaItem(
+            id=56,
+            title="Connection Test",
+            status="CURRENT",
+            progress=1,
+            genres=["Drama"],
+        )
+
+        database.sync_provider_library("anilist", "AniList", [item])
+        enriched = database.enrich_provider_library("anilist", [item])
+
+        assert enriched[0].genres == ["Drama"]
+        assert enriched[0].canonical_id is not None
+    finally:
+        anchor.close()
+
+
+def test_playback_event_error_message_round_trip(monkeypatch):
+    database = memory_database(monkeypatch)
+    event_id = database.insert_playback_event(
+        source="test",
+        raw_title="test",
+        anime_title="Test",
+        episode=1,
+        status="failed",
+    )
+    database.update_playback_event(
+        event_id,
+        status="failed",
+        error_message="AniList rejected the update",
+    )
+
+    event = database.get_playback_event(event_id)
+    assert event is not None
+    assert event["status"] == "failed"
+    assert event["error_message"] == "AniList rejected the update"
+
+
+def test_media_tags_round_trip(monkeypatch):
+    database = memory_database(monkeypatch)
+    database.sync_provider_library(
+        "anilist", "AniList", [MediaItem(id=1, title="Tagged", status="CURRENT", progress=1)]
+    )
+    canonical_id = database.canonical_media_id("anilist", 1)
+    assert canonical_id is not None
+
+    database.add_media_tag(canonical_id, "Favorite")
+    database.add_media_tag(canonical_id, "Rewatch")
+    database.add_media_tag(canonical_id, "favorite")
+
+    assert database.get_media_tags(canonical_id) == ["favorite", "rewatch"]
+    assert database.get_all_tags() == ["favorite", "rewatch"]
+
+    database.remove_media_tag(canonical_id, "favorite")
+
+    assert database.get_media_tags(canonical_id) == ["rewatch"]
+    assert database.get_all_tags() == ["rewatch"]
+
+
+@pytest.mark.asyncio
+async def test_cached_value_returns_hit_for_fresh_cache(monkeypatch):
+    database = memory_database(monkeypatch)
+    monkeypatch.setattr("nyanko_api.database.time.time", lambda: 100)
+    database.set_cache("key", {"value": "cached"}, 60)
+
+    async def loader():
+        return _SampleValue(value="remote")
+
+    value, status = await cached_value(database, "key", 60, _SampleValue, loader)
+
+    assert value.value == "cached"
+    assert status == "hit"
+
+
+@pytest.mark.asyncio
+async def test_cached_value_returns_miss_and_stores_value(monkeypatch):
+    database = memory_database(monkeypatch)
+
+    async def loader():
+        return _SampleValue(value="remote")
+
+    value, status = await cached_value(database, "key", 60, _SampleValue, loader)
+
+    assert value.value == "remote"
+    assert status == "miss"
+    record = database.get_cache_record("key")
+    assert record is not None
+    assert record.payload["value"] == "remote"
+
+
+def test_detects_conflict_when_local_and_remote_changed(monkeypatch):
+    database = memory_database(monkeypatch)
+    first = MediaItem(id=1, title="Frieren", status="CURRENT", progress=5)
+    database.sync_provider_library("anilist", "AniList", [first])
+
+    # Simulate local edit through canonical library.
+    with database.connect() as connection:
+        connection.execute(
+            "UPDATE library_entries SET status = 'PAUSED', progress = 6 WHERE media_id = 1"
+        )
+
+    # Remote changes arrive during sync.
+    remote_changed = first.model_copy(update={"status": "COMPLETED", "progress": 12})
+    database.sync_provider_library("anilist", "AniList", [remote_changed])
+
+    conflicts = database.get_conflicts("pending")
+    assert len(conflicts) == 2
+    fields = {conflict["field"] for conflict in conflicts}
+    assert fields == {"status", "progress"}
+
+
+def test_no_conflict_when_only_remote_changed(monkeypatch):
+    database = memory_database(monkeypatch)
+    first = MediaItem(id=1, title="Frieren", status="CURRENT", progress=5)
+    database.sync_provider_library("anilist", "AniList", [first])
+
+    remote_changed = first.model_copy(update={"progress": 12})
+    database.sync_provider_library("anilist", "AniList", [remote_changed])
+
+    assert database.get_conflicts("pending") == []
+
+
+def test_resolve_conflict_updates_values(monkeypatch):
+    database = memory_database(monkeypatch)
+    first = MediaItem(id=1, title="Frieren", status="CURRENT", progress=5)
+    database.sync_provider_library("anilist", "AniList", [first])
+
+    with database.connect() as connection:
+        connection.execute(
+            "UPDATE library_entries SET progress = 6 WHERE media_id = 1"
+        )
+
+    remote_changed = first.model_copy(update={"progress": 12})
+    database.sync_provider_library("anilist", "AniList", [remote_changed])
+
+    conflict = database.get_conflicts("pending")[0]
+    assert database.resolve_conflict(conflict["id"], "resolved_remote", "12")
+
+    updated = database.get_conflicts_by_id(conflict["id"])
+    assert updated is not None
+    assert updated["status"] == "resolved_remote"
+    assert updated["resolution_value"] == "12"

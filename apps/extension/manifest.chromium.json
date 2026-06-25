@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Nyanko Playback Detector",
+  "version": "0.1.0",
+  "description": "Detecta reproducción de anime y la comunica con Nyanko localmente.",
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [{ "matches": ["<all_urls>"], "js": ["adapters.js", "content.js"], "run_at": "document_idle" }],
+  "options_page": "options.html",
+  "action": { "default_title": "Nyanko", "default_popup": "popup.html" }
+}
