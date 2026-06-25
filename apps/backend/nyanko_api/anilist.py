@@ -459,6 +459,7 @@ class AniListClient:
         is_manga = filters.media_type == "MANGA"
         per_page = max(1, min(filters.per_page, 50))
         has_query = bool(filters.query and filters.query.strip())
+        anilist_sort = ["SCORE_DESC"] if filters.sort == "SCORE" else ["POPULARITY_DESC"]
         if is_manga:
             if has_query:
                 data = await self.graphql(
@@ -471,7 +472,6 @@ class AniListClient:
                     },
                 )
             else:
-                anilist_sort = ["SCORE_DESC"] if filters.sort == "SCORE" else ["POPULARITY_DESC"]
                 data = await self.graphql(
                     token,
                     POPULAR_MANGA_QUERY,
@@ -498,7 +498,6 @@ class AniListClient:
                     },
                 )
             else:
-                anilist_sort = ["SCORE_DESC"] if filters.sort == "SCORE" else ["POPULARITY_DESC"]
                 data = await self.graphql(
                     token,
                     POPULAR_QUERY,

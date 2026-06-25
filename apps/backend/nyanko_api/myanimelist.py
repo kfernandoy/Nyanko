@@ -279,7 +279,7 @@ class MyAnimeListClient:
         per_page = min(max(1, filters.per_page), 100)
         offset = (filters.page - 1) * per_page
         headers = {"Authorization": f"Bearer {access_token}"}
-        fields = "id,title,main_picture,media_type,status,num_episodes,mean_score"
+        fields = "id,title,main_picture,media_type,status,num_episodes,mean"
 
         if filters.query and filters.query.strip():
             response = await self.client.get(
@@ -299,7 +299,7 @@ class MyAnimeListClient:
             )
             data = response.json()
             raw_items = [entry["node"] for entry in data.get("data", [])]
-            has_next = len(raw_items) == per_page
+            has_next = bool(data.get("paging", {}).get("next"))
 
         return GlobalSearchResponse(
             results=[_mal_search_result(item) for item in raw_items],
@@ -375,7 +375,7 @@ def _int_or_none(value: str) -> int | None:
 
 def _mal_search_result(node: dict) -> SearchResult:
     picture = node.get("main_picture") or {}
-    raw_score = node.get("mean_score") or 0
+    raw_score = node.get("mean") or 0
     return SearchResult(
         id=node["id"],
         title=node["title"],

@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from nyanko_api.config import Settings
 from nyanko_api.database import Database
@@ -24,6 +25,7 @@ from nyanko_api.models import (
     MediaItem,
     PlaybackMatchRequest,
     PlaybackPreferences,
+    SearchFilters,
     SearchResult,
 )
 from nyanko_api.providers import ProviderCapabilities
@@ -652,14 +654,11 @@ async def test_refresh_mal_if_needed_refreshes_expired(monkeypatch):
 
 
 def test_search_filters_rejects_invalid_sort():
-    from pydantic import ValidationError
-    from nyanko_api.models import SearchFilters
     with pytest.raises(ValidationError):
         SearchFilters(sort="INVALID")
 
 
 def test_search_filters_accepts_valid_sort():
-    from nyanko_api.models import SearchFilters
     assert SearchFilters(sort="POPULARITY").sort == "POPULARITY"
     assert SearchFilters(sort="SCORE").sort == "SCORE"
     assert SearchFilters().sort == "POPULARITY"

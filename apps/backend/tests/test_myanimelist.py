@@ -303,7 +303,7 @@ async def test_discover_ranking_mode(monkeypatch):
                     "num_episodes": 12,
                     "status": "finished_airing",
                     "main_picture": {"large": "https://example.test/1.jpg"},
-                    "mean_score": 8.5,
+                    "mean": 8.5,
                 }
             },
         ],
@@ -335,7 +335,7 @@ async def test_discover_search_mode(monkeypatch):
                     "num_episodes": 28,
                     "status": "finished_airing",
                     "main_picture": {"large": "https://example.test/frieren.jpg"},
-                    "mean_score": 9.0,
+                    "mean": 9.0,
                 }
             },
         ],
