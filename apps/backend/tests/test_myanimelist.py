@@ -289,3 +289,65 @@ def test_mal_clients_share_rate_limiter():
     c1 = MyAnimeListClient(Settings())
     c2 = MyAnimeListClient(Settings())
     assert c1.client is c2.client
+
+
+@pytest.mark.asyncio
+async def test_discover_ranking_mode(monkeypatch):
+    client = _make_async_client([{
+        "data": [
+            {
+                "node": {
+                    "id": 1,
+                    "title": "Popular Anime",
+                    "media_type": "tv",
+                    "num_episodes": 12,
+                    "status": "finished_airing",
+                    "main_picture": {"large": "https://example.test/1.jpg"},
+                    "mean_score": 8.5,
+                }
+            },
+        ],
+        "paging": {},
+    }])
+    monkeypatch.setattr("nyanko_api.http.httpx.AsyncClient", lambda **kwargs: client)
+
+    from nyanko_api.models import SearchFilters
+    result = await MyAnimeListClient(Settings()).discover("token", SearchFilters())
+
+    assert len(result.results) == 1
+    assert result.results[0].id == 1
+    assert result.results[0].title == "Popular Anime"
+    assert result.results[0].average_score == 85
+    assert client.calls[0]["url"].endswith("/anime/ranking")
+    assert client.calls[0]["params"]["ranking_type"] == "bypopularity"
+    assert result.has_next_page is False
+
+
+@pytest.mark.asyncio
+async def test_discover_search_mode(monkeypatch):
+    client = _make_async_client([{
+        "data": [
+            {
+                "node": {
+                    "id": 7,
+                    "title": "Frieren",
+                    "media_type": "tv",
+                    "num_episodes": 28,
+                    "status": "finished_airing",
+                    "main_picture": {"large": "https://example.test/frieren.jpg"},
+                    "mean_score": 9.0,
+                }
+            },
+        ],
+        "paging": {},
+    }])
+    monkeypatch.setattr("nyanko_api.http.httpx.AsyncClient", lambda **kwargs: client)
+
+    from nyanko_api.models import SearchFilters
+    result = await MyAnimeListClient(Settings()).discover("token", SearchFilters(query="frieren"))
+
+    assert result.results[0].id == 7
+    assert result.results[0].title == "Frieren"
+    assert result.results[0].average_score == 90
+    assert client.calls[0]["url"].endswith("/anime")
+    assert client.calls[0]["params"]["q"] == "frieren"

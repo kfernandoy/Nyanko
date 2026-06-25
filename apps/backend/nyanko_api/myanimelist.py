@@ -9,6 +9,7 @@ from .config import Settings
 from .http import RateLimitedClient
 from .models import (
     FuzzyDate,
+    GlobalSearchResponse,
     MediaDetails,
     MediaEntryUpdate,
     MediaItem,
@@ -274,10 +275,36 @@ class MyAnimeListClient:
             for item in response.json().get("data", [])
         ]
 
-    async def discover(
-        self, access_token: str, filters: SearchFilters
-    ) -> SearchResult:
-        raise MyAnimeListError("MyAnimeList discovery is not enabled")
+    async def discover(self, access_token: str, filters: SearchFilters) -> GlobalSearchResponse:
+        per_page = min(max(1, filters.per_page), 100)
+        offset = (filters.page - 1) * per_page
+        headers = {"Authorization": f"Bearer {access_token}"}
+        fields = "id,title,main_picture,media_type,status,num_episodes,mean_score"
+
+        if filters.query and filters.query.strip():
+            response = await self.client.get(
+                f"{API_URL}/anime",
+                headers=headers,
+                params={"q": filters.query.strip(), "limit": per_page, "offset": offset, "fields": fields},
+            )
+            data = response.json()
+            raw_items = [entry["node"] for entry in data.get("data", [])]
+            has_next = bool(data.get("paging", {}).get("next"))
+        else:
+            ranking_type = "all" if filters.sort == "SCORE" else "bypopularity"
+            response = await self.client.get(
+                f"{API_URL}/anime/ranking",
+                headers=headers,
+                params={"ranking_type": ranking_type, "limit": per_page, "offset": offset, "fields": fields},
+            )
+            data = response.json()
+            raw_items = [entry["node"] for entry in data.get("data", [])]
+            has_next = len(raw_items) == per_page
+
+        return GlobalSearchResponse(
+            results=[_mal_search_result(item) for item in raw_items],
+            has_next_page=has_next,
+        )
 
     @staticmethod
     def _media_item(entry: dict) -> MediaItem:
@@ -344,3 +371,18 @@ def _int_or_none(value: str) -> int | None:
         return int(value)
     except ValueError:
         return None
+
+
+def _mal_search_result(node: dict) -> SearchResult:
+    picture = node.get("main_picture") or {}
+    raw_score = node.get("mean_score") or 0
+    return SearchResult(
+        id=node["id"],
+        title=node["title"],
+        format=to_canonical_format("mal", node.get("media_type")).value,
+        status=node.get("status"),
+        episodes=node.get("num_episodes"),
+        cover_image=picture.get("large") or picture.get("medium"),
+        average_score=int(raw_score * 10) if raw_score else None,
+        popularity=0,
+    )

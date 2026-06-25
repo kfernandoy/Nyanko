@@ -196,10 +196,8 @@ class MyAnimeListProvider:
     ) -> list[SearchResult]:
         raise MyAnimeListError("MyAnimeList manga is not enabled")
 
-    async def discover(
-        self, credential: str, filters: SearchFilters
-    ) -> GlobalSearchResponse:
-        raise MyAnimeListError("MyAnimeList discovery is not enabled")
+    async def discover(self, credential: str, filters: SearchFilters) -> GlobalSearchResponse:
+        return await self.client.discover(credential, filters)
 
     async def details(self, credential: str, external_id: int) -> MediaDetails:
         parsed = MyAnimeListCredential.loads(credential)
