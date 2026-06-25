@@ -16,6 +16,7 @@ const DEFAULT_FILTERS: SearchFilters = {
   status: null,
   is_adult: false,
   media_type: "ANIME",
+  sort: "POPULARITY",
 };
 
 type MediaType = "ANIME" | "MANGA";
@@ -69,7 +70,7 @@ export function DiscoveryView({ onSelect }: { onSelect: (mediaId: number, mediaT
       void search(filters);
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [filters.query, filters.page, filters.genre, filters.format, filters.year, filters.status, filters.is_adult, filters.media_type]);
+  }, [filters.query, filters.page, filters.genre, filters.format, filters.year, filters.status, filters.is_adult, filters.media_type, filters.sort]);
 
   const updatePage = (offset: number) => {
     setFilters((previous) => ({ ...previous, page: Math.max(1, previous.page + offset) }));
@@ -116,6 +117,13 @@ export function DiscoveryView({ onSelect }: { onSelect: (mediaId: number, mediaT
           onChange={(event) => update({ query: event.target.value })}
           placeholder={isAnime ? "Buscar anime…" : "Buscar manga…"}
         />
+        <select
+          value={filters.sort}
+          onChange={(event) => update({ sort: event.target.value as "POPULARITY" | "SCORE" })}
+        >
+          <option value="POPULARITY">Más popular</option>
+          <option value="SCORE">Mejor valorado</option>
+        </select>
         <select value={filters.format ?? ""} onChange={(event) => update({ format: event.target.value || null })}>
           <option value="">Cualquier formato</option>
           {formats.map((value) => <option key={value} value={value}>{value.replace("_", " ")}</option>)}

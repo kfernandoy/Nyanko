@@ -335,6 +335,7 @@ export interface SearchFilters {
   status: string | null;
   is_adult: boolean;
   media_type: "ANIME" | "MANGA";
+  sort: "POPULARITY" | "SCORE";
 }
 
 export interface ProviderCapabilities {

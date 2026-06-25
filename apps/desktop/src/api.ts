@@ -337,6 +337,7 @@ export const api = {
     params.set("page", String(filters.page));
     params.set("per_page", String(filters.per_page));
     params.set("media_type", filters.media_type);
+    params.set("sort", filters.sort);
     if (filters.genre) params.set("genre", filters.genre);
     if (filters.format) params.set("format", filters.format);
     if (filters.year != null) params.set("year", String(filters.year));
