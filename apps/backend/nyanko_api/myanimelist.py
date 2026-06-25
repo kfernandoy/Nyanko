@@ -79,10 +79,13 @@ class MyAnimeListCredential:
         return self.expires_at <= int(time.time()) + 60
 
 
+_client = RateLimitedClient(requests_per_minute=60)
+
+
 class MyAnimeListClient:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.client = RateLimitedClient(requests_per_minute=60)
+        self.client = _client
 
     def authorization_url(self, state: str, code_challenge: str) -> str:
         if not self.settings.mal_client_id:

@@ -340,10 +340,13 @@ class AniListError(RuntimeError):
     pass
 
 
+_client = RateLimitedClient(requests_per_minute=90)
+
+
 class AniListClient:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.client = RateLimitedClient(requests_per_minute=90)
+        self.client = _client
 
     def authorization_url(self, state: str) -> str:
         if not self.settings.anilist_client_id:

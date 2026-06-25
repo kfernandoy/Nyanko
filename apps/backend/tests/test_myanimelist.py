@@ -283,3 +283,9 @@ async def test_edit_entry_omits_none_optional_fields(monkeypatch):
     assert "comments" not in data
     assert "start_date" not in data
     assert "finish_date" not in data
+
+
+def test_mal_clients_share_rate_limiter():
+    c1 = MyAnimeListClient(Settings())
+    c2 = MyAnimeListClient(Settings())
+    assert c1.client is c2.client

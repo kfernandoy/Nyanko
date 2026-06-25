@@ -313,3 +313,9 @@ async def test_discover_without_query_sorts_by_popularity(monkeypatch):
     assert "POPULARITY_DESC" in captured["query"]
     assert "search:" not in captured["query"]
     assert captured.get("query") is None or captured.get("query") == ""
+
+
+def test_anilist_clients_share_rate_limiter():
+    c1 = AniListClient(Settings())
+    c2 = AniListClient(Settings())
+    assert c1.client is c2.client
