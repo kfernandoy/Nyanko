@@ -24,6 +24,7 @@ import type {
   PlaybackEvent,
   PlaybackMatchResponse,
   PlaybackPreferences,
+  ProviderInfo,
   SearchFilters,
   SeasonMedia,
   SyncStatusResponse,
@@ -198,6 +199,7 @@ export const api = {
       { provider, alias },
     )),
   accounts: () => request<AccountInfo[]>("/api/accounts"),
+  providers: () => request<ProviderInfo[]>("/api/providers"),
   updateAccount: (
     accountId: number,
     update: Partial<Pick<AccountInfo, "sync_direction" | "is_primary">>,

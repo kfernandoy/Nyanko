@@ -336,3 +336,21 @@ export interface SearchFilters {
   is_adult: boolean;
   media_type: "ANIME" | "MANGA";
 }
+
+export interface ProviderCapabilities {
+  library: boolean;
+  search: boolean;
+  details: boolean;
+  mutations: boolean;
+  activity: boolean;
+  statistics: boolean;
+  seasons: boolean;
+  manga: boolean;
+}
+
+export interface ProviderInfo {
+  name: string;
+  display_name: string;
+  authenticated: boolean;
+  capabilities: ProviderCapabilities;
+}
