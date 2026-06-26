@@ -28,6 +28,12 @@ from .models import (
 )
 
 
+def _fuzzy_date_to_str(d: dict | None) -> str | None:
+    if not d or d.get("year") is None:
+        return None
+    return f"{d['year']:04d}-{d.get('month') or 1:02d}-{d.get('day') or 1:02d}"
+
+
 API_URL = "https://graphql.anilist.co"
 AUTHORIZE_URL = "https://anilist.co/api/v2/oauth/authorize"
 TOKEN_URL = "https://anilist.co/api/v2/oauth/token"
@@ -39,6 +45,8 @@ query ViewerList($userId: Int!) {
   MediaListCollection(userId: $userId, type: ANIME, sort: UPDATED_TIME_DESC) {
     lists { entries {
       mediaId status progress score updatedAt
+      startedAt { year month day }
+      completedAt { year month day }
       media {
         id episodes format seasonYear siteUrl synonyms genres
         title { userPreferred romaji english native }
@@ -166,6 +174,8 @@ query ViewerMangaList($userId: Int!) {
   MediaListCollection(userId: $userId, type: MANGA, sort: UPDATED_TIME_DESC) {
     lists { entries {
       mediaId status progress score updatedAt
+      startedAt { year month day }
+      completedAt { year month day }
       media {
         id chapters volumes format status siteUrl synonyms genres
         title { userPreferred romaji english native }
@@ -410,6 +420,8 @@ class AniListClient:
                 format=to_canonical_format("anilist", entry["media"].get("format")).value,
                 site_url=entry["media"].get("siteUrl"),
                 updated_at=entry.get("updatedAt"),
+                started_at=_fuzzy_date_to_str(entry.get("startedAt")),
+                completed_at=_fuzzy_date_to_str(entry.get("completedAt")),
             )
             for entry in entries
         ]
@@ -698,6 +710,8 @@ class AniListClient:
                 site_url=entry["media"].get("siteUrl"),
                 media_type="MANGA",
                 updated_at=entry.get("updatedAt"),
+                started_at=_fuzzy_date_to_str(entry.get("startedAt")),
+                completed_at=_fuzzy_date_to_str(entry.get("completedAt")),
             )
             for entry in entries
         ]

@@ -338,3 +338,12 @@ async def test_discover_sort_score_uses_score_desc(monkeypatch):
     await client.discover("token", SearchFilters(sort="SCORE"))
 
     assert captured.get("sort") == ["SCORE_DESC"]
+
+
+def test_media_list_includes_dates():
+    from nyanko_api.anilist import AniListClient, _fuzzy_date_to_str
+
+    assert _fuzzy_date_to_str({"year": 2024, "month": 1, "day": 15}) == "2024-01-15"
+    assert _fuzzy_date_to_str({"year": 2024, "month": None, "day": None}) == "2024-01-01"
+    assert _fuzzy_date_to_str({"year": None, "month": None, "day": None}) is None
+    assert _fuzzy_date_to_str(None) is None
