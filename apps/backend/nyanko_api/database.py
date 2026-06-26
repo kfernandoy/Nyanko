@@ -1,12 +1,14 @@
 import json
 import sqlite3
 import time
+from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 from .normalizer import normalize_title
+from .models import MediaStatistics, StatisticGroup
 
 
 SCHEMA = """
@@ -1025,6 +1027,76 @@ class Database:
                         (season_id, media_id),
                     )
             return media_id
+
+    def period_statistics(
+        self, from_date: str, to_date: str, media_type: str = "ANIME"
+    ) -> MediaStatistics:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT le.media_id, le.progress, le.score, le.status, m.format, m.release_year
+                FROM library_entries le
+                JOIN media m ON m.id = le.media_id
+                WHERE m.media_type = ?
+                AND (
+                    (le.completed_at BETWEEN ? AND ?)
+                    OR (
+                        le.completed_at IS NULL
+                        AND le.status = 'COMPLETED'
+                        AND date(le.updated_at) BETWEEN ? AND ?
+                    )
+                )
+                """,
+                (media_type, from_date, to_date, from_date, to_date),
+            ).fetchall()
+
+            media_ids = [row["media_id"] for row in rows]
+            count = len(rows)
+            episodes = sum(row["progress"] for row in rows)
+            scores = [row["score"] for row in rows if row["score"] is not None]
+            mean_score = round(sum(scores) / len(scores), 1) if scores else 0.0
+
+            if media_ids:
+                placeholders = ",".join("?" * len(media_ids))
+                genre_rows = connection.execute(
+                    f"SELECT genre, COUNT(*) as cnt FROM media_genres "
+                    f"WHERE media_id IN ({placeholders}) GROUP BY genre ORDER BY cnt DESC",
+                    media_ids,
+                ).fetchall()
+                genres = [StatisticGroup(label=r["genre"], count=r["cnt"]) for r in genre_rows]
+            else:
+                genres = []
+
+            format_counts = Counter(row["format"] for row in rows if row["format"])
+            formats = [
+                StatisticGroup(label=fmt, count=cnt)
+                for fmt, cnt in format_counts.most_common()
+            ]
+
+            year_counts = Counter(str(row["release_year"]) for row in rows if row["release_year"])
+            release_years = [
+                StatisticGroup(label=yr, count=cnt)
+                for yr, cnt in sorted(year_counts.items(), key=lambda x: -x[1])
+            ]
+
+            status_counts = Counter(row["status"] for row in rows)
+            statuses = [
+                StatisticGroup(label=st, count=cnt)
+                for st, cnt in status_counts.most_common()
+            ]
+
+        return MediaStatistics(
+            count=count,
+            episodes_watched=episodes,
+            minutes_watched=0,
+            mean_score=mean_score,
+            genres=genres,
+            formats=formats,
+            release_years=release_years,
+            studios=[],
+            countries=[],
+            statuses=statuses,
+        )
 
     def canonical_media_id(self, provider_id: str, external_id: str | int) -> int | None:
         with self.connect() as connection:

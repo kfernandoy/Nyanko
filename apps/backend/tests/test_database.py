@@ -782,3 +782,31 @@ def test_sync_library_stores_dates(monkeypatch):
         ).fetchone()
     assert row["started_at"] == "2024-01-15"
     assert row["completed_at"] == "2024-03-30"
+
+
+def test_period_statistics_counts_completed_in_range(monkeypatch):
+    database = memory_database(monkeypatch)
+    # media 1: completado dentro del rango
+    in_range = MediaItem(
+        id=1, title="In Range", status="COMPLETED", progress=12,
+        format="TV", genres=["Action"], year=2023,
+        completed_at="2024-06-15",
+    )
+    # media 2: completado fuera del rango
+    out_range = MediaItem(
+        id=2, title="Out Range", status="COMPLETED", progress=24,
+        format="MOVIE", genres=["Drama"], year=2022,
+        completed_at="2023-01-10",
+    )
+    database.sync_provider_library("anilist", "AniList", [in_range, out_range])
+
+    stats = database.period_statistics("2024-01-01", "2024-12-31", "ANIME")
+
+    assert stats.count == 1
+    assert stats.episodes_watched == 12
+    assert any(g.label == "Action" for g in stats.genres)
+    assert not any(g.label == "Drama" for g in stats.genres)
+    assert any(f.label == "TV" for f in stats.formats)
+    assert stats.studios == []
+    assert stats.countries == []
+    assert stats.minutes_watched == 0
