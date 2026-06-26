@@ -1926,7 +1926,10 @@ async def global_search(
         media_type=media_type,  # type: ignore[arg-type]
         sort=sort,
     )
-    return await media_provider.discover(token, filters)
+    try:
+        return await media_provider.discover(token, filters)
+    except Exception as error:
+        raise_provider_auth_error(error, provider, account)
 
 
 @app.get("/api/search/manga", response_model=GlobalSearchResponse)

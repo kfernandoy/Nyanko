@@ -40,7 +40,7 @@ export function DiscoveryView({ onSelect }: { onSelect: (mediaId: number, mediaT
   const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [hasNextPage, setHasNextPage] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState<{ id: number; status: string } | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
