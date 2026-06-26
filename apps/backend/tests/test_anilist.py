@@ -462,3 +462,97 @@ def test_media_details_extra_fields_default_empty():
     assert details.relations == []
     assert details.recommendations == []
     assert details.trailer is None
+
+
+def test_parse_relations_maps_edges():
+    media = {
+        "relations": {
+            "edges": [
+                {
+                    "relationType": "SEQUEL",
+                    "node": {"id": 1735, "format": "TV", "title": {"userPreferred": "Naruto: Shippuden"}},
+                }
+            ]
+        }
+    }
+    result = AniListClient._parse_relations(media)
+    assert len(result) == 1
+    assert result[0].id == 1735
+    assert result[0].relation_type == "SEQUEL"
+    assert result[0].title == "Naruto: Shippuden"
+    assert result[0].format == "TV"
+
+
+def test_parse_relations_handles_missing():
+    assert AniListClient._parse_relations({}) == []
+    assert AniListClient._parse_relations({"relations": None}) == []
+
+
+def test_parse_recommendations_filters_null_media():
+    media = {
+        "recommendations": {
+            "nodes": [
+                {
+                    "rating": 42,
+                    "mediaRecommendation": {
+                        "id": 11061,
+                        "format": "TV",
+                        "title": {"userPreferred": "HxH"},
+                        "coverImage": {"large": "https://example.com/img.jpg"},
+                    },
+                },
+                {"rating": 0, "mediaRecommendation": None},
+            ]
+        }
+    }
+    result = AniListClient._parse_recommendations(media)
+    assert len(result) == 1
+    assert result[0].id == 11061
+    assert result[0].rating == 42
+    assert result[0].cover_image == "https://example.com/img.jpg"
+
+
+def test_parse_characters_maps_role_and_first_va():
+    media = {
+        "characters": {
+            "edges": [
+                {
+                    "role": "MAIN",
+                    "node": {
+                        "name": {"full": "Naruto Uzumaki"},
+                        "image": {"medium": "https://example.com/char.jpg"},
+                    },
+                    "voiceActors": [
+                        {"name": {"full": "Junko Takeuchi"}, "image": {"medium": "https://example.com/va.jpg"}},
+                        {"name": {"full": "Other VA"}, "image": {"medium": "https://example.com/va2.jpg"}},
+                    ],
+                }
+            ]
+        }
+    }
+    result = AniListClient._parse_characters(media)
+    assert len(result) == 1
+    assert result[0].node.name.full == "Naruto Uzumaki"
+    assert result[0].role == "MAIN"
+    assert len(result[0].voice_actors) == 1  # solo el primero
+    assert result[0].voice_actors[0].name.full == "Junko Takeuchi"
+
+
+def test_parse_staff_maps_role():
+    media = {
+        "staff": {
+            "edges": [
+                {
+                    "role": "Director",
+                    "node": {
+                        "name": {"full": "Hayato Date"},
+                        "image": {"medium": "https://example.com/staff.jpg"},
+                    },
+                }
+            ]
+        }
+    }
+    result = AniListClient._parse_staff(media)
+    assert len(result) == 1
+    assert result[0].node.name.full == "Hayato Date"
+    assert result[0].role == "Director"

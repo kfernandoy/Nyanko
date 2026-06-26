@@ -11,6 +11,10 @@ from .provider_mappings import (
 )
 from .models import (
     ActivityItem,
+    CharacterEdge,
+    CharacterImage,
+    CharacterName,
+    CharacterNode,
     FuzzyDate,
     GlobalSearchResponse,
     MediaDetails,
@@ -19,13 +23,18 @@ from .models import (
     MediaListEntry,
     MediaStatistics,
     ProgressUpdate,
+    RecommendationItem,
+    RelationEdge,
     SearchFilters,
     SearchResult,
     SeasonMedia,
+    StaffEdge,
     StatisticGroup,
     StatisticsResponse,
+    TrailerInfo,
     UserPreferences,
     UserPreferencesUpdate,
+    VoiceActorNode,
 )
 
 
@@ -137,6 +146,34 @@ query MediaDetails($id: Int!) {
     coverImage { extraLarge color }
     studios { nodes { name } }
     nextAiringEpisode { episode airingAt }
+    trailer { id site }
+    characters(sort: [ROLE, RELEVANCE], perPage: 10) {
+      edges {
+        role
+        node { name { full } image { medium } }
+        voiceActors(language: JAPANESE) { name { full } image { medium } }
+      }
+    }
+    staff(sort: RELEVANCE, perPage: 8) {
+      edges {
+        role
+        node { name { full } image { medium } }
+      }
+    }
+    relations {
+      edges {
+        relationType
+        node { id format title { userPreferred } }
+      }
+    }
+    recommendations(sort: RATING_DESC, perPage: 6) {
+      nodes {
+        rating
+        mediaRecommendation {
+          id format title { userPreferred } coverImage { large }
+        }
+      }
+    }
   }
 }
 """
@@ -209,6 +246,26 @@ query MangaDetails($id: Int!) {
     title { userPreferred romaji english native }
     coverImage { extraLarge color }
     studios { nodes { name } }
+    staff(sort: RELEVANCE, perPage: 8) {
+      edges {
+        role
+        node { name { full } image { medium } }
+      }
+    }
+    relations {
+      edges {
+        relationType
+        node { id format title { userPreferred } }
+      }
+    }
+    recommendations(sort: RATING_DESC, perPage: 6) {
+      nodes {
+        rating
+        mediaRecommendation {
+          id format title { userPreferred } coverImage { large }
+        }
+      }
+    }
   }
 }
 """
@@ -701,6 +758,15 @@ class AniListClient:
             next_airing_at=next_airing.get("airingAt"),
             score_format=data["Viewer"]["mediaListOptions"]["scoreFormat"],
             list_entry=self._list_entry(entry) if entry else None,
+            trailer=(
+                TrailerInfo(id=media["trailer"]["id"], site=media["trailer"]["site"])
+                if media.get("trailer") and media["trailer"].get("id")
+                else None
+            ),
+            characters=AniListClient._parse_characters(media),
+            staff=AniListClient._parse_staff(media),
+            relations=AniListClient._parse_relations(media),
+            recommendations=AniListClient._parse_recommendations(media),
         )
 
     async def edit_entry(
@@ -796,6 +862,9 @@ class AniListClient:
             average_score=media.get("averageScore"),
             score_format=data["Viewer"]["mediaListOptions"]["scoreFormat"],
             list_entry=self._list_entry(entry) if entry else None,
+            staff=AniListClient._parse_staff(media),
+            relations=AniListClient._parse_relations(media),
+            recommendations=AniListClient._parse_recommendations(media),
         )
 
     async def preferences(self, token: str) -> UserPreferences:
@@ -822,6 +891,76 @@ class AniListClient:
             score_format=viewer["mediaListOptions"]["scoreFormat"],
             display_adult_content=bool(viewer["options"]["displayAdultContent"]),
         )
+
+    @staticmethod
+    def _parse_relations(media: dict) -> list[RelationEdge]:
+        edges = (media.get("relations") or {}).get("edges") or []
+        return [
+            RelationEdge(
+                id=e["node"]["id"],
+                title=e["node"]["title"]["userPreferred"],
+                format=e["node"].get("format"),
+                relation_type=e.get("relationType") or "OTHER",
+            )
+            for e in edges
+            if (e.get("node") or {}).get("id")
+        ]
+
+    @staticmethod
+    def _parse_recommendations(media: dict) -> list[RecommendationItem]:
+        nodes = (media.get("recommendations") or {}).get("nodes") or []
+        return [
+            RecommendationItem(
+                id=n["mediaRecommendation"]["id"],
+                title=n["mediaRecommendation"]["title"]["userPreferred"],
+                format=n["mediaRecommendation"].get("format"),
+                cover_image=(n["mediaRecommendation"].get("coverImage") or {}).get("large"),
+                rating=n.get("rating"),
+            )
+            for n in nodes
+            if n.get("mediaRecommendation") and n["mediaRecommendation"].get("id")
+        ]
+
+    @staticmethod
+    def _parse_characters(media: dict) -> list[CharacterEdge]:
+        edges = (media.get("characters") or {}).get("edges") or []
+        result = []
+        for e in edges:
+            node = e.get("node") or {}
+            va_list = [
+                VoiceActorNode(
+                    name=CharacterName(full=(va.get("name") or {}).get("full")),
+                    image=CharacterImage(medium=(va.get("image") or {}).get("medium")),
+                    language="JAPANESE",
+                )
+                for va in (e.get("voiceActors") or [])
+            ]
+            result.append(
+                CharacterEdge(
+                    node=CharacterNode(
+                        name=CharacterName(full=(node.get("name") or {}).get("full")),
+                        image=CharacterImage(medium=(node.get("image") or {}).get("medium")),
+                    ),
+                    role=e.get("role"),
+                    voice_actors=va_list[:1],  # ponytail: solo el primero; mostrar más si la UI lo pide
+                )
+            )
+        return result
+
+    @staticmethod
+    def _parse_staff(media: dict) -> list[StaffEdge]:
+        edges = (media.get("staff") or {}).get("edges") or []
+        return [
+            StaffEdge(
+                node=CharacterNode(
+                    name=CharacterName(full=(e.get("node") or {}).get("name", {}).get("full")),
+                    image=CharacterImage(medium=(e.get("node") or {}).get("image", {}).get("medium")),
+                ),
+                role=e.get("role"),
+            )
+            for e in edges
+            if e.get("node")
+        ]
 
     @staticmethod
     def _list_entry(entry: dict) -> MediaListEntry:
