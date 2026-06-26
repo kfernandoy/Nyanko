@@ -7,7 +7,8 @@ import type {
   ConflictInfo,
   ConflictResolution,
   ActivityItem,
-  AnimeStatistics,
+  MediaStatistics,
+  StatisticsResponse,
   CacheStatusResponse,
   CacheStatus,
   DetectorInfo,
@@ -240,7 +241,17 @@ export const api = {
   activity: (page = 1) => cachedGet<ActivityItem[]>(withAccount(`/api/activity?page=${page}`)),
   season: (season: string, year: number) =>
     cachedGet<SeasonMedia[]>(withAccount(`/api/season?season=${season}&year=${year}`)),
-  statistics: () => cachedGet<AnimeStatistics>(withAccount("/api/statistics")),
+  statistics: () => cachedGet<StatisticsResponse>(withAccount("/api/statistics")),
+  statisticsPeriod: (from: string, to: string, type: "ANIME" | "MANGA" = "ANIME") =>
+    request<MediaStatistics>(
+      withAccount(
+        `/api/statistics/period?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&type=${type}`
+      )
+    ),
+  statisticsExport: async (): Promise<Blob> => {
+    const response = await rawRequest(withAccount("/api/statistics/export"));
+    return response.blob();
+  },
   mediaDetails: (mediaId: number) => cachedGet<MediaDetails>(withAccount(`/api/media/${mediaId}`)),
   mangaDetails: (mediaId: number) => cachedGet<MediaDetails>(withAccount(`/api/media/${mediaId}/manga`)),
   editEntry: (mediaId: number, update: MediaEntryUpdate) =>

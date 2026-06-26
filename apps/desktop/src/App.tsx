@@ -9,7 +9,8 @@ import { DiscoveryView } from "./DiscoveryView";
 import type {
   AccountUpdateResult,
   ActivityItem,
-  AnimeStatistics,
+  MediaStatistics,
+  StatisticsResponse,
   CacheStatus,
   DetectorInfo,
   ExtensionClientInfo,
@@ -84,7 +85,7 @@ export default function App() {
   const [activityLoadingMore, setActivityLoadingMore] = useState(false);
   const [seasonMedia, setSeasonMedia] = useState<SeasonMedia[]>([]);
   const [seasonCache, setSeasonCache] = useState<Record<string, SeasonMedia[]>>({});
-  const [statistics, setStatistics] = useState<AnimeStatistics | null>(null);
+  const [statistics, setStatistics] = useState<StatisticsResponse | null>(null);
   const [statisticsLoaded, setStatisticsLoaded] = useState(false);
   const [details, setDetails] = useState<MediaDetails | null>(null);
   const [detailCanonicalId, setDetailCanonicalId] = useState<number | null>(null);
@@ -512,6 +513,20 @@ export default function App() {
     });
   };
 
+  const handleStatisticsExport = async () => {
+    try {
+      const blob = await api.statisticsExport();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "nyanko-stats.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silencio — el usuario verá que no descargó nada
+    }
+  };
+
   const openDetails = async (mediaId: number, mediaType: "ANIME" | "MANGA" = "ANIME") => {
     setDetailLoading(true);
     setError(null);
@@ -648,7 +663,7 @@ export default function App() {
         ) : view === "seasons" ? (
           <SeasonsView items={seasonMedia} season={season} onMove={changeSeason} onChange={setSeasonWithReset} onSelect={openDetails} libraryMap={libraryMap} />
         ) : (
-          <StatisticsView statistics={statistics} />
+          <StatisticsView statistics={statistics} onExport={() => void handleStatisticsExport()} />
         )}
       </main>
       {detailLoading && <div className="modal-backdrop"><div className="modal-loading">Cargando información…</div></div>}
@@ -1198,32 +1213,175 @@ function SeasonsView({ items, season, onMove, onChange, onSelect, libraryMap }: 
   </>;
 }
 
-function StatisticsView({ statistics }: { statistics: AnimeStatistics | null }) {
+function StatisticsView({
+  statistics,
+  onExport,
+}: {
+  statistics: StatisticsResponse | null;
+  onExport: () => void;
+}) {
+  const [tab, setTab] = useState<"ANIME" | "MANGA">("ANIME");
+  const [fromA, setFromA] = useState("");
+  const [toA, setToA] = useState("");
+  const [fromB, setFromB] = useState("");
+  const [toB, setToB] = useState("");
+  const [periodA, setPeriodA] = useState<MediaStatistics | null>(null);
+  const [periodB, setPeriodB] = useState<MediaStatistics | null>(null);
+  const [periodLoading, setPeriodLoading] = useState(false);
+
   if (!statistics) return <Empty title="No hay estadísticas disponibles" />;
-  const hours = Math.round(statistics.minutes_watched / 60);
-  return <>
-    <section className="stat-cards">
-      <StatCard label="Anime vistos" value={statistics.count.toLocaleString("es")} />
-      <StatCard label="Episodios" value={statistics.episodes_watched.toLocaleString("es")} />
-      <StatCard label="Horas" value={hours.toLocaleString("es")} />
-      <StatCard label="Puntuación media" value={statistics.mean_score.toFixed(1)} />
-    </section>
-    <section className="stat-panels">
-      <StatBars title="Géneros principales" items={statistics.genres} />
-      <StatBars title="Estados de lista" items={statistics.statuses} />
-    </section>
-  </>;
+  const stats = tab === "ANIME" ? statistics.anime : statistics.manga;
+
+  const handleCompare = async () => {
+    setPeriodLoading(true);
+    try {
+      const [a, b] = await Promise.all([
+        fromA && toA ? api.statisticsPeriod(fromA, toA, tab) : Promise.resolve(null),
+        fromB && toB ? api.statisticsPeriod(fromB, toB, tab) : Promise.resolve(null),
+      ]);
+      setPeriodA(a);
+      setPeriodB(b);
+    } catch {
+      // ignorar
+    } finally {
+      setPeriodLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="stat-tabs">
+        <button className={tab === "ANIME" ? "active" : ""} onClick={() => setTab("ANIME")}>
+          Anime
+        </button>
+        <button className={tab === "MANGA" ? "active" : ""} onClick={() => setTab("MANGA")}>
+          Manga
+        </button>
+      </div>
+      <section className="stat-cards">
+        <StatCard label={tab === "ANIME" ? "Anime vistos" : "Manga leídos"} value={stats.count.toLocaleString("es")} />
+        <StatCard
+          label={tab === "ANIME" ? "Episodios" : "Capítulos"}
+          value={stats.episodes_watched.toLocaleString("es")}
+        />
+        {tab === "ANIME" && (
+          <StatCard label="Horas" value={Math.round(stats.minutes_watched / 60).toLocaleString("es")} />
+        )}
+        <StatCard label="Puntuación media" value={stats.mean_score.toFixed(1)} />
+      </section>
+      <section className="stat-panels">
+        <StatBars title="Géneros principales" items={stats.genres} />
+        <StatBars title="Formatos" items={stats.formats} />
+        <StatBars title="Años" items={stats.release_years} />
+        {stats.studios.length > 0 && <StatBars title="Estudios" items={stats.studios} />}
+        {stats.countries.length > 0 && <StatBars title="Países" items={stats.countries} />}
+        <StatBars title="Estados de lista" items={stats.statuses} />
+      </section>
+      <section className="stat-period">
+        <h2>Comparación por períodos</h2>
+        <div className="stat-period-inputs">
+          <div>
+            <label>Rango A</label>
+            <input type="date" value={fromA} onChange={(e) => setFromA(e.target.value)} />
+            <input type="date" value={toA} onChange={(e) => setToA(e.target.value)} />
+          </div>
+          <div>
+            <label>Rango B</label>
+            <input type="date" value={fromB} onChange={(e) => setFromB(e.target.value)} />
+            <input type="date" value={toB} onChange={(e) => setToB(e.target.value)} />
+          </div>
+          <button onClick={() => void handleCompare()} disabled={periodLoading}>
+            {periodLoading ? "Cargando…" : "Comparar"}
+          </button>
+        </div>
+        {(periodA !== null || periodB !== null) && (
+          <div className="stat-period-comparison">
+            <PeriodColumn
+              stats={periodA}
+              label={fromA && toA ? `${fromA} – ${toA}` : "Rango A"}
+              mediaType={tab}
+            />
+            <PeriodColumn
+              stats={periodB}
+              label={fromB && toB ? `${fromB} – ${toB}` : "Rango B"}
+              mediaType={tab}
+            />
+          </div>
+        )}
+      </section>
+      <section className="stat-export">
+        <button onClick={onExport}>Exportar JSON</button>
+      </section>
+    </>
+  );
+}
+
+function PeriodColumn({
+  stats,
+  label,
+  mediaType,
+}: {
+  stats: MediaStatistics | null;
+  label: string;
+  mediaType: "ANIME" | "MANGA";
+}) {
+  return (
+    <div className="stat-period-column">
+      <strong>{label}</strong>
+      {!stats ? (
+        <p className="stat-period-empty">Sin entradas en este período</p>
+      ) : (
+        <>
+          <section className="stat-cards">
+            <StatCard label="Obras" value={stats.count.toLocaleString("es")} />
+            <StatCard
+              label={mediaType === "ANIME" ? "Episodios" : "Capítulos"}
+              value={stats.episodes_watched.toLocaleString("es")}
+            />
+            <StatCard
+              label="Puntuación media"
+              value={stats.mean_score > 0 ? stats.mean_score.toFixed(1) : "—"}
+            />
+          </section>
+          <section className="stat-panels">
+            {stats.genres.length > 0 && <StatBars title="Géneros" items={stats.genres} />}
+            {stats.formats.length > 0 && <StatBars title="Formatos" items={stats.formats} />}
+            {stats.release_years.length > 0 && <StatBars title="Años" items={stats.release_years} />}
+          </section>
+        </>
+      )}
+    </div>
+  );
 }
 
 function StatCard({ label, value }: { label: string; value: string }) {
-  return <article className="stat-card"><span>{label}</span><strong>{value}</strong></article>;
+  return (
+    <article className="stat-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
 }
 
 function StatBars({ title, items }: { title: string; items: StatisticGroup[] }) {
+  if (items.length === 0) return null;
   const max = Math.max(...items.map((item) => item.count), 1);
-  return <article className="stat-panel"><h2>{title}</h2>{items.map((item) => (
-    <div className="stat-row" key={item.label}><div><span>{item.label}</span><strong>{item.count}</strong></div><i><b style={{ width: `${item.count / max * 100}%` }} /></i></div>
-  ))}</article>;
+  return (
+    <article className="stat-panel">
+      <h2>{title}</h2>
+      {items.map((item) => (
+        <div className="stat-row" key={item.label}>
+          <div>
+            <span>{item.label}</span>
+            <strong>{item.count}</strong>
+          </div>
+          <i>
+            <b style={{ width: `${(item.count / max) * 100}%` }} />
+          </i>
+        </div>
+      ))}
+    </article>
+  );
 }
 
 function MediaCard({ item, mediaType, onSelect }: { item: MediaItem; mediaType: MediaType; onSelect: (id: number) => void }) {

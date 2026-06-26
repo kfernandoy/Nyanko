@@ -79,14 +79,26 @@ export interface StatisticGroup {
   count: number;
 }
 
-export interface AnimeStatistics {
+export interface MediaStatistics {
   count: number;
   episodes_watched: number;
   minutes_watched: number;
   mean_score: number;
   genres: StatisticGroup[];
   statuses: StatisticGroup[];
+  formats: StatisticGroup[];
+  release_years: StatisticGroup[];
+  studios: StatisticGroup[];
+  countries: StatisticGroup[];
 }
+
+export interface StatisticsResponse {
+  anime: MediaStatistics;
+  manga: MediaStatistics;
+}
+
+// ponytail: alias de compatibilidad — eliminar cuando no queden usos
+export type AnimeStatistics = MediaStatistics;
 
 export interface FuzzyDate {
   year: number | null;
