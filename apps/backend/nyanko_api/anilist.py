@@ -11,18 +11,19 @@ from .provider_mappings import (
 )
 from .models import (
     ActivityItem,
-    AnimeStatistics,
     FuzzyDate,
     GlobalSearchResponse,
     MediaDetails,
     MediaEntryUpdate,
     MediaItem,
     MediaListEntry,
+    MediaStatistics,
     ProgressUpdate,
     SearchFilters,
     SearchResult,
     SeasonMedia,
     StatisticGroup,
+    StatisticsResponse,
     UserPreferences,
     UserPreferencesUpdate,
 )
@@ -105,8 +106,21 @@ query Statistics {
     statistics {
       anime {
         count episodesWatched minutesWatched meanScore
-        genres(limit: 8, sort: COUNT_DESC) { genre count }
+        genres(limit: 10, sort: COUNT_DESC) { genre count }
         statuses(sort: COUNT_DESC) { status count }
+        formats(sort: COUNT_DESC) { format count }
+        releaseYears(sort: COUNT_DESC) { releaseYear count }
+        studios(limit: 10, sort: COUNT_DESC) { studio count }
+        countries(sort: COUNT_DESC) { country count }
+      }
+      manga {
+        count chaptersRead volumesRead meanScore
+        genres(limit: 10, sort: COUNT_DESC) { genre count }
+        statuses(sort: COUNT_DESC) { status count }
+        formats(sort: COUNT_DESC) { format count }
+        releaseYears(sort: COUNT_DESC) { releaseYear count }
+        studios(limit: 10, sort: COUNT_DESC) { studio count }
+        countries(sort: COUNT_DESC) { country count }
       }
     }
   }
@@ -605,17 +619,42 @@ class AniListClient:
             for item in data["Page"]["media"]
         ]
 
-    async def statistics(self, token: str) -> AnimeStatistics:
-        data = await self.graphql(token, STATISTICS_QUERY)
+    def _build_statistics_response(self, data: dict) -> StatisticsResponse:
+        def _groups(items: list, key: str) -> list[StatisticGroup]:
+            return [StatisticGroup(label=str(item[key]), count=item["count"]) for item in items]
+
         anime = data["Viewer"]["statistics"]["anime"]
-        return AnimeStatistics(
-            count=anime["count"],
-            episodes_watched=anime["episodesWatched"],
-            minutes_watched=anime["minutesWatched"],
-            mean_score=anime["meanScore"],
-            genres=[StatisticGroup(label=item["genre"], count=item["count"]) for item in anime["genres"]],
-            statuses=[StatisticGroup(label=item["status"], count=item["count"]) for item in anime["statuses"]],
+        manga = data["Viewer"]["statistics"]["manga"]
+        return StatisticsResponse(
+            anime=MediaStatistics(
+                count=anime["count"],
+                episodes_watched=anime["episodesWatched"],
+                minutes_watched=anime["minutesWatched"],
+                mean_score=anime["meanScore"],
+                genres=_groups(anime["genres"], "genre"),
+                statuses=_groups(anime["statuses"], "status"),
+                formats=_groups(anime["formats"], "format"),
+                release_years=_groups(anime["releaseYears"], "releaseYear"),
+                studios=_groups(anime["studios"], "studio"),
+                countries=_groups(anime["countries"], "country"),
+            ),
+            manga=MediaStatistics(
+                count=manga["count"],
+                episodes_watched=manga["chaptersRead"],
+                minutes_watched=0,
+                mean_score=manga["meanScore"],
+                genres=_groups(manga["genres"], "genre"),
+                statuses=_groups(manga["statuses"], "status"),
+                formats=_groups(manga["formats"], "format"),
+                release_years=_groups(manga["releaseYears"], "releaseYear"),
+                studios=_groups(manga["studios"], "studio"),
+                countries=_groups(manga["countries"], "country"),
+            ),
         )
+
+    async def statistics(self, token: str) -> StatisticsResponse:
+        data = await self.graphql(token, STATISTICS_QUERY)
+        return self._build_statistics_response(data)
 
     async def media_details(self, token: str, media_id: int) -> MediaDetails:
         data = await self.graphql(token, DETAIL_QUERY, {"id": media_id})

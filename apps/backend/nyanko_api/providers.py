@@ -8,7 +8,6 @@ from .anilist import AniListClient
 from .config import Settings
 from .models import (
     ActivityItem,
-    AnimeStatistics,
     GlobalSearchResponse,
     MediaDetails,
     MediaEntryUpdate,
@@ -18,6 +17,7 @@ from .models import (
     SearchFilters,
     SearchResult,
     SeasonMedia,
+    StatisticsResponse,
     UserPreferences,
     UserPreferencesUpdate,
 )
@@ -76,7 +76,7 @@ class MediaProvider(Protocol):
         self, credential: str, season: str, year: int
     ) -> list[SeasonMedia]: ...
 
-    async def statistics(self, credential: str) -> AnimeStatistics: ...
+    async def statistics(self, credential: str) -> StatisticsResponse: ...
 
     async def preferences(self, credential: str) -> UserPreferences: ...
 
@@ -151,7 +151,7 @@ class AniListProvider:
                 return items
             page += 1
 
-    async def statistics(self, credential: str) -> AnimeStatistics:
+    async def statistics(self, credential: str) -> StatisticsResponse:
         return await self.client.statistics(credential)
 
     async def preferences(self, credential: str) -> UserPreferences:
@@ -228,7 +228,7 @@ class MyAnimeListProvider:
     ) -> list[SeasonMedia]:
         raise MyAnimeListError("MyAnimeList seasons are not enabled")
 
-    async def statistics(self, credential: str) -> AnimeStatistics:
+    async def statistics(self, credential: str) -> StatisticsResponse:
         raise MyAnimeListError("MyAnimeList statistics are not enabled")
 
     async def preferences(self, credential: str) -> UserPreferences:

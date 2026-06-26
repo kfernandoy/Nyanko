@@ -221,13 +221,26 @@ class StatisticGroup(BaseModel):
     count: int
 
 
-class AnimeStatistics(BaseModel):
+class MediaStatistics(BaseModel):
     count: int
     episodes_watched: int
     minutes_watched: int
     mean_score: float
     genres: list[StatisticGroup]
     statuses: list[StatisticGroup]
+    formats: list[StatisticGroup] = Field(default_factory=list)
+    release_years: list[StatisticGroup] = Field(default_factory=list)
+    studios: list[StatisticGroup] = Field(default_factory=list)
+    countries: list[StatisticGroup] = Field(default_factory=list)
+
+
+# ponytail: alias for backward compat with cached_value calls migrating from AnimeStatistics
+AnimeStatistics = MediaStatistics
+
+
+class StatisticsResponse(BaseModel):
+    anime: MediaStatistics
+    manga: MediaStatistics
 
 
 class FuzzyDate(BaseModel):

@@ -347,3 +347,50 @@ def test_media_list_includes_dates():
     assert _fuzzy_date_to_str({"year": 2024, "month": None, "day": None}) == "2024-01-01"
     assert _fuzzy_date_to_str({"year": None, "month": None, "day": None}) is None
     assert _fuzzy_date_to_str(None) is None
+
+
+def test_statistics_returns_statistics_response():
+    from nyanko_api.models import StatisticsResponse
+    from nyanko_api.anilist import AniListClient
+
+    raw = {
+        "Viewer": {
+            "statistics": {
+                "anime": {
+                    "count": 42,
+                    "episodesWatched": 500,
+                    "minutesWatched": 12000,
+                    "meanScore": 75.0,
+                    "genres": [{"genre": "Action", "count": 10}],
+                    "statuses": [{"status": "COMPLETED", "count": 30}],
+                    "formats": [{"format": "TV", "count": 35}],
+                    "releaseYears": [{"releaseYear": 2023, "count": 8}],
+                    "studios": [{"studio": "MAPPA", "count": 3}],
+                    "countries": [{"country": "JP", "count": 40}],
+                },
+                "manga": {
+                    "count": 5,
+                    "chaptersRead": 120,
+                    "volumesRead": 10,
+                    "meanScore": 80.0,
+                    "genres": [{"genre": "Romance", "count": 3}],
+                    "statuses": [{"status": "COMPLETED", "count": 3}],
+                    "formats": [{"format": "MANGA", "count": 5}],
+                    "releaseYears": [{"releaseYear": 2022, "count": 2}],
+                    "studios": [],
+                    "countries": [{"country": "JP", "count": 5}],
+                },
+            }
+        }
+    }
+
+    client = AniListClient.__new__(AniListClient)
+    result = client._build_statistics_response(raw)
+
+    assert isinstance(result, StatisticsResponse)
+    assert result.anime.count == 42
+    assert result.anime.formats[0].label == "TV"
+    assert result.anime.release_years[0].label == "2023"
+    assert result.anime.studios[0].label == "MAPPA"
+    assert result.manga.count == 5
+    assert result.manga.episodes_watched == 120
