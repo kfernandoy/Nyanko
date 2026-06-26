@@ -1049,7 +1049,7 @@ async def statistics_period(
     return database.period_statistics(from_date, to_date, media_type.upper())
 
 
-@app.get("/api/statistics/export")
+@app.get("/api/statistics/export", response_model=StatisticsResponse)
 async def statistics_export(
     response: Response,
     provider: str = "anilist",
