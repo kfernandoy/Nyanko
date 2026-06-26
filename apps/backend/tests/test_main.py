@@ -662,3 +662,35 @@ def test_search_filters_accepts_valid_sort():
     assert SearchFilters(sort="POPULARITY").sort == "POPULARITY"
     assert SearchFilters(sort="SCORE").sort == "SCORE"
     assert SearchFilters().sort == "POPULARITY"
+
+
+def test_statistics_period_counts_completed_in_range(database, monkeypatch):
+    from nyanko_api.models import MediaItem
+    from fastapi.testclient import TestClient
+    from nyanko_api.main import app, get_database
+
+    monkeypatch.setattr(
+        "nyanko_api.main.get_provider_credential", lambda provider, alias: "token"
+    )
+    app.dependency_overrides[get_database] = lambda: database
+
+    item = MediaItem(
+        id=1, title="Test", status="COMPLETED", progress=12,
+        format="TV", genres=["Action"], year=2023,
+        completed_at="2024-06-15",
+    )
+    database.sync_provider_library("anilist", "AniList", [item])
+
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/statistics/period?from=2024-01-01&to=2024-12-31&type=ANIME"
+            )
+    finally:
+        app.dependency_overrides.pop(get_database, None)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 1
+    assert data["episodes_watched"] == 12
+    assert any(f["label"] == "TV" for f in data["formats"])

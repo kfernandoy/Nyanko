@@ -51,7 +51,9 @@ from .models import (
     AccountUpdateResult,
     AssociationCandidateInfo,
     ActivityItem,
-    AnimeStatistics,
+    AnimeStatistics,       # ponytail: alias — eliminar cuando no queden referencias
+    MediaStatistics,
+    StatisticsResponse,
     BulkUpdateResult,
     CacheStatusItem,
     CacheStatusResponse,
@@ -1011,8 +1013,8 @@ async def season(
         raise_provider_auth_error(error, provider, account)
 
 
-@app.get("/api/statistics", response_model=AnimeStatistics)
-@app.get("/api/anilist/statistics", response_model=AnimeStatistics, include_in_schema=False)
+@app.get("/api/statistics", response_model=StatisticsResponse)
+@app.get("/api/anilist/statistics", response_model=StatisticsResponse, include_in_schema=False)
 async def statistics(
     response: Response,
     provider: str = "anilist",
@@ -1020,17 +1022,52 @@ async def statistics(
     token: str = Depends(require_token),
     settings: Settings = Depends(get_settings),
     database: Database = Depends(get_database),
-) -> AnimeStatistics:
+) -> StatisticsResponse:
     try:
         media_provider = _get_provider(settings, provider)
         stats, status = await cached_value(
             database,
-            account_cache_key(provider, account, "statistics"),
+            account_cache_key(provider, account, "statistics:v2"),
             600,
-            AnimeStatistics,
+            StatisticsResponse,
             lambda: media_provider.statistics(token),
         )
         response.headers["X-Cache-Status"] = status.value
+        return stats
+    except Exception as error:
+        raise_provider_auth_error(error, provider, account)
+
+
+@app.get("/api/statistics/period", response_model=MediaStatistics)
+async def statistics_period(
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    media_type: str = Query("ANIME", alias="type"),
+    _: str = Depends(require_token),
+    database: Database = Depends(get_database),
+) -> MediaStatistics:
+    return database.period_statistics(from_date, to_date, media_type.upper())
+
+
+@app.get("/api/statistics/export")
+async def statistics_export(
+    response: Response,
+    provider: str = "anilist",
+    account: str = "default",
+    token: str = Depends(require_token),
+    settings: Settings = Depends(get_settings),
+    database: Database = Depends(get_database),
+) -> StatisticsResponse:
+    try:
+        media_provider = _get_provider(settings, provider)
+        stats, _ = await cached_value(
+            database,
+            account_cache_key(provider, account, "statistics:v2"),
+            600,
+            StatisticsResponse,
+            lambda: media_provider.statistics(token),
+        )
+        response.headers["Content-Disposition"] = 'attachment; filename="nyanko-stats.json"'
         return stats
     except Exception as error:
         raise_provider_auth_error(error, provider, account)
