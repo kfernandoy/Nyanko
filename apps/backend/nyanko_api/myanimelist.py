@@ -331,6 +331,8 @@ class MyAnimeListClient:
             year=year,
             format=to_canonical_format("mal", node.get("media_type")).value,
             site_url=f"https://myanimelist.net/anime/{node['id']}",
+            started_at=list_status.get("start_date") or None,
+            completed_at=list_status.get("finish_date") or None,
         )
 
     @staticmethod

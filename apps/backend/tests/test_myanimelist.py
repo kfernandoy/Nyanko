@@ -351,3 +351,53 @@ async def test_discover_search_mode(monkeypatch):
     assert result.results[0].average_score == 90
     assert client.calls[0]["url"].endswith("/anime")
     assert client.calls[0]["params"]["q"] == "frieren"
+
+
+def test_media_item_includes_dates():
+    from nyanko_api.myanimelist import MyAnimeListClient
+    entry = {
+        "node": {
+            "id": 1,
+            "title": "Test",
+            "main_picture": {},
+            "alternative_titles": {},
+            "media_type": "tv",
+            "status": "finished_airing",
+            "num_episodes": 12,
+            "start_date": "2024-01-07",
+        },
+        "list_status": {
+            "status": "completed",
+            "score": 8,
+            "num_episodes_watched": 12,
+            "start_date": "2024-01-15",
+            "finish_date": "2024-03-31",
+        },
+    }
+    item = MyAnimeListClient._media_item(entry)
+    assert item.started_at == "2024-01-15"
+    assert item.completed_at == "2024-03-31"
+
+
+def test_media_item_handles_missing_dates():
+    from nyanko_api.myanimelist import MyAnimeListClient
+    entry = {
+        "node": {
+            "id": 2,
+            "title": "Test2",
+            "main_picture": {},
+            "alternative_titles": {},
+            "media_type": "tv",
+            "status": "currently_airing",
+            "num_episodes": 24,
+            "start_date": "2024-04-01",
+        },
+        "list_status": {
+            "status": "watching",
+            "score": 0,
+            "num_episodes_watched": 5,
+        },
+    }
+    item = MyAnimeListClient._media_item(entry)
+    assert item.started_at is None
+    assert item.completed_at is None
