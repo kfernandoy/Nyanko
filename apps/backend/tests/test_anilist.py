@@ -365,7 +365,7 @@ def test_statistics_returns_statistics_response():
                     "statuses": [{"status": "COMPLETED", "count": 30}],
                     "formats": [{"format": "TV", "count": 35}],
                     "releaseYears": [{"releaseYear": 2023, "count": 8}],
-                    "studios": [{"studio": "MAPPA", "count": 3}],
+                    "studios": [{"studio": {"id": 1, "name": "MAPPA"}, "count": 3}],
                     "countries": [{"country": "JP", "count": 40}],
                 },
                 "manga": {

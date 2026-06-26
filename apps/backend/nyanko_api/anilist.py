@@ -110,7 +110,7 @@ query Statistics {
         statuses(sort: COUNT_DESC) { status count }
         formats(sort: COUNT_DESC) { format count }
         releaseYears(sort: COUNT_DESC) { releaseYear count }
-        studios(limit: 10, sort: COUNT_DESC) { studio count }
+        studios(limit: 10, sort: COUNT_DESC) { studio { id name } count }
         countries(sort: COUNT_DESC) { country count }
       }
       manga {
@@ -119,7 +119,7 @@ query Statistics {
         statuses(sort: COUNT_DESC) { status count }
         formats(sort: COUNT_DESC) { format count }
         releaseYears(sort: COUNT_DESC) { releaseYear count }
-        studios(limit: 10, sort: COUNT_DESC) { studio count }
+        studios(limit: 10, sort: COUNT_DESC) { studio { id name } count }
         countries(sort: COUNT_DESC) { country count }
       }
     }
@@ -623,6 +623,9 @@ class AniListClient:
         def _groups(items: list, key: str) -> list[StatisticGroup]:
             return [StatisticGroup(label=str(item[key]), count=item["count"]) for item in items]
 
+        def _studio_groups(items: list) -> list[StatisticGroup]:
+            return [StatisticGroup(label=item["studio"]["name"], count=item["count"]) for item in items]
+
         anime = data["Viewer"]["statistics"]["anime"]
         manga = data["Viewer"]["statistics"]["manga"]
         return StatisticsResponse(
@@ -635,7 +638,7 @@ class AniListClient:
                 statuses=_groups(anime["statuses"], "status"),
                 formats=_groups(anime["formats"], "format"),
                 release_years=_groups(anime["releaseYears"], "releaseYear"),
-                studios=_groups(anime["studios"], "studio"),
+                studios=_studio_groups(anime["studios"]),
                 countries=_groups(anime["countries"], "country"),
             ),
             manga=MediaStatistics(
@@ -647,7 +650,7 @@ class AniListClient:
                 statuses=_groups(manga["statuses"], "status"),
                 formats=_groups(manga["formats"], "format"),
                 release_years=_groups(manga["releaseYears"], "releaseYear"),
-                studios=_groups(manga["studios"], "studio"),
+                studios=_studio_groups(manga["studios"]),
                 countries=_groups(manga["countries"], "country"),
             ),
         )
