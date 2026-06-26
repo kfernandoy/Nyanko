@@ -118,6 +118,46 @@ export interface MediaListEntry {
   completed_at: FuzzyDate;
 }
 
+export interface CharacterEdge {
+  node: {
+    name: { full: string | null } | null;
+    image: { medium: string | null } | null;
+  };
+  role: string | null;
+  voice_actors: Array<{
+    name: { full: string | null } | null;
+    image: { medium: string | null } | null;
+  }>;
+}
+
+export interface StaffEdge {
+  node: {
+    name: { full: string | null } | null;
+    image: { medium: string | null } | null;
+  };
+  role: string | null;
+}
+
+export interface RelationEdge {
+  id: number;
+  title: string;
+  format: string | null;
+  relation_type: string;
+}
+
+export interface RecommendationItem {
+  id: number;
+  title: string;
+  format: string | null;
+  cover_image: string | null;
+  rating: number | null;
+}
+
+export interface TrailerInfo {
+  id: string;
+  site: string;
+}
+
 export interface MediaDetails {
   id: number;
   title: string;
@@ -148,6 +188,11 @@ export interface MediaDetails {
   next_airing_at: number | null;
   score_format: string;
   list_entry: MediaListEntry | null;
+  characters?: CharacterEdge[];
+  staff?: StaffEdge[];
+  relations?: RelationEdge[];
+  recommendations?: RecommendationItem[];
+  trailer?: TrailerInfo | null;
 }
 
 export interface MediaEntryUpdate {
