@@ -759,7 +759,7 @@ class AniListClient:
             score_format=data["Viewer"]["mediaListOptions"]["scoreFormat"],
             list_entry=self._list_entry(entry) if entry else None,
             trailer=(
-                TrailerInfo(id=media["trailer"]["id"], site=media["trailer"]["site"])
+                TrailerInfo(id=media["trailer"]["id"], site=media["trailer"].get("site") or "")
                 if media.get("trailer") and media["trailer"].get("id")
                 else None
             ),
@@ -953,8 +953,8 @@ class AniListClient:
         return [
             StaffEdge(
                 node=CharacterNode(
-                    name=CharacterName(full=(e.get("node") or {}).get("name", {}).get("full")),
-                    image=CharacterImage(medium=(e.get("node") or {}).get("image", {}).get("medium")),
+                    name=CharacterName(full=((e.get("node") or {}).get("name") or {}).get("full")),
+                    image=CharacterImage(medium=((e.get("node") or {}).get("image") or {}).get("medium")),
                 ),
                 role=e.get("role"),
             )

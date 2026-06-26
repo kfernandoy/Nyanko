@@ -672,7 +672,7 @@ export default function App() {
         )}
       </main>
       {detailLoading && <div className="modal-backdrop"><div className="modal-loading">Cargando información…</div></div>}
-      {details && <DetailsModal details={details} canonicalId={detailCanonicalId} mediaType={details.media_type === "MANGA" ? "MANGA" : "ANIME"} onClose={() => setDetails(null)} onChanged={refreshDetails} onSelect={(id) => { setDetails(null); void openDetails(id); }} />}
+      {details && <DetailsModal details={details} canonicalId={detailCanonicalId} mediaType={details.media_type === "MANGA" ? "MANGA" : "ANIME"} onClose={() => setDetails(null)} onChanged={refreshDetails} onSelect={(id, type) => { setDetails(null); void openDetails(id, type); }} />}
     </div>
   );
 }
@@ -1489,13 +1489,17 @@ const RELATION_TYPE_LABELS: Record<string, string> = {
   SPIN_OFF: "Spin-off",
 };
 
+function formatToMediaType(format: string | null | undefined): "ANIME" | "MANGA" {
+  return ["MANGA", "NOVEL", "ONE_SHOT"].includes(format ?? "") ? "MANGA" : "ANIME";
+}
+
 function DetailsModal({ details, canonicalId, mediaType, onClose, onChanged, onSelect }: {
   details: MediaDetails;
   canonicalId: number | null;
   mediaType: "ANIME" | "MANGA";
   onClose: () => void;
   onChanged: () => Promise<void>;
-  onSelect?: (id: number) => void;
+  onSelect?: (id: number, type: "ANIME" | "MANGA") => void;
 }) {
   const isManga = mediaType === "MANGA";
   const entry = details.list_entry;
@@ -1635,7 +1639,7 @@ function DetailsModal({ details, canonicalId, mediaType, onClose, onChanged, onS
                 <button
                   key={rel.id}
                   className="relation-chip"
-                  onClick={() => { onClose(); onSelect?.(rel.id); }}
+                  onClick={() => { onClose(); onSelect?.(rel.id, formatToMediaType(rel.format)); }}
                 >
                   <span className="relation-type">{RELATION_TYPE_LABELS[rel.relation_type] ?? "Relacionado"}</span>
                   {rel.title}
@@ -1706,7 +1710,7 @@ function DetailsModal({ details, canonicalId, mediaType, onClose, onChanged, onS
                 <button
                   key={rec.id}
                   className="recommendation-card"
-                  onClick={() => { onClose(); onSelect?.(rec.id); }}
+                  onClick={() => { onClose(); onSelect?.(rec.id, formatToMediaType(rec.format)); }}
                 >
                   {rec.cover_image && (
                     <div
