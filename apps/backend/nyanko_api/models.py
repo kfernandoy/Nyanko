@@ -296,6 +296,7 @@ class RelationEdge(BaseModel):
     title: str
     format: str | None = None
     relation_type: str
+    cover_image: str | None = None
 
 
 class RecommendationItem(BaseModel):

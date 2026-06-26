@@ -143,6 +143,7 @@ export interface RelationEdge {
   title: string;
   format: string | null;
   relation_type: string;
+  cover_image?: string | null;
 }
 
 export interface RecommendationItem {

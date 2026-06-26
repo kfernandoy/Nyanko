@@ -57,6 +57,7 @@ h1 { margin: 5px 0 0; font-size: clamp(27px, 4vw, 42px); letter-spacing: -.04em;
 .tag-input button { border: 1px solid #3b4254; border-radius: 8px; padding: 8px 12px; color: #c3c8d4; background: transparent; cursor: pointer; }
 .tag-input button:disabled { opacity: .4; cursor: not-allowed; }
 .primary, .now-playing button, .error button { border: 0; border-radius: 9px; padding: 10px 15px; color: white; background: #7163e8; }
+button.small { border-radius: 6px; padding: 5px 12px; font-size: 12px; }
 .now-playing, .detection-card { display: flex; align-items: center; gap: 15px; padding: 17px 20px; border: 1px solid #403b69; border-radius: 14px; background: linear-gradient(100deg, #1b1933, #151827); }
 .now-playing div:nth-child(2), .detection-card div:nth-child(2) { display: grid; gap: 3px; }.now-playing span, .detection-card span { color: #9ba2b5; font-size: 13px; }.now-playing button { margin-left: auto; }
 .detection-progress { display: grid; gap: 6px; margin-top: 6px; }
@@ -189,7 +190,17 @@ h1 { margin: 5px 0 0; font-size: clamp(27px, 4vw, 42px); letter-spacing: -.04em;
 .detail-tabs { display: flex; gap: 8px; padding: 22px 28px 0; }.detail-tabs button { border: 0; border-radius: 8px; padding: 9px 13px; color: #858da1; background: transparent; }.detail-tabs .selected { color: white; background: #282d3c; }
 .detail-body, .edit-entry { padding: 22px 28px 30px; }.synopsis h3, .alternative-titles h3 { margin: 0 0 9px; font-size: 14px; }.synopsis p, .alternative-titles p { color: #a6adbd; line-height: 1.65; white-space: pre-line; }
 .detail-facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 22px 0; }.detail-facts div { display: grid; gap: 6px; min-width: 0; padding: 13px; border-radius: 9px; background: #181d29; }.detail-facts span { color: #747d91; font-size: 11px; }.detail-facts strong { overflow: hidden; color: #dce0e9; font-size: 13px; text-overflow: ellipsis; }
-.external-link { display: inline-block; margin-top: 10px; color: #9d91ff; text-decoration: none; }.modal-error { margin: 16px 28px 0; padding: 10px 12px; border-radius: 8px; color: #e7a9b5; background: #321821; }
+.external-link { display: inline-block; margin-top: 10px; color: #9d91ff; text-decoration: none; }
+.detail-section { margin-top: 22px; }.detail-section h3 { margin: 0 0 12px; font-size: 14px; color: #c3c8d4; }
+.portrait-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 10px; }
+.portrait-card { display: grid; gap: 5px; border: 0; padding: 0; background: transparent; text-align: left; color: inherit; cursor: pointer; }
+.portrait-card:hover .portrait-img { opacity: 0.8; }
+.portrait-img { position: relative; aspect-ratio: 2/3; border-radius: 8px; background: #1e2332 center/cover; overflow: hidden; transition: opacity .15s; }
+.portrait-badge { position: absolute; bottom: 0; left: 0; right: 0; padding: 14px 5px 5px; font-size: 10px; font-weight: 600; text-align: center; color: #e8e4ff; background: linear-gradient(transparent, #0d101acc); line-height: 1.2; }
+.portrait-va-thumb { position: absolute; bottom: 4px; right: 4px; width: 38%; aspect-ratio: 2/3; border-radius: 5px; border: 2px solid #11151f; background: #1e2332 center/cover; }
+.portrait-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; color: #dce0ea; }
+.portrait-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: #747d91; }
+.portrait-va { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: #9b8ff0; }.modal-error { margin: 16px 28px 0; padding: 10px 12px; border-radius: 8px; color: #e7a9b5; background: #321821; }
 .modal-success { margin: 16px 28px 0; padding: 10px 12px; border: 1px solid #275b48; border-radius: 8px; color: #94e4bd; background: #13271f; }
 .edit-entry { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }.edit-entry label { display: grid; gap: 7px; color: #939bac; font-size: 12px; }.notes-field, .checkbox-field, .edit-actions { grid-column: 1 / -1; }.checkbox-field { display: flex !important; align-items: center; }.checkbox-field input { width: 16px; }.edit-actions { display: flex; justify-content: space-between; margin-top: 5px; }.danger { border: 1px solid #713444; border-radius: 9px; padding: 9px 14px; color: #eea9b7; background: #321821; }
 @media (max-width: 900px) { .app-shell { grid-template-columns: 76px 1fr; }.sidebar { padding: 25px 12px; }.brand strong, nav button, .service-status { font-size: 0; }.brand { justify-content: center; }.toolbar { align-items: stretch; flex-direction: column; }.toolbar input { width: 100%; } }

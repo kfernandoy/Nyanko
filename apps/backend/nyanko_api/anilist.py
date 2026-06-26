@@ -163,7 +163,7 @@ query MediaDetails($id: Int!) {
     relations {
       edges {
         relationType
-        node { id format title { userPreferred } }
+        node { id format title { userPreferred } coverImage { large } }
       }
     }
     recommendations(sort: RATING_DESC, perPage: 6) {
@@ -255,7 +255,7 @@ query MangaDetails($id: Int!) {
     relations {
       edges {
         relationType
-        node { id format title { userPreferred } }
+        node { id format title { userPreferred } coverImage { large } }
       }
     }
     recommendations(sort: RATING_DESC, perPage: 6) {
@@ -901,6 +901,7 @@ class AniListClient:
                 title=e["node"]["title"]["userPreferred"],
                 format=e["node"].get("format"),
                 relation_type=e.get("relationType") or "OTHER",
+                cover_image=((e["node"].get("coverImage") or {}).get("large")),
             )
             for e in edges
             if (e.get("node") or {}).get("id")

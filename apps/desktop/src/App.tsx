@@ -1503,7 +1503,7 @@ function DetailsModal({ details, canonicalId, mediaType, onClose, onChanged, onS
 }) {
   const isManga = mediaType === "MANGA";
   const entry = details.list_entry;
-  const [tab, setTab] = useState<"info" | "edit">("info");
+  const [tab, setTab] = useState<"info" | "reparto" | "recomendaciones" | "edit">("info");
   const [status, setStatus] = useState(entry?.status ?? "PLANNING");
   const [progress, setProgress] = useState(entry?.progress ?? 0);
   const [score, setScore] = useState(entry?.score ?? 0);
@@ -1579,7 +1579,16 @@ function DetailsModal({ details, canonicalId, mediaType, onClose, onChanged, onS
         <div className="detail-poster" style={details.cover_image ? { backgroundImage: `url(${details.cover_image})` } : undefined} />
         <div><p className="eyebrow">{details.format ?? (isManga ? "MANGA" : "ANIME")} {details.season ? `· ${details.season} ${details.season_year ?? ""}` : ""}</p><h2>{details.title}</h2><div className="genre-list">{details.genres.map((genre) => <span key={genre}>{genre}</span>)}</div></div>
       </div>
-      <div className="detail-tabs"><button className={tab === "info" ? "selected" : ""} onClick={() => setTab("info")}>Información</button><button className={tab === "edit" ? "selected" : ""} onClick={() => setTab("edit")}>{entry ? "Editar lista" : "Añadir a lista"}</button></div>
+      <div className="detail-tabs">
+        <button className={tab === "info" ? "selected" : ""} onClick={() => setTab("info")}>Información</button>
+        {((details.characters ?? []).length > 0 || (details.staff ?? []).length > 0) && (
+          <button className={tab === "reparto" ? "selected" : ""} onClick={() => setTab("reparto")}>Reparto</button>
+        )}
+        {(details.recommendations ?? []).length > 0 && (
+          <button className={tab === "recomendaciones" ? "selected" : ""} onClick={() => setTab("recomendaciones")}>Recomendaciones</button>
+        )}
+        <button className={tab === "edit" ? "selected" : ""} onClick={() => setTab("edit")}>{entry ? "Editar lista" : "Añadir a lista"}</button>
+      </div>
       {modalError && <div className="modal-error">{modalError}</div>}
       {modalSuccess && <div className="modal-success">{modalSuccess}</div>}
       {updateResults && (
@@ -1592,7 +1601,7 @@ function DetailsModal({ details, canonicalId, mediaType, onClose, onChanged, onS
           ))}
         </div>
       )}
-      {tab === "info" ? <div className="detail-body">
+      {tab === "info" && <div className="detail-body">
         {description && <div className="synopsis"><h3>Sinopsis</h3><p>{description}</p></div>}
         <div className="detail-facts">
           <Fact label="Estado" value={details.status} />
@@ -1619,110 +1628,23 @@ function DetailsModal({ details, canonicalId, mediaType, onClose, onChanged, onS
         </div>
         {alternativeTitles.length > 1 && <div className="alternative-titles"><h3>Títulos alternativos</h3><p>{alternativeTitles.join(" · ")}</p></div>}
         {details.trailer && details.trailer.site === "youtube" && (
-          <div className="detail-section">
-            <h3>Trailer</h3>
-            <a
-              className="external-link"
-              href={`https://www.youtube.com/watch?v=${details.trailer.id}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Abrir trailer en YouTube ↗
-            </a>
-          </div>
+          <a className="external-link" href={`https://www.youtube.com/watch?v=${details.trailer.id}`} target="_blank" rel="noreferrer">Ver trailer en YouTube ↗</a>
         )}
-        {(details.relations ?? []).length > 0 && (
+        {(details.relations ?? []).filter(r => r.format !== "MUSIC").length > 0 && (
           <div className="detail-section">
             <h3>Obras relacionadas</h3>
-            <div className="relation-list">
-              {(details.relations ?? []).map((rel) => (
+            <div className="portrait-grid">
+              {(details.relations ?? []).filter(r => r.format !== "MUSIC").map((rel) => (
                 <button
                   key={rel.id}
-                  className="relation-chip"
+                  className="portrait-card"
                   onClick={() => { onClose(); onSelect?.(rel.id, formatToMediaType(rel.format)); }}
                 >
-                  <span className="relation-type">{RELATION_TYPE_LABELS[rel.relation_type] ?? "Relacionado"}</span>
-                  {rel.title}
-                  {rel.format && <span className="relation-format"> · {rel.format.replace("_", " ")}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {!isManga && (details.characters ?? []).length > 0 && (
-          <div className="detail-section">
-            <h3>Reparto</h3>
-            <div className="character-grid">
-              {(details.characters ?? []).map((edge, i) => (
-                <div key={i} className="character-card">
-                  <div className="character-images">
-                    {edge.node.image?.medium && (
-                      <div
-                        className="character-portrait"
-                        style={{ backgroundImage: `url(${edge.node.image.medium})` }}
-                      />
-                    )}
-                    {edge.voice_actors[0]?.image?.medium && (
-                      <div
-                        className="character-portrait va"
-                        style={{ backgroundImage: `url(${edge.voice_actors[0].image.medium})` }}
-                      />
-                    )}
+                  <div className="portrait-img" style={rel.cover_image ? { backgroundImage: `url(${rel.cover_image})` } : undefined}>
+                    <span className="portrait-badge">{RELATION_TYPE_LABELS[rel.relation_type] ?? "Relacionado"}</span>
                   </div>
-                  <div className="character-info">
-                    <strong>{edge.node.name?.full ?? "?"}</strong>
-                    <small>{edge.role === "MAIN" ? "Principal" : "Secundario"}</small>
-                    {edge.voice_actors[0]?.name?.full && (
-                      <span>{edge.voice_actors[0].name.full}</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {(details.staff ?? []).length > 0 && (
-          <div className="detail-section">
-            <h3>Staff</h3>
-            <ul className="staff-list">
-              {(details.staff ?? []).map((edge, i) => (
-                <li key={i} className="staff-item">
-                  {edge.node.image?.medium && (
-                    <div
-                      className="staff-portrait"
-                      style={{ backgroundImage: `url(${edge.node.image.medium})` }}
-                    />
-                  )}
-                  <div>
-                    <strong>{edge.node.name?.full ?? "?"}</strong>
-                    <small>{edge.role ?? ""}</small>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {(details.recommendations ?? []).length > 0 && (
-          <div className="detail-section">
-            <h3>Recomendaciones</h3>
-            <div className="recommendation-grid">
-              {(details.recommendations ?? []).map((rec) => (
-                <button
-                  key={rec.id}
-                  className="recommendation-card"
-                  onClick={() => { onClose(); onSelect?.(rec.id, formatToMediaType(rec.format)); }}
-                >
-                  {rec.cover_image && (
-                    <div
-                      className="recommendation-cover"
-                      style={{ backgroundImage: `url(${rec.cover_image})` }}
-                    />
-                  )}
-                  <div className="recommendation-info">
-                    <strong title={rec.title}>{rec.title}</strong>
-                    {rec.format && <small>{rec.format.replace("_", " ")}</small>}
-                    {rec.rating != null && <span>★ {rec.rating}</span>}
-                  </div>
+                  <span className="portrait-name">{rel.title}</span>
+                  {rel.format && <span className="portrait-sub">{rel.format.replace(/_/g, " ")}</span>}
                 </button>
               ))}
             </div>
@@ -1730,7 +1652,63 @@ function DetailsModal({ details, canonicalId, mediaType, onClose, onChanged, onS
         )}
         {canonicalId && <TagEditor canonicalId={canonicalId} onChanged={onChanged} />}
         <a className="external-link" href={details.site_url} target="_blank" rel="noreferrer">Abrir en AniList ↗</a>
-      </div> : <div className="edit-entry">
+      </div>}
+      {tab === "reparto" && <div className="detail-body">
+        {!isManga && (details.characters ?? []).length > 0 && (
+          <div className="detail-section">
+            <h3>Personajes</h3>
+            <div className="portrait-grid">
+              {(details.characters ?? []).map((edge, i) => {
+                const va = edge.voice_actors[0];
+                return (
+                  <div key={i} className="portrait-card">
+                    <div className="portrait-img" style={edge.node.image?.medium ? { backgroundImage: `url(${edge.node.image.medium})` } : undefined}>
+                      {va?.image?.medium && (
+                        <div className="portrait-va-thumb" style={{ backgroundImage: `url(${va.image.medium})` }} />
+                      )}
+                    </div>
+                    <span className="portrait-name">{edge.node.name?.full ?? "?"}</span>
+                    <span className="portrait-sub">{edge.role === "MAIN" ? "Principal" : "Secundario"}</span>
+                    {va?.name?.full && <span className="portrait-va">{va.name.full}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {(details.staff ?? []).length > 0 && (
+          <div className="detail-section">
+            <h3>Staff</h3>
+            <div className="portrait-grid">
+              {(details.staff ?? []).map((edge, i) => (
+                <div key={i} className="portrait-card">
+                  <div className="portrait-img" style={edge.node.image?.medium ? { backgroundImage: `url(${edge.node.image.medium})` } : undefined} />
+                  <span className="portrait-name">{edge.node.name?.full ?? "?"}</span>
+                  {edge.role && <span className="portrait-sub">{edge.role}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>}
+      {tab === "recomendaciones" && <div className="detail-body">
+        <div className="portrait-grid">
+          {(details.recommendations ?? []).map((rec) => (
+            <button
+              key={rec.id}
+              className="portrait-card"
+              onClick={() => { onClose(); onSelect?.(rec.id, formatToMediaType(rec.format)); }}
+            >
+              <div className="portrait-img" style={rec.cover_image ? { backgroundImage: `url(${rec.cover_image})` } : undefined}>
+                {rec.rating != null && <span className="portrait-badge">★ {rec.rating}</span>}
+              </div>
+              <span className="portrait-name">{rec.title}</span>
+              {rec.format && <span className="portrait-sub">{rec.format.replace(/_/g, " ")}</span>}
+            </button>
+          ))}
+        </div>
+      </div>}
+      {tab === "edit" && <div className="edit-entry">
         <label>Estado<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="CURRENT">Viendo</option><option value="PLANNING">Planeado</option><option value="COMPLETED">Completado</option><option value="PAUSED">Pausado</option><option value="DROPPED">Abandonado</option></select></label>
         <label>Progreso<input type="number" min="0" max={isManga ? (details.chapters ?? undefined) : (details.episodes ?? undefined)} value={progress} onChange={(event) => setProgress(Number(event.target.value))} /></label>
         <label>Puntuación<input type="number" min="0" max={scoreConfig.max} step={scoreConfig.step} value={score} onChange={(event) => setScore(Number(event.target.value))} /></label>
