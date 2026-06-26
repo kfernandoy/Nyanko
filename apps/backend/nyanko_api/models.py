@@ -117,6 +117,8 @@ class MediaItem(BaseModel):
     updated_at: int | None = None
     canonical_id: int | None = None
     provider: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
 
 
 class ProgressUpdate(BaseModel):

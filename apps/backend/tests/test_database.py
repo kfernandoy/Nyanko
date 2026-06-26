@@ -79,7 +79,7 @@ def test_initialize_creates_canonical_provider_schema(monkeypatch):
         "association_candidates",
         "extension_clients",
     }.issubset(tables)
-    assert version == 6
+    assert version == 7
     assert provider["display_name"] == "AniList"
 
 
@@ -755,3 +755,30 @@ def test_resolve_conflict_updates_values(monkeypatch):
     assert updated is not None
     assert updated["status"] == "resolved_remote"
     assert updated["resolution_value"] == "12"
+
+
+def test_library_entries_has_date_columns(monkeypatch):
+    database = memory_database(monkeypatch)
+    with database.connect() as connection:
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(library_entries)")}
+    assert "started_at" in columns
+    assert "completed_at" in columns
+
+
+def test_sync_library_stores_dates(monkeypatch):
+    database = memory_database(monkeypatch)
+    item = MediaItem(
+        id=1,
+        title="Test",
+        status="COMPLETED",
+        progress=12,
+        started_at="2024-01-15",
+        completed_at="2024-03-30",
+    )
+    database.sync_provider_library("anilist", "AniList", [item])
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT started_at, completed_at FROM library_entries"
+        ).fetchone()
+    assert row["started_at"] == "2024-01-15"
+    assert row["completed_at"] == "2024-03-30"

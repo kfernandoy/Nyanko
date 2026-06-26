@@ -183,7 +183,7 @@ CREATE TABLE IF NOT EXISTS remote_library_entries (
 );
 """
 
-CANONICAL_SCHEMA_VERSION = 6
+CANONICAL_SCHEMA_VERSION = 7
 CACHE_RESOURCE_LIMITS = {"media:": 100, "season:": 24}
 
 
@@ -242,6 +242,8 @@ class Database:
             self._add_column(connection, "media", "volume_count", "INTEGER")
             self._add_column(connection, "media_titles", "normalized_title", "TEXT")
             self._backfill_normalized_titles(connection)
+            self._add_column(connection, "library_entries", "started_at", "TEXT")
+            self._add_column(connection, "library_entries", "completed_at", "TEXT")
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_media_titles_normalized "
                 "ON media_titles(normalized_title)"
@@ -876,11 +878,20 @@ class Database:
                 self._detect_conflict(connection, account_id, media_id, payload)
                 if writes_canonical_library:
                     connection.execute(
-                        "INSERT INTO library_entries(media_id, status, progress) "
-                        "VALUES (?, ?, ?) ON CONFLICT(media_id) DO UPDATE SET "
+                        "INSERT INTO library_entries"
+                        "(media_id, status, progress, started_at, completed_at) "
+                        "VALUES (?, ?, ?, ?, ?) ON CONFLICT(media_id) DO UPDATE SET "
                         "status = excluded.status, progress = excluded.progress, "
+                        "started_at = COALESCE(excluded.started_at, started_at), "
+                        "completed_at = COALESCE(excluded.completed_at, completed_at), "
                         "updated_at = CURRENT_TIMESTAMP",
-                        (media_id, payload["status"], payload["progress"]),
+                        (
+                            media_id,
+                            payload["status"],
+                            payload["progress"],
+                            payload.get("started_at"),
+                            payload.get("completed_at"),
+                        ),
                     )
                 if (
                     media_type == "ANIME"
