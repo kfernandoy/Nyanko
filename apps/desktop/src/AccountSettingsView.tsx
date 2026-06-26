@@ -3,14 +3,21 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import type { AccountInfo } from "./types";
 
+const PROVIDER_LABELS: Record<string, string> = {
+  anilist: "AniList",
+  mal: "MyAnimeList",
+};
+
 function accountError(reason: unknown): string {
   return reason instanceof Error ? reason.message : "No se pudo actualizar la cuenta";
 }
 
 export function AccountSettingsView({
+  activeAccount,
   onConnect,
   onAccountChanged,
 }: {
+  activeAccount: { provider: string; alias: string };
   onConnect: (provider: string, alias: string) => Promise<void>;
   onAccountChanged: (provider: string, alias: string) => Promise<void>;
 }) {
@@ -61,6 +68,22 @@ export function AccountSettingsView({
     setAlias("");
   };
 
+  const activate = async (account: AccountInfo) => {
+    setSaving(account.id);
+    setError(null);
+    setMessage(null);
+    try {
+      await api.updateAccount(account.id, { is_primary: true });
+      await load();
+      await onAccountChanged(account.provider, account.alias);
+      setMessage(`${PROVIDER_LABELS[account.provider] ?? account.provider} activado como proveedor principal.`);
+    } catch (reason) {
+      setError(accountError(reason));
+    } finally {
+      setSaving(null);
+    }
+  };
+
   const disconnect = async (account: AccountInfo) => {
     if (!window.confirm(`¿Desconectar la cuenta ${account.alias} de ${account.provider}?`)) return;
     setSaving(account.id);
@@ -101,14 +124,24 @@ export function AccountSettingsView({
     }
   };
 
+  // Group accounts by provider, preserving DB order within each group
+  const providers = [...new Set(accounts.map((a) => a.provider))];
+  const byProvider = providers.reduce<Record<string, AccountInfo[]>>((groups, prov) => {
+    groups[prov] = accounts.filter((a) => a.provider === prov);
+    return groups;
+  }, {});
+
   return <section className="account-settings">
     <div className="account-heading">
       <div>
         <h2>Cuentas y proveedores</h2>
-        <p>La cuenta principal alimenta la biblioteca local. Las demás conservan su copia remota separada.</p>
+        <p>Conecta una o más cuentas. Solo un proveedor puede estar activo a la vez — el activo alimenta la biblioteca local.</p>
       </div>
       <div className="account-connect">
-        <select aria-label="Proveedor" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="anilist">AniList</option><option value="mal">MyAnimeList</option></select>
+        <select aria-label="Proveedor" value={provider} onChange={(event) => setProvider(event.target.value)}>
+          <option value="anilist">AniList</option>
+          <option value="mal">MyAnimeList</option>
+        </select>
         <input value={alias} maxLength={32} placeholder="Alias de cuenta" aria-label="Alias de cuenta" onChange={(event) => setAlias(event.target.value)} />
         <button className="primary" disabled={!alias.trim()} onClick={() => void connect()}>Conectar</button>
       </div>
@@ -116,25 +149,58 @@ export function AccountSettingsView({
     {error && <div className="modal-error">{error}</div>}
     {message && <div className="modal-success">{message}</div>}
     <div className="account-list">
-      {accounts.map((account) => <article key={account.id}>
-        <div className="account-identity">
-          <strong>{account.alias}</strong>
-          <span>{account.provider} · {account.authenticated ? "conectada" : "sin autenticar"}</span>
-          <small>{account.last_synced_at ? `Última sincronización: ${new Date(`${account.last_synced_at}Z`).toLocaleString("es")}` : "Aún no sincronizada"}</small>
-        </div>
-        <label>Dirección
-          <select disabled={saving === account.id || account.provider === "mal"} value={account.sync_direction} onChange={(event) => void update(account, { sync_direction: event.target.value as AccountInfo["sync_direction"] })}>
-            <option value="import">Sólo importar</option>
-            <option value="bidirectional">Bidireccional</option>
-            <option value="export">Sólo exportar</option>
-          </select>
-        </label>
-        <label className="primary-account"><input type="radio" name={`primary-account-${account.provider}`} checked={account.is_primary} disabled={saving === account.id} onChange={() => void update(account, { is_primary: true })} /> Principal</label>
-        <div className="account-actions">{account.authenticated
-          ? <>{account.provider === "mal" && <button className="primary" disabled={saving === account.id} onClick={() => void importMal(account)}>Importar</button>}<button className="danger" disabled={saving === account.id} onClick={() => void disconnect(account)}>Desconectar</button></>
-          : <button disabled={saving === account.id} onClick={() => void onConnect(account.provider, account.alias)}>Reconectar</button>}</div>
-      </article>)}
-      {!accounts.length && <p className="account-empty">No hay cuentas registradas.</p>}
+      {providers.length === 0 && <p className="account-empty">No hay cuentas registradas.</p>}
+      {providers.map((prov) => {
+        const provAccounts = byProvider[prov];
+        const isActive = activeAccount.provider === prov;
+        const primaryAuthenticated = provAccounts.find((a) => a.is_primary && a.authenticated)
+          ?? provAccounts.find((a) => a.authenticated);
+        return (
+          <div key={prov} className="provider-group">
+            <div className="provider-header">
+              <span className="provider-header-name">{PROVIDER_LABELS[prov] ?? prov}</span>
+              {isActive
+                ? <span className="badge-active">Activo</span>
+                : primaryAuthenticated && (
+                  <button
+                    className="small"
+                    disabled={saving === primaryAuthenticated.id}
+                    onClick={() => void activate(primaryAuthenticated)}
+                  >
+                    Activar
+                  </button>
+                )
+              }
+            </div>
+            {provAccounts.map((account) => (
+              <article key={account.id}>
+                <div className="account-identity">
+                  <strong>{account.alias}</strong>
+                  <span>{account.authenticated ? "conectada" : "sin autenticar"}</span>
+                  <small>{account.last_synced_at ? `Última sincronización: ${new Date(`${account.last_synced_at}Z`).toLocaleString("es")}` : "Aún no sincronizada"}</small>
+                </div>
+                <label>Dirección
+                  <select disabled={saving === account.id || account.provider === "mal"} value={account.sync_direction} onChange={(event) => void update(account, { sync_direction: event.target.value as AccountInfo["sync_direction"] })}>
+                    <option value="import">Sólo importar</option>
+                    <option value="bidirectional">Bidireccional</option>
+                    <option value="export">Sólo exportar</option>
+                  </select>
+                </label>
+                <label className="primary-account">
+                  <input type="radio" name={`primary-account-${prov}`} checked={account.is_primary} disabled={saving === account.id} onChange={() => void update(account, { is_primary: true })} />
+                  Principal
+                </label>
+                <div className="account-actions">
+                  {account.authenticated
+                    ? <>{account.provider === "mal" && <button className="primary" disabled={saving === account.id} onClick={() => void importMal(account)}>Importar</button>}<button className="danger" disabled={saving === account.id} onClick={() => void disconnect(account)}>Desconectar</button></>
+                    : <button disabled={saving === account.id} onClick={() => void onConnect(account.provider, account.alias)}>Reconectar</button>
+                  }
+                </div>
+              </article>
+            ))}
+          </div>
+        );
+      })}
     </div>
   </section>;
 }

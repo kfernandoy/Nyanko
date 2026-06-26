@@ -111,6 +111,7 @@ export default function App() {
     details: null,
   });
   const [capabilities, setCapabilities] = useState<ProviderCapabilities>(DEFAULT_CAPABILITIES);
+  const [activeAccount, setActiveAccountState] = useState({ provider: "anilist", alias: "default" });
 
   const setCacheStatus = useCallback((view: CacheableView, status: CacheStatus | null) => {
     setViewCacheStatus((previous) => ({ ...previous, [view]: status }));
@@ -123,7 +124,10 @@ export default function App() {
       const accounts = await api.accounts();
       const selected = accounts.find((account) => account.is_primary && account.authenticated)
         ?? accounts.find((account) => account.authenticated);
-      setActiveAccount(selected?.provider ?? "anilist", selected?.alias ?? "default");
+      const activeProv = selected?.provider ?? "anilist";
+      const activeAlias = selected?.alias ?? "default";
+      setActiveAccount(activeProv, activeAlias);
+      setActiveAccountState({ provider: activeProv, alias: activeAlias });
       const providerList = await api.providers();
       const activeProvider = providerList.find(p => p.name === (selected?.provider ?? "anilist"));
       setCapabilities(activeProvider?.capabilities ?? DEFAULT_CAPABILITIES);
@@ -475,6 +479,7 @@ export default function App() {
 
   const changeAccount = async (provider: string, alias: string) => {
     setActiveAccount(provider, alias);
+    setActiveAccountState({ provider, alias });
     resetRemoteState();
     setActivityLoaded(false);
     setStatisticsLoaded(false);
@@ -625,7 +630,6 @@ export default function App() {
             <CacheBadge status={viewCacheStatus[view as CacheableView]} />
           )}
           </div>
-          {!health?.authenticated && <button className="primary" onClick={() => void connectAccount()}>Conectar cuenta</button>}
         </header>
 
         {error && (
@@ -650,6 +654,7 @@ export default function App() {
         ) : view === "settings" ? (
           <DetectorSettingsView
             authenticated={Boolean(health?.authenticated)}
+            activeAccount={activeAccount}
             onSync={forceSync}
             onPreferencesChanged={refreshAfterPreferences}
             onLogout={logout}
