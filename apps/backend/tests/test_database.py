@@ -784,6 +784,36 @@ def test_sync_library_stores_dates(monkeypatch):
     assert row["completed_at"] == "2024-03-30"
 
 
+def test_sync_library_preserves_existing_dates_on_resync(monkeypatch):
+    database = memory_database(monkeypatch)
+    # First sync: with dates
+    item_with_dates = MediaItem(
+        id=1,
+        title="Test",
+        status="COMPLETED",
+        progress=12,
+        started_at="2024-01-15",
+        completed_at="2024-03-30",
+    )
+    database.sync_provider_library("anilist", "AniList", [item_with_dates])
+
+    # Re-sync: without dates (NULL) — should not overwrite
+    item_no_dates = MediaItem(
+        id=1,
+        title="Test",
+        status="COMPLETED",
+        progress=12,
+    )
+    database.sync_provider_library("anilist", "AniList", [item_no_dates])
+
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT started_at, completed_at FROM library_entries"
+        ).fetchone()
+    assert row["started_at"] == "2024-01-15"
+    assert row["completed_at"] == "2024-03-30"
+
+
 def test_period_statistics_counts_completed_in_range(monkeypatch):
     database = memory_database(monkeypatch)
     # media 1: completado dentro del rango

@@ -114,7 +114,7 @@ query Statistics {
         countries(sort: COUNT_DESC) { country count }
       }
       manga {
-        count chaptersRead volumesRead meanScore
+        count chaptersRead meanScore
         genres(limit: 10, sort: COUNT_DESC) { genre count }
         statuses(sort: COUNT_DESC) { status count }
         formats(sort: COUNT_DESC) { format count }

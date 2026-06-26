@@ -7,7 +7,7 @@ from difflib import SequenceMatcher
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
-from typing import TypeVar
+from typing import Literal, TypeVar
 
 from enum import StrEnum
 
@@ -1042,7 +1042,7 @@ async def statistics(
 async def statistics_period(
     from_date: str = Query(..., alias="from"),
     to_date: str = Query(..., alias="to"),
-    media_type: str = Query("ANIME", alias="type"),
+    media_type: Literal["ANIME", "MANGA"] = Query("ANIME", alias="type"),
     _: str = Depends(require_token),
     database: Database = Depends(get_database),
 ) -> MediaStatistics:
