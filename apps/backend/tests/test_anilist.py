@@ -394,3 +394,71 @@ def test_statistics_returns_statistics_response():
     assert result.anime.studios[0].label == "MAPPA"
     assert result.manga.count == 5
     assert result.manga.episodes_watched == 120
+
+
+from nyanko_api.models import (
+    CharacterEdge,
+    CharacterImage,
+    CharacterName,
+    CharacterNode,
+    MediaDetails,
+    RecommendationItem,
+    RelationEdge,
+    StaffEdge,
+    TrailerInfo,
+    VoiceActorNode,
+)
+
+
+def test_character_edge_parses_name_role_and_va():
+    edge = CharacterEdge(
+        node=CharacterNode(name=CharacterName(full="Naruto Uzumaki")),
+        role="MAIN",
+        voice_actors=[VoiceActorNode(name=CharacterName(full="Junko Takeuchi"))],
+    )
+    assert edge.node.name.full == "Naruto Uzumaki"
+    assert edge.role == "MAIN"
+    assert edge.voice_actors[0].name.full == "Junko Takeuchi"
+
+
+def test_staff_edge_parses():
+    edge = StaffEdge(
+        node=CharacterNode(name=CharacterName(full="Hayato Date")),
+        role="Director",
+    )
+    assert edge.node.name.full == "Hayato Date"
+    assert edge.role == "Director"
+
+
+def test_relation_edge_parses():
+    edge = RelationEdge(id=1735, title="Naruto: Shippuden", format="TV", relation_type="SEQUEL")
+    assert edge.id == 1735
+    assert edge.relation_type == "SEQUEL"
+
+
+def test_recommendation_item_parses():
+    item = RecommendationItem(id=11061, title="Hunter x Hunter (2011)", rating=42)
+    assert item.id == 11061
+    assert item.rating == 42
+
+
+def test_trailer_info_parses():
+    trailer = TrailerInfo(id="dQw4w9WgXcQ", site="youtube")
+    assert trailer.site == "youtube"
+
+
+def test_media_details_extra_fields_default_empty():
+    details = MediaDetails(
+        id=1,
+        title="Test",
+        synonyms=[],
+        site_url="https://anilist.co/anime/1",
+        genres=[],
+        studios=[],
+        score_format="POINT_10",
+    )
+    assert details.characters == []
+    assert details.staff == []
+    assert details.relations == []
+    assert details.recommendations == []
+    assert details.trailer is None

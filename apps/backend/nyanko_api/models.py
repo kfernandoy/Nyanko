@@ -261,6 +261,56 @@ class MediaListEntry(BaseModel):
     completed_at: FuzzyDate
 
 
+class CharacterName(BaseModel):
+    full: str | None = None
+
+
+class CharacterImage(BaseModel):
+    medium: str | None = None
+
+
+class CharacterNode(BaseModel):
+    name: CharacterName
+    image: CharacterImage | None = None
+
+
+class VoiceActorNode(BaseModel):
+    name: CharacterName
+    image: CharacterImage | None = None
+    language: str | None = None
+
+
+class CharacterEdge(BaseModel):
+    node: CharacterNode
+    role: str | None = None
+    voice_actors: list[VoiceActorNode] = Field(default_factory=list)
+
+
+class StaffEdge(BaseModel):
+    node: CharacterNode
+    role: str | None = None
+
+
+class RelationEdge(BaseModel):
+    id: int
+    title: str
+    format: str | None = None
+    relation_type: str
+
+
+class RecommendationItem(BaseModel):
+    id: int
+    title: str
+    format: str | None = None
+    cover_image: str | None = None
+    rating: int | None = None
+
+
+class TrailerInfo(BaseModel):
+    id: str
+    site: str
+
+
 class MediaDetails(BaseModel):
     id: int
     title: str
@@ -291,6 +341,11 @@ class MediaDetails(BaseModel):
     next_airing_at: int | None = None
     score_format: str
     list_entry: MediaListEntry | None = None
+    characters: list[CharacterEdge] = Field(default_factory=list)
+    staff: list[StaffEdge] = Field(default_factory=list)
+    relations: list[RelationEdge] = Field(default_factory=list)
+    recommendations: list[RecommendationItem] = Field(default_factory=list)
+    trailer: TrailerInfo | None = None
 
 
 class MediaEntryUpdate(BaseModel):
