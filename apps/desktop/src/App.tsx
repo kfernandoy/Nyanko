@@ -1229,6 +1229,11 @@ function StatisticsView({
   const [periodB, setPeriodB] = useState<MediaStatistics | null>(null);
   const [periodLoading, setPeriodLoading] = useState(false);
 
+  useEffect(() => {
+    setPeriodA(null);
+    setPeriodB(null);
+  }, [tab]);
+
   if (!statistics) return <Empty title="No hay estadísticas disponibles" />;
   const stats = tab === "ANIME" ? statistics.anime : statistics.manga;
 
