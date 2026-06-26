@@ -672,7 +672,7 @@ export default function App() {
         )}
       </main>
       {detailLoading && <div className="modal-backdrop"><div className="modal-loading">Cargando información…</div></div>}
-      {details && <DetailsModal details={details} canonicalId={detailCanonicalId} mediaType={details.media_type === "MANGA" ? "MANGA" : "ANIME"} onClose={() => setDetails(null)} onChanged={refreshDetails} />}
+      {details && <DetailsModal details={details} canonicalId={detailCanonicalId} mediaType={details.media_type === "MANGA" ? "MANGA" : "ANIME"} onClose={() => setDetails(null)} onChanged={refreshDetails} onSelect={(id) => { setDetails(null); void openDetails(id); }} />}
     </div>
   );
 }
@@ -1473,7 +1473,30 @@ function TagEditor({ canonicalId, onChanged }: { canonicalId: number; onChanged?
   );
 }
 
-function DetailsModal({ details, canonicalId, mediaType, onClose, onChanged }: { details: MediaDetails; canonicalId: number | null; mediaType: "ANIME" | "MANGA"; onClose: () => void; onChanged: () => Promise<void> }) {
+const RELATION_TYPE_LABELS: Record<string, string> = {
+  SEQUEL: "Secuela",
+  PREQUEL: "Precuela",
+  ALTERNATIVE: "Alternativo",
+  SIDE_STORY: "Historia paralela",
+  CHARACTER: "Personaje",
+  SUMMARY: "Resumen",
+  OTHER: "Relacionado",
+  PARENT: "Obra principal",
+  COMPILATION: "Recopilación",
+  CONTAINS: "Contiene",
+  SOURCE: "Fuente",
+  ADAPTATION: "Adaptación",
+  SPIN_OFF: "Spin-off",
+};
+
+function DetailsModal({ details, canonicalId, mediaType, onClose, onChanged, onSelect }: {
+  details: MediaDetails;
+  canonicalId: number | null;
+  mediaType: "ANIME" | "MANGA";
+  onClose: () => void;
+  onChanged: () => Promise<void>;
+  onSelect?: (id: number) => void;
+}) {
   const isManga = mediaType === "MANGA";
   const entry = details.list_entry;
   const [tab, setTab] = useState<"info" | "edit">("info");
@@ -1591,6 +1614,116 @@ function DetailsModal({ details, canonicalId, mediaType, onClose, onChanged }: {
           <Fact label="Puntuación" value={details.average_score ? `${details.average_score}%` : null} />
         </div>
         {alternativeTitles.length > 1 && <div className="alternative-titles"><h3>Títulos alternativos</h3><p>{alternativeTitles.join(" · ")}</p></div>}
+        {details.trailer && details.trailer.site === "youtube" && (
+          <div className="detail-section">
+            <h3>Trailer</h3>
+            <a
+              className="external-link"
+              href={`https://www.youtube.com/watch?v=${details.trailer.id}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Abrir trailer en YouTube ↗
+            </a>
+          </div>
+        )}
+        {(details.relations ?? []).length > 0 && (
+          <div className="detail-section">
+            <h3>Obras relacionadas</h3>
+            <div className="relation-list">
+              {(details.relations ?? []).map((rel) => (
+                <button
+                  key={rel.id}
+                  className="relation-chip"
+                  onClick={() => { onClose(); onSelect?.(rel.id); }}
+                >
+                  <span className="relation-type">{RELATION_TYPE_LABELS[rel.relation_type] ?? "Relacionado"}</span>
+                  {rel.title}
+                  {rel.format && <span className="relation-format"> · {rel.format.replace("_", " ")}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {!isManga && (details.characters ?? []).length > 0 && (
+          <div className="detail-section">
+            <h3>Reparto</h3>
+            <div className="character-grid">
+              {(details.characters ?? []).map((edge, i) => (
+                <div key={i} className="character-card">
+                  <div className="character-images">
+                    {edge.node.image?.medium && (
+                      <div
+                        className="character-portrait"
+                        style={{ backgroundImage: `url(${edge.node.image.medium})` }}
+                      />
+                    )}
+                    {edge.voice_actors[0]?.image?.medium && (
+                      <div
+                        className="character-portrait va"
+                        style={{ backgroundImage: `url(${edge.voice_actors[0].image.medium})` }}
+                      />
+                    )}
+                  </div>
+                  <div className="character-info">
+                    <strong>{edge.node.name?.full ?? "?"}</strong>
+                    <small>{edge.role === "MAIN" ? "Principal" : "Secundario"}</small>
+                    {edge.voice_actors[0]?.name?.full && (
+                      <span>{edge.voice_actors[0].name.full}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {(details.staff ?? []).length > 0 && (
+          <div className="detail-section">
+            <h3>Staff</h3>
+            <ul className="staff-list">
+              {(details.staff ?? []).map((edge, i) => (
+                <li key={i} className="staff-item">
+                  {edge.node.image?.medium && (
+                    <div
+                      className="staff-portrait"
+                      style={{ backgroundImage: `url(${edge.node.image.medium})` }}
+                    />
+                  )}
+                  <div>
+                    <strong>{edge.node.name?.full ?? "?"}</strong>
+                    <small>{edge.role ?? ""}</small>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {(details.recommendations ?? []).length > 0 && (
+          <div className="detail-section">
+            <h3>Recomendaciones</h3>
+            <div className="recommendation-grid">
+              {(details.recommendations ?? []).map((rec) => (
+                <button
+                  key={rec.id}
+                  className="recommendation-card"
+                  onClick={() => { onClose(); onSelect?.(rec.id); }}
+                >
+                  {rec.cover_image && (
+                    <div
+                      className="recommendation-cover"
+                      style={{ backgroundImage: `url(${rec.cover_image})` }}
+                    />
+                  )}
+                  <div className="recommendation-info">
+                    <strong title={rec.title}>{rec.title}</strong>
+                    {rec.format && <small>{rec.format.replace("_", " ")}</small>}
+                    {rec.rating != null && <span>★ {rec.rating}</span>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {canonicalId && <TagEditor canonicalId={canonicalId} onChanged={onChanged} />}
         <a className="external-link" href={details.site_url} target="_blank" rel="noreferrer">Abrir en AniList ↗</a>
       </div> : <div className="edit-entry">
