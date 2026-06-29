@@ -6,12 +6,18 @@
   "permissions": [
     "core:default",
     "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "**" }]
+    },
     "autostart:default",
+    "dialog:default",
     "shell:default",
     {
       "identifier": "shell:allow-spawn",
       "allow": [{"name": "binaries/nyanko-api", "sidecar": true}]
     },
+    "notification:default",
     "fs:default",
     {
       "identifier": "fs:allow-read-text-file",

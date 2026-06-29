@@ -85,6 +85,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "torrents.downloadMode": "Modo de descarga",
     "torrents.watchFolder": "Carpeta vigilada",
     "torrents.preferredResolution": "Resolución preferida",
+    "torrents.notify": "Hay episodios nuevos disponibles",
 
     "view.library.eyebrow": "TU BIBLIOTECA", "view.library.title": "Continúa donde quedaste.",
     "view.manga.eyebrow": "TU MANGA", "view.manga.title": "Lecturas en curso.",
@@ -263,6 +264,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "torrents.downloadMode": "Download mode",
     "torrents.watchFolder": "Watch folder",
     "torrents.preferredResolution": "Preferred resolution",
+    "torrents.notify": "New episodes available",
 
     "view.library.eyebrow": "YOUR LIBRARY", "view.library.title": "Pick up where you left off.",
     "view.manga.eyebrow": "YOUR MANGA", "view.manga.title": "Currently reading.",

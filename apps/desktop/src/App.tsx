@@ -6,6 +6,7 @@ import { displayTitle } from "./title";
 import { setDiscordActivity, clearDiscordActivity } from "./discord";
 import { getAutostart, setAutostart } from "./autostart";
 import { listen } from "@tauri-apps/api/event";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { DetectorSettingsView } from "./DetectorSettingsView";
 import { PlaybackHistoryView } from "./PlaybackHistoryView";
 import { DiscoveryView } from "./DiscoveryView";
@@ -114,6 +115,7 @@ export default function App() {
   const [autostart, setAutostartState] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [torrentUnread, setTorrentUnread] = useState(0);
+  const prevTorrentUnreadRef = useRef(0);
   const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
   const [viewCacheStatus, setViewCacheStatus] = useState<Record<CacheableView, CacheStatus | null>>({
     library: null,
@@ -266,11 +268,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const tick = () => api.torrentUnread().then((r) => setTorrentUnread(r.count)).catch(() => {});
-    tick();
-    const id = window.setInterval(tick, 60_000);
+    const tick = async () => {
+      try {
+        const r = await api.torrentUnread();
+        const prev = prevTorrentUnreadRef.current;
+        prevTorrentUnreadRef.current = r.count;
+        setTorrentUnread(r.count);
+        if (r.count > prev && r.count > 0 && "__TAURI_INTERNALS__" in window) {
+          let granted = await isPermissionGranted();
+          if (!granted) granted = (await requestPermission()) === "granted";
+          if (granted) sendNotification({ title: t("torrents.title"), body: t("torrents.notify") });
+        }
+      } catch { /* ignore */ }
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 60_000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (health?.authenticated) return;
