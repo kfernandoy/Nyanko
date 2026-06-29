@@ -641,6 +641,10 @@ class TorrentItem(BaseModel):
     resolution: str | None = None
     group: str | None = None
     seeders: int | None = None
+    size: str | None = None
+    description: str | None = None
+    filename: str | None = None
+    torrent_date: str | None = None
     confidence: float
     is_new: bool
 

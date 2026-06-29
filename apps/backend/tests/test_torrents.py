@@ -123,6 +123,19 @@ def test_build_feed_marks_not_new_and_skips_discarded():
     assert discarded == []
 
 
+def test_parse_feed_extended_fields():
+    items = torrents.parse_feed(FIXTURE, source_id=1)
+    first = items[0]
+    assert first.size == "1.4 GiB"
+    assert first.torrent_date == "Mon, 23 Jun 2025 12:00:00 +0000"
+    assert first.description and "comments" in first.description
+    assert first.filename == first.raw_title
+    # item sin esos tags -> None
+    assert items[1].size is None
+    assert items[1].torrent_date is None
+    assert items[1].description is None
+
+
 def test_build_feed_preferred_resolution_ordering():
     """preferred_resolution sorts matching items before non-matching; user prefer still dominates."""
     library = [_lib_entry(progress=27)]

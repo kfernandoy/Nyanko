@@ -29,6 +29,10 @@ class ParsedTorrent:
     group: str | None
     resolution: str | None
     seeders: int | None
+    size: str | None = None
+    description: str | None = None
+    filename: str | None = None
+    torrent_date: str | None = None
 
 
 def extract_group(raw_title: str) -> str | None:
@@ -74,8 +78,12 @@ class FeedItem:
     resolution: str | None
     group: str | None
     seeders: int | None
-    confidence: float
-    is_new: bool
+    size: str | None = None
+    description: str | None = None
+    filename: str | None = None
+    torrent_date: str | None = None
+    confidence: float = 0.0
+    is_new: bool = False
 
 
 def _match_op(op: str, field_value, target: str) -> bool:
@@ -177,6 +185,10 @@ def build_feed(
                 resolution=parsed.resolution,
                 group=parsed.group,
                 seeders=parsed.seeders,
+                size=parsed.size,
+                description=parsed.description,
+                filename=parsed.filename,
+                torrent_date=parsed.torrent_date,
                 confidence=score,
                 is_new=sig not in seen,
             ),
@@ -214,6 +226,10 @@ def parse_feed(xml_text: str, source_id: int) -> list[ParsedTorrent]:
                 group=extract_group(raw_title),
                 resolution=extract_resolution(raw_title),
                 seeders=seeders,
+                size=_text(item, "size"),
+                description=_text(item, "description"),
+                filename=raw_title,
+                torrent_date=_text(item, "pubDate"),
             )
         )
     return parsed
