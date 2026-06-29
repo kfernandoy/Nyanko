@@ -1254,3 +1254,33 @@ def test_torrent_discard_then_excluded(client, monkeypatch):
 def test_torrent_unread_count(client):
     assert client.get("/api/torrents/unread-count").json() == {"count": 0}
 
+
+def test_torrent_feed_refresh_param_wires_through(client, database, monkeypatch):
+    """refresh=true bypasses the library cache; refresh=false does not call provider.library."""
+    import nyanko_api.main as _main
+
+    # Warm the library cache so refresh=false has something to read.
+    warm_item = MediaItem(id=1, title="Frieren", status="CURRENT", progress=27)
+    key = _main.account_cache_key("anilist", "default", "list")
+    database.set_cache(key, [warm_item.model_dump(mode="json")], 300)
+
+    call_count = {"n": 0}
+
+    class _FakeProvider:
+        name = "anilist"
+
+        async def library(self, token):
+            call_count["n"] += 1
+            return [warm_item]
+
+    monkeypatch.setattr("nyanko_api.main._get_provider", lambda s, p: _FakeProvider())
+    monkeypatch.setattr("nyanko_api.main._fetch_torrent_xml", lambda url: _NYAA_XML)
+
+    # Cache hit — provider.library must NOT be called.
+    client.get("/api/torrents/feed?refresh=false")
+    assert call_count["n"] == 0, "refresh=false must read from cache, not call provider.library"
+
+    # Force refresh — provider.library MUST be called.
+    client.get("/api/torrents/feed?refresh=true")
+    assert call_count["n"] == 1, "refresh=true must bypass cache and call provider.library"
+

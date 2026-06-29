@@ -458,12 +458,18 @@ def _get_torrent_settings(database: Database) -> TorrentSettings:
 
 async def _load_library_for_torrents(
     database: Database, settings: Settings, provider: str, account: str, token: str,
+    force: bool = False,
 ) -> list[MediaItem]:
     media_provider = _get_provider(settings, provider)
-    library, _ = await cached_list(
-        database, account_cache_key(provider, account, "list"), 300, MediaItem,
-        lambda: media_provider.library(token),
-    )
+    if force:
+        key = account_cache_key(provider, account, "list")
+        library = await media_provider.library(token)
+        database.set_cache(key, [v.model_dump(mode="json") for v in library], 300)
+    else:
+        library, _ = await cached_list(
+            database, account_cache_key(provider, account, "list"), 300, MediaItem,
+            lambda: media_provider.library(token),
+        )
     return database.enrich_provider_library(media_provider.name, library)
 
 
@@ -2775,7 +2781,7 @@ async def torrent_feed(
     settings: Settings = Depends(get_settings),
     database: Database = Depends(get_database),
 ) -> list[TorrentItem]:
-    library = await _load_library_for_torrents(database, settings, provider, account, token)
+    library = await _load_library_for_torrents(database, settings, provider, account, token, force=refresh)
     feed = await _compute_torrent_feed(database, library)
     for item in feed:
         database.mark_torrent_seen(item.signature, item.media_id)
