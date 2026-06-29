@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .normalizer import normalize_title
-from .models import MediaStatistics, StatisticGroup
+from .models import MediaStatistics, StatisticGroup, StatisticsResponse
 
 
 SCHEMA = """
@@ -68,7 +68,6 @@ CREATE TABLE IF NOT EXISTS accounts (
     alias TEXT NOT NULL DEFAULT 'default',
     external_user_id TEXT,
     credential_ref TEXT,
-    sync_direction TEXT NOT NULL DEFAULT 'bidirectional',
     is_primary INTEGER NOT NULL DEFAULT 0,
     last_synced_at TEXT,
     UNIQUE(provider_id, alias)
@@ -130,16 +129,6 @@ CREATE TABLE IF NOT EXISTS external_identities (
     confidence REAL NOT NULL DEFAULT 1.0,
     UNIQUE(provider_id, external_id)
 );
-CREATE TABLE IF NOT EXISTS association_candidates (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_identity_id INTEGER NOT NULL REFERENCES external_identities(id) ON DELETE CASCADE,
-    candidate_media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
-    confidence REAL NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    resolved_at TEXT,
-    UNIQUE(source_identity_id, candidate_media_id)
-);
 CREATE TABLE IF NOT EXISTS conflicts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
@@ -182,6 +171,53 @@ CREATE TABLE IF NOT EXISTS remote_library_entries (
     original_payload TEXT NOT NULL,
     last_synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(account_id, media_id)
+);
+CREATE TABLE IF NOT EXISTS wont_watch (
+    provider_id TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    title TEXT,
+    cover_image TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (provider_id, external_id)
+);
+CREATE TABLE IF NOT EXISTS library_folders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL UNIQUE,
+    recursive INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS local_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL UNIQUE,
+    media_id INTEGER REFERENCES media(id) ON DELETE SET NULL,
+    episode INTEGER,
+    parsed_title TEXT,
+    matched INTEGER NOT NULL DEFAULT 0,
+    scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS torrent_sources (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS torrent_filters (
+  id INTEGER PRIMARY KEY,
+  field TEXT NOT NULL,
+  op TEXT NOT NULL,
+  value TEXT NOT NULL,
+  action TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  priority INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS torrent_seen (
+  signature TEXT PRIMARY KEY,
+  media_id INTEGER,
+  discarded INTEGER NOT NULL DEFAULT 0,
+  downloaded INTEGER NOT NULL DEFAULT 0,
+  seen_at INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -255,6 +291,20 @@ class Database:
                 (CANONICAL_SCHEMA_VERSION,),
             )
             self.ensure_provider("anilist", "AniList", connection=connection)
+            existing = connection.execute(
+                "SELECT COUNT(*) AS n FROM torrent_sources"
+            ).fetchone()
+            if existing["n"] == 0:
+                connection.execute(
+                    "INSERT INTO torrent_sources(name, url, enabled, created_at) "
+                    "VALUES (?, ?, 1, ?)",
+                    (
+                        "Nyaa",
+                        # Anime English-translated, ordenado por fecha (RSS).
+                        "https://nyaa.si/?page=rss&c=1_2&f=0",
+                        int(time.time()),
+                    ),
+                )
 
     @staticmethod
     def _backfill_normalized_titles(connection: sqlite3.Connection) -> None:
@@ -340,59 +390,6 @@ class Database:
             result.append((language, title, primary))
         return result
 
-    @classmethod
-    def _find_canonical_match(
-        cls,
-        connection: sqlite3.Connection,
-        provider_id: str,
-        payload: dict,
-        media_type: str = "ANIME",
-    ) -> tuple[tuple[int, float] | None, list[tuple[float, int]]]:
-        normalized_titles = {
-            normalize_title(title).casefold()
-            for _, title, _ in cls._payload_titles(payload)
-            if normalize_title(title)
-        }
-        if not normalized_titles:
-            return None, []
-        placeholders = ",".join("?" for _ in normalized_titles)
-        rows = connection.execute(
-            f"SELECT DISTINCT m.id, m.format, m.episode_count, m.chapter_count, "
-            f"m.volume_count, m.release_year "
-            f"FROM media m JOIN media_titles mt ON mt.media_id = m.id "
-            f"WHERE mt.normalized_title IN ({placeholders}) "
-            "AND m.media_type = ? "
-            "AND NOT EXISTS (SELECT 1 FROM external_identities ei "
-            "WHERE ei.media_id = m.id AND ei.provider_id = ?)",
-            (*normalized_titles, media_type, provider_id),
-        ).fetchall()
-        scored: list[tuple[float, int]] = []
-        for row in rows:
-            score = 0.8
-            if media_type == "MANGA":
-                comparisons = (
-                    (payload.get("year"), row["release_year"], 0.1, 0.25),
-                    (payload.get("chapters"), row["chapter_count"], 0.1, 0.2),
-                    (payload.get("volumes"), row["volume_count"], 0.05, 0.1),
-                    (payload.get("format"), row["format"], 0.05, 0.1),
-                )
-            else:
-                comparisons = (
-                    (payload.get("year"), row["release_year"], 0.1, 0.25),
-                    (payload.get("episodes"), row["episode_count"], 0.1, 0.2),
-                    (payload.get("format"), row["format"], 0.05, 0.1),
-                )
-            for incoming, existing, bonus, penalty in comparisons:
-                if incoming is not None and existing is not None:
-                    score += bonus if incoming == existing else -penalty
-            scored.append((max(0.0, min(1.0, score)), int(row["id"])))
-        scored.sort(reverse=True)
-        if not scored or scored[0][0] < 0.9:
-            return None, scored
-        if len(scored) > 1 and scored[0][0] - scored[1][0] < 0.05:
-            return None, scored
-        return (scored[0][1], scored[0][0]), scored
-
     @staticmethod
     def _add_column(
         connection: sqlite3.Connection, table: str, column: str, definition: str
@@ -459,6 +456,77 @@ class Database:
     def delete_setting(self, key: str) -> None:
         with self.connect() as connection:
             connection.execute("DELETE FROM settings WHERE key = ?", (key,))
+
+    def get_library_folders(self) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT id, path, recursive FROM library_folders ORDER BY path"
+            ).fetchall()
+            return [
+                {"id": row["id"], "path": row["path"], "recursive": bool(row["recursive"])}
+                for row in rows
+            ]
+
+    def add_library_folder(self, path: str, recursive: bool) -> dict:
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO library_folders(path, recursive) VALUES (?, ?) "
+                "ON CONFLICT(path) DO UPDATE SET recursive = excluded.recursive",
+                (path, int(recursive)),
+            )
+            row = connection.execute(
+                "SELECT id, path, recursive FROM library_folders WHERE path = ?", (path,)
+            ).fetchone()
+            return {"id": row["id"], "path": row["path"], "recursive": bool(row["recursive"])}
+
+    def delete_library_folder(self, folder_id: int) -> bool:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM library_folders WHERE id = ?", (folder_id,)
+            )
+            return cursor.rowcount > 0
+
+    def replace_local_files(self, rows: list[dict]) -> None:
+        with self.connect() as connection:
+            connection.execute("DELETE FROM local_files")
+            connection.executemany(
+                "INSERT OR IGNORE INTO local_files"
+                "(path, media_id, episode, parsed_title, matched) "
+                "VALUES (?, ?, ?, ?, ?)",
+                [
+                    (
+                        row["path"],
+                        row.get("media_id"),
+                        row.get("episode"),
+                        row.get("parsed_title"),
+                        int(bool(row.get("media_id"))),
+                    )
+                    for row in rows
+                ],
+            )
+
+    def get_local_files_summary(self) -> dict:
+        with self.connect() as connection:
+            total = connection.execute("SELECT COUNT(*) FROM local_files").fetchone()[0]
+            matched = connection.execute(
+                "SELECT COUNT(*) FROM local_files WHERE matched = 1"
+            ).fetchone()[0]
+            return {"total": total, "matched": matched, "unmatched": total - matched}
+
+    def get_local_episodes_by_media(self) -> dict[int, dict[int, str]]:
+        """Matched local files as {canonical_media_id: {episode: path}} (episode not null)."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT media_id, episode, path FROM local_files "
+                "WHERE matched = 1 AND media_id IS NOT NULL AND episode IS NOT NULL "
+                "ORDER BY path"
+            ).fetchall()
+        by_media: dict[int, dict[int, str]] = {}
+        for row in rows:
+            by_media.setdefault(int(row["media_id"]), {}).setdefault(
+                int(row["episode"]), row["path"]
+            )
+        return by_media
 
     def get_cache(self, key: str):
         record = self.get_cache_record(key)
@@ -674,6 +742,7 @@ class Database:
         *,
         connection: sqlite3.Connection | None = None,
     ) -> int:
+        alias = "default"
         if connection is None:
             with self.connect() as own_connection:
                 return self.ensure_account(
@@ -704,8 +773,9 @@ class Database:
     def get_accounts(self) -> list[dict]:
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT id, provider_id AS provider, alias, sync_direction, is_primary, "
-                "last_synced_at FROM accounts ORDER BY provider_id, is_primary DESC, alias"
+                "SELECT id, provider_id AS provider, alias, is_primary, "
+                "last_synced_at FROM accounts WHERE alias = 'default' "
+                "ORDER BY provider_id, is_primary DESC, alias"
             ).fetchall()
             return [dict(row) for row in rows]
 
@@ -713,7 +783,6 @@ class Database:
         self,
         account_id: int,
         *,
-        sync_direction: str | None = None,
         is_primary: bool | None = None,
     ) -> dict | None:
         with self.connect() as connection:
@@ -722,16 +791,8 @@ class Database:
             ).fetchone()
             if current is None:
                 return None
-            if sync_direction is not None:
-                connection.execute(
-                    "UPDATE accounts SET sync_direction = ? WHERE id = ?",
-                    (sync_direction, account_id),
-                )
             if is_primary:
-                connection.execute(
-                    "UPDATE accounts SET is_primary = 0 WHERE provider_id = ?",
-                    (current["provider_id"],),
-                )
+                connection.execute("UPDATE accounts SET is_primary = 0")
                 connection.execute(
                     "UPDATE accounts SET is_primary = 1 WHERE id = ?", (account_id,)
                 )
@@ -751,7 +812,7 @@ class Database:
                         (account_id,),
                     )
             row = connection.execute(
-                "SELECT id, provider_id AS provider, alias, sync_direction, is_primary, "
+                "SELECT id, provider_id AS provider, alias, is_primary, "
                 "last_synced_at FROM accounts WHERE id = ?",
                 (account_id,),
             ).fetchone()
@@ -795,50 +856,27 @@ class Database:
                 if identity:
                     media_id = int(identity["media_id"])
                 else:
-                    matched, candidates = self._find_canonical_match(
-                        connection, provider_id, payload, media_type=media_type
-                    )
-                    if matched:
-                        media_id, confidence = matched
-                    else:
-                        cursor = connection.execute(
-                            "INSERT INTO media(media_type, episode_count, chapter_count, "
-                            "volume_count, format, release_year) "
-                            "VALUES (?, ?, ?, ?, ?, ?)",
-                            (
-                                media_type,
-                                payload.get("episodes"),
-                                payload.get("chapters"),
-                                payload.get("volumes"),
-                                payload.get("format"),
-                                payload.get("year"),
-                            ),
-                        )
-                        media_id = int(cursor.lastrowid)
-                        confidence = 1.0
-                    identity_cursor = connection.execute(
-                        "INSERT INTO external_identities"
-                        "(media_id, provider_id, external_id, url, confidence) "
-                        "VALUES (?, ?, ?, ?, ?)",
+                    # ponytail: proveedores independientes, cada external_id es su propia obra.
+                    cursor = connection.execute(
+                        "INSERT INTO media(media_type, episode_count, chapter_count, "
+                        "volume_count, format, release_year) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
                         (
-                            media_id,
-                            provider_id,
-                            external_id,
-                            payload.get("site_url"),
-                            confidence,
+                            media_type,
+                            payload.get("episodes"),
+                            payload.get("chapters"),
+                            payload.get("volumes"),
+                            payload.get("format"),
+                            payload.get("year"),
                         ),
                     )
-                    if matched is None:
-                        connection.executemany(
-                            "INSERT OR IGNORE INTO association_candidates"
-                            "(source_identity_id, candidate_media_id, confidence) "
-                            "VALUES (?, ?, ?)",
-                            (
-                                (int(identity_cursor.lastrowid), candidate_id, score)
-                                for score, candidate_id in candidates
-                                if score >= 0.5
-                            ),
-                        )
+                    media_id = int(cursor.lastrowid)
+                    connection.execute(
+                        "INSERT INTO external_identities"
+                        "(media_id, provider_id, external_id, url) "
+                        "VALUES (?, ?, ?, ?)",
+                        (media_id, provider_id, external_id, payload.get("site_url")),
+                    )
                 connection.execute(
                     "UPDATE media SET episode_count = COALESCE(?, episode_count), "
                     "chapter_count = COALESCE(?, chapter_count), "
@@ -1028,75 +1066,178 @@ class Database:
                     )
             return media_id
 
-    def period_statistics(
-        self, from_date: str, to_date: str, media_type: str = "ANIME"
-    ) -> MediaStatistics:
-        with self.connect() as connection:
+    def local_statistics(self, provider: str, account: str) -> StatisticsResponse:
+        """Derive statistics from locally synced remote_library_entries (for providers without a stats API)."""
+        def _stats_for_type(connection, media_type: str) -> MediaStatistics:
             rows = connection.execute(
                 """
-                SELECT le.media_id, le.progress, le.score, le.status, m.format, m.release_year
-                FROM library_entries le
-                JOIN media m ON m.id = le.media_id
-                WHERE m.media_type = ?
-                AND (
-                    (le.completed_at BETWEEN ? AND ?)
-                    OR (
-                        le.completed_at IS NULL
-                        AND le.status = 'COMPLETED'
-                        AND date(le.updated_at) BETWEEN ? AND ?
-                    )
-                )
+                SELECT rle.media_id, rle.status, rle.progress, rle.score, m.format, m.release_year
+                FROM remote_library_entries rle
+                JOIN media m ON m.id = rle.media_id
+                JOIN accounts a ON a.id = rle.account_id
+                WHERE a.provider_id = ? AND a.alias = ? AND m.media_type = ?
                 """,
-                (media_type, from_date, to_date, from_date, to_date),
+                (provider, account, media_type),
             ).fetchall()
-
-            media_ids = [row["media_id"] for row in rows]
             count = len(rows)
-            episodes = sum(row["progress"] for row in rows)
-            scores = [row["score"] for row in rows if row["score"] is not None]
+            episodes = sum(r["progress"] for r in rows)
+            scores = [r["score"] for r in rows if r["score"] is not None]
             mean_score = round(sum(scores) / len(scores), 1) if scores else 0.0
-
+            status_counts: Counter = Counter(r["status"] for r in rows)
+            format_counts: Counter = Counter(r["format"] for r in rows if r["format"])
+            year_counts: Counter = Counter(str(r["release_year"]) for r in rows if r["release_year"])
+            media_ids = [r["media_id"] for r in rows] if rows else []
             if media_ids:
                 placeholders = ",".join("?" * len(media_ids))
                 genre_rows = connection.execute(
-                    f"SELECT genre, COUNT(*) as cnt FROM media_genres "
-                    f"WHERE media_id IN ({placeholders}) GROUP BY genre ORDER BY cnt DESC",
+                    f"SELECT genre, COUNT(*) AS cnt FROM media_genres "
+                    f"WHERE media_id IN ({placeholders}) GROUP BY genre ORDER BY cnt DESC LIMIT 10",
                     media_ids,
                 ).fetchall()
                 genres = [StatisticGroup(label=r["genre"], count=r["cnt"]) for r in genre_rows]
             else:
                 genres = []
+            return MediaStatistics(
+                count=count,
+                episodes_watched=episodes,
+                minutes_watched=0,
+                mean_score=mean_score,
+                genres=genres,
+                statuses=[StatisticGroup(label=s, count=c) for s, c in status_counts.most_common()],
+                formats=[StatisticGroup(label=f, count=c) for f, c in format_counts.most_common()],
+                release_years=[StatisticGroup(label=y, count=c) for y, c in sorted(year_counts.items(), key=lambda x: -x[1])],
+                studios=[],
+                countries=[],
+            )
 
-            format_counts = Counter(row["format"] for row in rows if row["format"])
-            formats = [
-                StatisticGroup(label=fmt, count=cnt)
-                for fmt, cnt in format_counts.most_common()
-            ]
+        with self.connect() as connection:
+            return StatisticsResponse(
+                anime=_stats_for_type(connection, "ANIME"),
+                manga=_stats_for_type(connection, "MANGA"),
+            )
 
-            year_counts = Counter(str(row["release_year"]) for row in rows if row["release_year"])
-            release_years = [
-                StatisticGroup(label=yr, count=cnt)
-                for yr, cnt in sorted(year_counts.items(), key=lambda x: -x[1])
-            ]
+    def get_combined_library(
+        self,
+        media_type: str = "ANIME",
+        preferred_provider: str = "anilist",
+        preferred_account: str = "default",
+    ) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    m.id AS media_id,
+                    rle.original_payload,
+                    a.provider_id,
+                    a.alias AS account_alias,
+                    a.is_primary,
+                    rle.last_synced_at,
+                    le.status AS local_status,
+                    le.progress AS local_progress,
+                    le.score AS local_score,
+                    le.started_at AS local_started_at,
+                    le.completed_at AS local_completed_at
+                FROM media m
+                JOIN remote_library_entries rle ON rle.media_id = m.id
+                JOIN accounts a ON a.id = rle.account_id
+                LEFT JOIN library_entries le ON le.media_id = m.id
+                WHERE m.media_type = ?
+                ORDER BY
+                    m.id,
+                    CASE
+                        WHEN a.provider_id = ? AND a.alias = ? THEN 0
+                        WHEN a.provider_id = ? THEN 1
+                        WHEN a.is_primary = 1 THEN 2
+                        ELSE 3
+                    END,
+                    rle.last_synced_at DESC
+                """,
+                (media_type, preferred_provider, preferred_account, preferred_provider),
+            ).fetchall()
+            if not rows:
+                return []
 
-            status_counts = Counter(row["status"] for row in rows)
-            statuses = [
-                StatisticGroup(label=st, count=cnt)
-                for st, cnt in status_counts.most_common()
-            ]
+            media_ids = [int(row["media_id"]) for row in rows]
+            placeholders = ",".join("?" for _ in media_ids)
+            title_rows = connection.execute(
+                f"SELECT media_id, language, title FROM media_titles "
+                f"WHERE media_id IN ({placeholders}) ORDER BY is_primary DESC, language",
+                media_ids,
+            ).fetchall()
+            genre_rows = connection.execute(
+                f"SELECT media_id, genre FROM media_genres WHERE media_id IN ({placeholders})",
+                media_ids,
+            ).fetchall()
+            tag_rows = connection.execute(
+                f"SELECT media_id, tag FROM media_tags WHERE media_id IN ({placeholders})",
+                media_ids,
+            ).fetchall()
 
-        return MediaStatistics(
-            count=count,
-            episodes_watched=episodes,
-            minutes_watched=0,
-            mean_score=mean_score,
-            genres=genres,
-            formats=formats,
-            release_years=release_years,
-            studios=[],
-            countries=[],
-            statuses=statuses,
-        )
+        titles_by_media: dict[int, dict[str, list[str]]] = {}
+        for row in title_rows:
+            titles_by_media.setdefault(int(row["media_id"]), {}).setdefault(
+                row["language"], []
+            ).append(row["title"])
+        genres_by_media: dict[int, list[str]] = {}
+        for row in genre_rows:
+            genres_by_media.setdefault(int(row["media_id"]), []).append(row["genre"])
+        tags_by_media: dict[int, list[str]] = {}
+        for row in tag_rows:
+            tags_by_media.setdefault(int(row["media_id"]), []).append(row["tag"])
+
+        combined: list[dict] = []
+        seen_media_ids: set[int] = set()
+        for row in rows:
+            media_id = int(row["media_id"])
+            if media_id in seen_media_ids:
+                continue
+            seen_media_ids.add(media_id)
+
+            payload = json.loads(row["original_payload"])
+            titles = titles_by_media.get(media_id, {})
+            known_titles = {
+                payload.get("title"),
+                payload.get("title_romaji"),
+                payload.get("title_english"),
+                payload.get("title_native"),
+                *(payload.get("synonyms") or []),
+            }
+            payload.update(
+                {
+                    "status": row["local_status"] or payload.get("status"),
+                    "progress": row["local_progress"]
+                    if row["local_progress"] is not None
+                    else payload.get("progress", 0),
+                    "score": row["local_score"]
+                    if row["local_score"] is not None
+                    else payload.get("score"),
+                    "started_at": row["local_started_at"] or payload.get("started_at"),
+                    "completed_at": row["local_completed_at"]
+                    or payload.get("completed_at"),
+                    "canonical_id": media_id,
+                    "provider": row["provider_id"],
+                    "account_alias": row["account_alias"],
+                    "title_romaji": payload.get("title_romaji")
+                    or next(iter(titles.get("ROMAJI", [])), None),
+                    "title_english": payload.get("title_english")
+                    or next(iter(titles.get("ENGLISH", [])), None),
+                    "title_native": payload.get("title_native")
+                    or next(iter(titles.get("NATIVE", [])), None),
+                    "genres": genres_by_media.get(media_id, payload.get("genres") or []),
+                    "tags": tags_by_media.get(media_id, []),
+                    "synonyms": [
+                        *(payload.get("synonyms") or []),
+                        *[
+                            title
+                            for variants in titles.values()
+                            for title in variants
+                            if title not in known_titles
+                        ],
+                    ],
+                }
+            )
+            combined.append(payload)
+        return combined
 
     def canonical_media_id(self, provider_id: str, external_id: str | int) -> int | None:
         with self.connect() as connection:
@@ -1105,6 +1246,72 @@ class Database:
                 (provider_id, str(external_id)),
             ).fetchone()
             return int(row["media_id"]) if row else None
+
+    def get_remote_entry(
+        self, provider_id: str, alias: str, media_id: int
+    ) -> dict | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT rle.id, rle.status, rle.progress, rle.score, rle.original_payload "
+                "FROM remote_library_entries rle "
+                "JOIN accounts a ON a.id = rle.account_id "
+                "WHERE a.provider_id = ? AND a.alias = ? AND rle.media_id = ?",
+                (provider_id, alias, media_id),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def recent_remote_overrides(
+        self, provider_id: str, alias: str, within_seconds: int = 180
+    ) -> dict[str, dict]:
+        # Just-saved edits, keyed by external_id, so a provider with an eventually
+        # consistent read API (MyAnimeList) still shows the user's change immediately.
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT ei.external_id, rle.status, rle.progress, rle.score "
+                "FROM remote_library_entries rle "
+                "JOIN accounts a ON a.id = rle.account_id "
+                "JOIN external_identities ei "
+                "  ON ei.media_id = rle.media_id AND ei.provider_id = a.provider_id "
+                "WHERE a.provider_id = ? AND a.alias = ? "
+                "AND rle.last_synced_at >= datetime('now', ?)",
+                (provider_id, alias, f"-{int(within_seconds)} seconds"),
+            ).fetchall()
+            return {row["external_id"]: dict(row) for row in rows}
+
+    def wont_watch_ids(self, provider_id: str) -> set[str]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT external_id FROM wont_watch WHERE provider_id = ?",
+                (provider_id,),
+            ).fetchall()
+            return {row["external_id"] for row in rows}
+
+    def wont_watch_list(self, provider_id: str) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT external_id, title, cover_image FROM wont_watch "
+                "WHERE provider_id = ? ORDER BY created_at DESC",
+                (provider_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def add_wont_watch(
+        self, provider_id: str, external_id: str, title: str | None, cover_image: str | None
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO wont_watch (provider_id, external_id, title, cover_image) "
+                "VALUES (?, ?, ?, ?) ON CONFLICT(provider_id, external_id) DO UPDATE SET "
+                "title = excluded.title, cover_image = excluded.cover_image",
+                (provider_id, str(external_id), title, cover_image),
+            )
+
+    def remove_wont_watch(self, provider_id: str, external_id: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "DELETE FROM wont_watch WHERE provider_id = ? AND external_id = ?",
+                (provider_id, str(external_id)),
+            )
 
     def external_id_for_account(
         self, media_id: int, provider_id: str
@@ -1143,7 +1350,7 @@ class Database:
             parameters.extend([account_id, media_id])
             connection.execute(
                 f"UPDATE remote_library_entries SET {', '.join(updates)}, "
-                "updated_at = CURRENT_TIMESTAMP WHERE account_id = ? AND media_id = ?",
+                "last_synced_at = CURRENT_TIMESTAMP WHERE account_id = ? AND media_id = ?",
                 parameters,
             )
             account = connection.execute(
@@ -1245,206 +1452,6 @@ class Database:
                 )
             )
         return enriched
-
-    def get_association_candidates(self, status: str = "pending") -> list[dict]:
-        with self.connect() as connection:
-            rows = connection.execute(
-                "SELECT ac.id, ac.source_identity_id, ei.provider_id AS source_provider, "
-                "ei.external_id AS source_external_id, ac.candidate_media_id, "
-                "ac.confidence, ac.status, "
-                "COALESCE((SELECT title FROM media_titles WHERE media_id = ei.media_id "
-                "ORDER BY is_primary DESC, language LIMIT 1), ei.external_id) AS source_title, "
-                "COALESCE((SELECT title FROM media_titles WHERE media_id = ac.candidate_media_id "
-                "ORDER BY is_primary DESC, language LIMIT 1), CAST(ac.candidate_media_id AS TEXT)) "
-                "AS candidate_title FROM association_candidates ac "
-                "JOIN external_identities ei ON ei.id = ac.source_identity_id "
-                "WHERE ac.status = ? ORDER BY ac.confidence DESC, ac.id",
-                (status,),
-            ).fetchall()
-            return [dict(row) for row in rows]
-
-    def dismiss_association_candidate(self, candidate_id: int) -> bool:
-        with self.connect() as connection:
-            cursor = connection.execute(
-                "UPDATE association_candidates SET status = 'dismissed', "
-                "resolved_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'",
-                (candidate_id,),
-            )
-            return cursor.rowcount == 1
-
-    def resolve_association_candidate(self, candidate_id: int) -> int:
-        with self.connect() as connection:
-            candidate = connection.execute(
-                "SELECT ac.*, ei.media_id AS source_media_id FROM association_candidates ac "
-                "JOIN external_identities ei ON ei.id = ac.source_identity_id "
-                "WHERE ac.id = ? AND ac.status = 'pending'",
-                (candidate_id,),
-            ).fetchone()
-            if candidate is None:
-                raise ValueError("Association candidate not found or already resolved")
-            source_media_id = int(candidate["source_media_id"])
-            target_media_id = int(candidate["candidate_media_id"])
-            if source_media_id == target_media_id:
-                raise ValueError("Identity is already associated with this work")
-            identity_conflict = connection.execute(
-                "SELECT 1 FROM external_identities source JOIN external_identities target "
-                "ON target.provider_id = source.provider_id WHERE source.media_id = ? "
-                "AND target.media_id = ? LIMIT 1",
-                (source_media_id, target_media_id),
-            ).fetchone()
-            remote_conflict = connection.execute(
-                "SELECT 1 FROM remote_library_entries source "
-                "JOIN remote_library_entries target ON target.account_id = source.account_id "
-                "WHERE source.media_id = ? AND target.media_id = ? LIMIT 1",
-                (source_media_id, target_media_id),
-            ).fetchone()
-            local_conflict = connection.execute(
-                "SELECT 1 FROM library_entries source JOIN library_entries target "
-                "WHERE source.media_id = ? AND target.media_id = ? LIMIT 1",
-                (source_media_id, target_media_id),
-            ).fetchone()
-            if identity_conflict or remote_conflict or local_conflict:
-                raise ValueError("Association has incompatible library entries")
-            connection.execute(
-                "INSERT OR IGNORE INTO media_titles"
-                "(media_id, language, title, normalized_title, is_primary) "
-                "SELECT ?, language, title, normalized_title, 0 FROM media_titles "
-                "WHERE media_id = ?",
-                (target_media_id, source_media_id),
-            )
-            connection.execute(
-                "INSERT OR IGNORE INTO media_seasons(media_id, season_number, label, year) "
-                "SELECT ?, season_number, label, year FROM media_seasons WHERE media_id = ?",
-                (target_media_id, source_media_id),
-            )
-            connection.execute(
-                "INSERT OR IGNORE INTO episodes"
-                "(media_id, episode_number, episode_type, title, duration_minutes) "
-                "SELECT ?, episode_number, episode_type, title, duration_minutes FROM episodes "
-                "WHERE media_id = ?",
-                (target_media_id, source_media_id),
-            )
-            connection.execute(
-                "UPDATE remote_library_entries SET media_id = ? WHERE media_id = ?",
-                (target_media_id, source_media_id),
-            )
-            connection.execute(
-                "UPDATE library_entries SET media_id = ? WHERE media_id = ?",
-                (target_media_id, source_media_id),
-            )
-            connection.execute(
-                "UPDATE playback_events SET canonical_media_id = ? WHERE canonical_media_id = ?",
-                (target_media_id, source_media_id),
-            )
-            connection.execute(
-                "UPDATE match_corrections SET canonical_media_id = ? WHERE canonical_media_id = ?",
-                (target_media_id, source_media_id),
-            )
-            connection.execute(
-                "UPDATE external_identities SET media_id = ? WHERE media_id = ?",
-                (target_media_id, source_media_id),
-            )
-            connection.execute(
-                "UPDATE external_identities SET confidence = 1.0 WHERE id = ?",
-                (candidate["source_identity_id"],),
-            )
-            connection.execute(
-                "UPDATE association_candidates SET status = CASE WHEN id = ? "
-                "THEN 'resolved' ELSE 'dismissed' END, resolved_at = CURRENT_TIMESTAMP "
-                "WHERE source_identity_id = ? AND status = 'pending'",
-                (candidate_id, candidate["source_identity_id"]),
-            )
-            connection.execute("DELETE FROM media WHERE id = ?", (source_media_id,))
-            return target_media_id
-
-    def get_linked_identities(self) -> list[dict]:
-        with self.connect() as connection:
-            rows = connection.execute(
-                "SELECT ei.id AS identity_id, ei.media_id, ei.provider_id AS provider, "
-                "ei.external_id, ei.confidence, counts.identity_count, "
-                "COALESCE((SELECT title FROM media_titles WHERE media_id = ei.media_id "
-                "ORDER BY is_primary DESC, language LIMIT 1), ei.external_id) AS title "
-                "FROM external_identities ei JOIN (SELECT media_id, COUNT(*) AS identity_count "
-                "FROM external_identities GROUP BY media_id HAVING COUNT(*) > 1) counts "
-                "ON counts.media_id = ei.media_id ORDER BY ei.media_id, ei.provider_id"
-            ).fetchall()
-            return [dict(row) for row in rows]
-
-    def separate_external_identity(self, identity_id: int) -> int:
-        with self.connect() as connection:
-            identity = connection.execute(
-                "SELECT * FROM external_identities WHERE id = ?", (identity_id,)
-            ).fetchone()
-            if identity is None:
-                raise ValueError("External identity not found")
-            source_media_id = int(identity["media_id"])
-            count = connection.execute(
-                "SELECT COUNT(*) FROM external_identities WHERE media_id = ?",
-                (source_media_id,),
-            ).fetchone()[0]
-            if count < 2:
-                raise ValueError("External identity is not linked to another provider")
-            media = connection.execute(
-                "SELECT media_type, format, episode_count, release_year FROM media WHERE id = ?",
-                (source_media_id,),
-            ).fetchone()
-            cursor = connection.execute(
-                "INSERT INTO media(media_type, format, episode_count, release_year) "
-                "VALUES (?, ?, ?, ?)",
-                tuple(media),
-            )
-            target_media_id = int(cursor.lastrowid)
-            connection.execute(
-                "INSERT INTO media_titles(media_id, language, title, normalized_title, is_primary) "
-                "SELECT ?, language, title, normalized_title, is_primary FROM media_titles "
-                "WHERE media_id = ?",
-                (target_media_id, source_media_id),
-            )
-            connection.execute(
-                "INSERT INTO media_seasons(media_id, season_number, label, year) "
-                "SELECT ?, season_number, label, year FROM media_seasons WHERE media_id = ?",
-                (target_media_id, source_media_id),
-            )
-            connection.execute(
-                "INSERT INTO episodes(media_id, episode_number, episode_type, title, duration_minutes) "
-                "SELECT ?, episode_number, episode_type, title, duration_minutes FROM episodes "
-                "WHERE media_id = ?",
-                (target_media_id, source_media_id),
-            )
-            provider_id = identity["provider_id"]
-            connection.execute(
-                "UPDATE remote_library_entries SET media_id = ? WHERE media_id = ? "
-                "AND account_id IN (SELECT id FROM accounts WHERE provider_id = ?)",
-                (target_media_id, source_media_id, provider_id),
-            )
-            primary_provider = connection.execute(
-                "SELECT value FROM settings WHERE key = 'primary_provider'"
-            ).fetchone()
-            if provider_id == (primary_provider["value"] if primary_provider else "anilist"):
-                connection.execute(
-                    "UPDATE library_entries SET media_id = ? WHERE media_id = ?",
-                    (target_media_id, source_media_id),
-                )
-            connection.execute(
-                "UPDATE playback_events SET canonical_media_id = ? "
-                "WHERE canonical_media_id = ? AND provider_id = ?",
-                (target_media_id, source_media_id, provider_id),
-            )
-            connection.execute(
-                "UPDATE match_corrections SET canonical_media_id = ? "
-                "WHERE canonical_media_id = ? AND provider_id = ?",
-                (target_media_id, source_media_id, provider_id),
-            )
-            connection.execute(
-                "UPDATE external_identities SET media_id = ?, confidence = 1.0 WHERE id = ?",
-                (target_media_id, identity_id),
-            )
-            connection.execute(
-                "UPDATE association_candidates SET status = 'separated', "
-                "resolved_at = CURRENT_TIMESTAMP WHERE source_identity_id = ?",
-                (identity_id,),
-            )
-            return target_media_id
 
     def get_match_correction(self, raw_pattern: str, provider_id: str = "anilist") -> int | None:
         with self.connect() as connection:
@@ -1840,3 +1847,108 @@ class Database:
                     "WHERE media_id = ?",
                     (status, media_id),
                 )
+
+    def list_torrent_sources(self) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT id, name, url, enabled FROM torrent_sources ORDER BY id"
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def add_torrent_source(self, name: str, url: str, enabled: bool = True) -> int:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO torrent_sources(name, url, enabled, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (name, url, 1 if enabled else 0, int(time.time())),
+            )
+            return int(cursor.lastrowid)
+
+    def update_torrent_source(self, source_id: int, name: str, url: str, enabled: bool) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE torrent_sources SET name = ?, url = ?, enabled = ? WHERE id = ?",
+                (name, url, 1 if enabled else 0, source_id),
+            )
+
+    def delete_torrent_source(self, source_id: int) -> None:
+        with self.connect() as connection:
+            connection.execute("DELETE FROM torrent_sources WHERE id = ?", (source_id,))
+
+    def list_torrent_filters(self) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT id, field, op, value, action, enabled, priority "
+                "FROM torrent_filters ORDER BY priority, id"
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def add_torrent_filter(
+        self, field: str, op: str, value: str, action: str,
+        enabled: bool = True, priority: int = 0,
+    ) -> int:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO torrent_filters(field, op, value, action, enabled, priority, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (field, op, value, action, 1 if enabled else 0, priority, int(time.time())),
+            )
+            return int(cursor.lastrowid)
+
+    def update_torrent_filter(
+        self, filter_id: int, field: str, op: str, value: str, action: str,
+        enabled: bool, priority: int,
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE torrent_filters SET field = ?, op = ?, value = ?, action = ?, "
+                "enabled = ?, priority = ? WHERE id = ?",
+                (field, op, value, action, 1 if enabled else 0, priority, filter_id),
+            )
+
+    def delete_torrent_filter(self, filter_id: int) -> None:
+        with self.connect() as connection:
+            connection.execute("DELETE FROM torrent_filters WHERE id = ?", (filter_id,))
+
+    def list_seen_signatures(self) -> set[str]:
+        with self.connect() as connection:
+            rows = connection.execute("SELECT signature FROM torrent_seen").fetchall()
+            return {row["signature"] for row in rows}
+
+    def is_torrent_discarded(self, signature: str) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT discarded FROM torrent_seen WHERE signature = ?", (signature,)
+            ).fetchone()
+            return bool(row["discarded"]) if row else False
+
+    def mark_torrent_seen(self, signature: str, media_id: int | None) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO torrent_seen(signature, media_id, seen_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(signature) DO NOTHING",
+                (signature, media_id, int(time.time())),
+            )
+
+    def set_torrent_discarded(self, signature: str, media_id: int | None) -> None:
+        self._set_torrent_flag(signature, media_id, "discarded")
+
+    def set_torrent_downloaded(self, signature: str, media_id: int | None) -> None:
+        self._set_torrent_flag(signature, media_id, "downloaded")
+
+    def _set_torrent_flag(self, signature: str, media_id: int | None, column: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                f"INSERT INTO torrent_seen(signature, media_id, {column}, seen_at) "
+                f"VALUES (?, ?, 1, ?) "
+                f"ON CONFLICT(signature) DO UPDATE SET {column} = 1",
+                (signature, media_id, int(time.time())),
+            )
+
+    def primary_account(self) -> tuple[str, str] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT provider_id AS provider, alias FROM accounts "
+                "ORDER BY is_primary DESC, id LIMIT 1"
+            ).fetchone()
+            return (row["provider"], row["alias"]) if row else None
