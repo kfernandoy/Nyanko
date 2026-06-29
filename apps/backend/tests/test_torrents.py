@@ -121,3 +121,26 @@ def test_build_feed_marks_not_new_and_skips_discarded():
     assert items[0].is_new is False
     discarded = torrents.build_feed([_parsed(episode=28)], library, [], {sig}, {sig})
     assert discarded == []
+
+
+def test_build_feed_preferred_resolution_ordering():
+    """preferred_resolution sorts matching items before non-matching; user prefer still dominates."""
+    library = [_lib_entry(progress=27)]
+    item_1080 = _parsed(resolution="1080p", guid="g1080", seeders=10)
+    item_720 = _parsed(resolution="720p", guid="g720", seeders=10)
+
+    # preferred_resolution="1080p": 1080p ranks before 720p (input order: 720p first).
+    feed = torrents.build_feed(
+        [item_720, item_1080], library, [], set(), set(), preferred_resolution="1080p"
+    )
+    assert feed[0].resolution == "1080p"
+    assert feed[1].resolution == "720p"
+
+    # A user prefer rule on 720p dominates over preferred_resolution="1080p".
+    prefer_720 = [{"field": "resolution", "op": "equals", "value": "720p",
+                   "action": "prefer", "enabled": 1, "priority": 0}]
+    feed2 = torrents.build_feed(
+        [item_1080, item_720], library, prefer_720, set(), set(), preferred_resolution="1080p"
+    )
+    assert feed2[0].resolution == "720p"   # user prefer wins
+    assert feed2[1].resolution == "1080p"

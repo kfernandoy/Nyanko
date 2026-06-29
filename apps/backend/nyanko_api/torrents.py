@@ -142,6 +142,7 @@ def build_feed(
     seen: set[str],
     discarded: set[str],
     min_confidence: float = 0.6,
+    preferred_resolution: str | None = None,
 ) -> list[FeedItem]:
     index = build_token_index(library)
     by_id = {item.id: item for item in library}
@@ -180,8 +181,13 @@ def build_feed(
                 is_new=sig not in seen,
             ),
         ))
-    # prefer primero; dentro de cada grupo, los nuevos antes y mayor seeders antes.
-    results.sort(key=lambda r: (-r[0], not r[1].is_new, -(r[1].seeders or 0)))
+    # prefer primero; luego preferred_resolution como desempate; dentro, nuevos antes y mayor seeders.
+    results.sort(key=lambda r: (
+        -r[0],
+        0 if (preferred_resolution and r[1].resolution == preferred_resolution) else 1,
+        not r[1].is_new,
+        -(r[1].seeders or 0),
+    ))
     return [item for _, item in results]
 
 

@@ -485,12 +485,14 @@ async def _compute_torrent_feed(
         if not source["enabled"]:
             continue
         try:
-            xml_text = _fetch_torrent_xml(source["url"])
+            xml_text = await asyncio.to_thread(_fetch_torrent_xml, source["url"])
         except Exception:
             logger.warning("No se pudo leer la fuente de torrents %s", source["url"])
             continue
         parsed.extend(torrents_mod.parse_feed(xml_text, source["id"]))
-    feed = torrents_mod.build_feed(parsed, library, filters, seen, discarded)
+    settings_t = _get_torrent_settings(database)
+    feed = torrents_mod.build_feed(parsed, library, filters, seen, discarded,
+                                   preferred_resolution=settings_t.preferred_resolution)
     _torrent_link_cache.update({item.signature: item.link for item in feed})
     return feed
 
@@ -2837,6 +2839,7 @@ async def torrent_feed(
     feed = await _compute_torrent_feed(database, library)
     for item in feed:
         database.mark_torrent_seen(item.signature, item.media_id)
+    _torrent_unread["count"] = 0
     return [TorrentItem(**asdict(item)) for item in feed]
 
 
@@ -2856,6 +2859,8 @@ def torrent_download(
         raise HTTPException(status_code=404, detail="signature desconocida; refresca el feed")
     database.set_torrent_downloaded(body.signature, None)
     if settings_t.download_mode == "folder" and link.endswith(".torrent"):
+        if not settings_t.watch_folder:
+            raise HTTPException(status_code=400, detail="watch_folder no configurado; añádelo en Ajustes de Torrents")
         folder = Path(settings_t.watch_folder)
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"{body.signature}.torrent"

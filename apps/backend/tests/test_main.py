@@ -1275,6 +1275,40 @@ def test_torrent_unread_counts_new(monkeypatch, tmp_path):
     assert count >= 1
 
 
+def test_torrent_feed_clears_unread_badge(client, monkeypatch):
+    """Viewing the feed must reset the nav-badge count to 0."""
+    import nyanko_api.main as _main
+    monkeypatch.setattr("nyanko_api.main._fetch_torrent_xml", lambda url: _NYAA_XML)
+
+    async def _mock_lib(*a, **k):
+        return [MediaItem(id=1, title="Frieren", status="CURRENT", progress=27)]
+
+    monkeypatch.setattr("nyanko_api.main._load_library_for_torrents", _mock_lib)
+
+    # Simulate the background checker having set a non-zero unread count.
+    _main._torrent_unread["count"] = 5
+
+    client.get("/api/torrents/feed?refresh=true")
+    assert client.get("/api/torrents/unread-count").json() == {"count": 0}
+
+
+def test_torrent_download_folder_mode_empty_watch_folder(client):
+    """download_mode=folder with blank watch_folder must return 400, not write to CWD."""
+    import nyanko_api.main as _main
+    from nyanko_api import torrents as torrents_mod
+
+    client.put("/api/torrents/settings", json={
+        "auto_check": False, "interval_min": 60, "download_mode": "folder",
+        "watch_folder": "", "preferred_resolution": "1080p",
+    })
+    # Inject a .torrent link into the cache (Wistoria item, source_id=1).
+    sig = torrents_mod.signature(1, "https://nyaa.si/view/1000002")
+    _main._torrent_link_cache[sig] = "https://nyaa.si/download/1000002.torrent"
+
+    resp = client.post("/api/torrents/download", json={"signature": sig})
+    assert resp.status_code == 400
+
+
 def test_torrent_feed_refresh_param_wires_through(client, database, monkeypatch):
     """refresh=true bypasses the library cache; refresh=false does not call provider.library."""
     import nyanko_api.main as _main
