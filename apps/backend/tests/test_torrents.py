@@ -40,3 +40,84 @@ def test_parse_feed_season_episode():
 def test_signature_stable():
     assert torrents.signature(1, "g") == torrents.signature(1, "g")
     assert torrents.signature(1, "g") != torrents.signature(2, "g")
+
+
+from nyanko_api.models import MediaItem
+
+
+def _lib_entry(**kw):
+    base = dict(id=1, title="Frieren", status="CURRENT", progress=27, media_type="ANIME")
+    base.update(kw)
+    return MediaItem(**base)
+
+
+def _parsed(**kw):
+    base = dict(
+        raw_title="[SubsPlease] Frieren - 28 (1080p).mkv",
+        link="magnet:?x", guid="g1", source_id=1, title="Frieren",
+        episode=28, group="SubsPlease", resolution="1080p", seeders=10,
+    )
+    base.update(kw)
+    return torrents.ParsedTorrent(**base)
+
+
+def test_passes_filters_exclude_wins():
+    filt = [{"field": "group", "op": "equals", "value": "SubsPlease",
+             "action": "exclude", "enabled": 1, "priority": 0}]
+    assert torrents.passes_filters(_parsed(), filt) is False
+
+
+def test_passes_filters_resolution_contains():
+    filt = [{"field": "resolution", "op": "equals", "value": "720p",
+             "action": "exclude", "enabled": 1, "priority": 0}]
+    assert torrents.passes_filters(_parsed(resolution="1080p"), filt) is True
+    assert torrents.passes_filters(_parsed(resolution="720p"), filt) is False
+
+
+def test_passes_filters_episode_gt():
+    filt = [{"field": "episode", "op": "lt", "value": "10",
+             "action": "exclude", "enabled": 1, "priority": 0}]
+    assert torrents.passes_filters(_parsed(episode=5), filt) is False
+    assert torrents.passes_filters(_parsed(episode=28), filt) is True
+
+
+def test_passes_filters_disabled_ignored():
+    filt = [{"field": "group", "op": "equals", "value": "SubsPlease",
+             "action": "exclude", "enabled": 0, "priority": 0}]
+    assert torrents.passes_filters(_parsed(), filt) is True
+
+
+def test_build_feed_new_episode_only():
+    library = [_lib_entry(progress=27)]
+    items = torrents.build_feed([_parsed(episode=28)], library, [], set(), set())
+    assert len(items) == 1
+    assert items[0].media_id == 1
+    assert items[0].episode == 28
+    assert items[0].is_new is True
+
+
+def test_build_feed_skips_already_watched():
+    library = [_lib_entry(progress=28)]
+    items = torrents.build_feed([_parsed(episode=28)], library, [], set(), set())
+    assert items == []
+
+
+def test_build_feed_skips_non_current_status():
+    library = [_lib_entry(status="COMPLETED", progress=12)]
+    items = torrents.build_feed([_parsed(episode=28)], library, [], set(), set())
+    assert items == []
+
+
+def test_build_feed_skips_unmatched():
+    library = [_lib_entry(title="Totally Other Show")]
+    items = torrents.build_feed([_parsed(episode=28)], library, [], set(), set())
+    assert items == []
+
+
+def test_build_feed_marks_not_new_and_skips_discarded():
+    library = [_lib_entry(progress=27)]
+    sig = torrents.signature(1, "g1")
+    items = torrents.build_feed([_parsed(episode=28)], library, [], {sig}, set())
+    assert items[0].is_new is False
+    discarded = torrents.build_feed([_parsed(episode=28)], library, [], {sig}, {sig})
+    assert discarded == []
