@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import threading
 import json
 import logging
 import os
@@ -494,6 +495,59 @@ async def _compute_torrent_feed(
     return feed
 
 
+def _cached_library(database: Database, provider: str, account: str) -> list[MediaItem]:
+    record = database.get_cache_record(account_cache_key(provider, account, "list"))
+    if record is None:
+        return []
+    return [MediaItem.model_validate(item) for item in record.payload]
+
+
+async def _torrent_check_once(database: Database) -> int:
+    primary = database.primary_account()
+    if primary is None:
+        return 0
+    provider, account = primary
+    library = _cached_library(database, provider, account)
+    if not library:
+        return 0
+    feed = await _compute_torrent_feed(database, library)
+    new_count = sum(1 for item in feed if item.is_new)
+    _torrent_unread["count"] = new_count
+    return new_count
+
+
+class TorrentChecker:
+    def __init__(self, settings: Settings):
+        self._settings = settings
+        self._thread: threading.Thread | None = None
+        self._stop = threading.Event()
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        database = Database(self._settings.database_path)
+        try:
+            interval = max(5, _get_torrent_settings(database).interval_min) * 60
+        except Exception:
+            interval = 600
+        # ponytail: wait-first so the thread never runs during tests (tests finish
+        # in < 1s; the minimum interval is 5 min). Returns True if stopped early.
+        while not self._stop.wait(interval):
+            try:
+                config = _get_torrent_settings(database)
+                if config.auto_check:
+                    asyncio.run(_torrent_check_once(database))
+                interval = max(5, config.interval_min) * 60
+            except Exception:
+                logger.exception("Fallo en el ciclo de torrents")
+                interval = 600
+
+    def stop(self) -> None:
+        self._stop.set()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -521,9 +575,12 @@ async def lifespan(app: FastAPI):
         settings, database, app.state.browser_detector
     )
     app.state.detector_manager.start_polling()
+    app.state.torrent_checker = TorrentChecker(settings)
+    app.state.torrent_checker.start()
 
     yield
 
+    app.state.torrent_checker.stop()
     app.state.detector_manager.stop()
 
 

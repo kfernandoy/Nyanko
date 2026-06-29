@@ -1255,6 +1255,23 @@ def test_torrent_unread_count(client):
     assert client.get("/api/torrents/unread-count").json() == {"count": 0}
 
 
+def test_torrent_unread_counts_new(monkeypatch, tmp_path):
+    import asyncio
+    from nyanko_api import main as main_mod
+    monkeypatch.setattr(main_mod, "_fetch_torrent_xml", lambda url: _NYAA_XML)
+    # Use an isolated tmp database so the real disk DB is not polluted.
+    db = main_mod.Database(tmp_path / "test.sqlite3")
+    db.initialize()
+    db.add_torrent_source("test-feed", "https://test/rss", True)
+    # biblioteca cacheada para anilist/default
+    db.set_cache(main_mod.account_cache_key("anilist", "default", "list"),
+                 [MediaItem(id=1, title="Frieren", status="CURRENT", progress=27).model_dump(mode="json")],
+                 300)
+    db.ensure_account("anilist", "default")
+    count = asyncio.run(main_mod._torrent_check_once(db))
+    assert count >= 1
+
+
 def test_torrent_feed_refresh_param_wires_through(client, database, monkeypatch):
     """refresh=true bypasses the library cache; refresh=false does not call provider.library."""
     import nyanko_api.main as _main
