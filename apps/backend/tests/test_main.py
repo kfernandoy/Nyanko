@@ -1195,10 +1195,13 @@ def client(database, monkeypatch):
     from fastapi.testclient import TestClient
 
     monkeypatch.setattr("nyanko_api.main.get_provider_credential", lambda provider, alias: "token")
+    # Prevent the real background checker from spinning up against the on-disk DB.
+    monkeypatch.setattr("nyanko_api.main.TorrentChecker.start", lambda self: None)
     app.dependency_overrides[get_database] = lambda: database
     database.add_torrent_source("test-feed", "https://test/rss", True)
-    # Clear module-level cache so tests don't bleed into each other.
+    # Clear module-level caches so tests don't bleed into each other.
     _main._torrent_link_cache.clear()
+    _main._torrent_unread["count"] = 0
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.pop(get_database, None)

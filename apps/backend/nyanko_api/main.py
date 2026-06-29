@@ -528,13 +528,7 @@ class TorrentChecker:
 
     def _run(self) -> None:
         database = Database(self._settings.database_path)
-        try:
-            interval = max(5, _get_torrent_settings(database).interval_min) * 60
-        except Exception:
-            interval = 600
-        # ponytail: wait-first so the thread never runs during tests (tests finish
-        # in < 1s; the minimum interval is 5 min). Returns True if stopped early.
-        while not self._stop.wait(interval):
+        while not self._stop.is_set():
             try:
                 config = _get_torrent_settings(database)
                 if config.auto_check:
@@ -543,6 +537,7 @@ class TorrentChecker:
             except Exception:
                 logger.exception("Fallo en el ciclo de torrents")
                 interval = 600
+            self._stop.wait(interval)
 
     def stop(self) -> None:
         self._stop.set()
