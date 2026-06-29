@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:nyaa="https://nyaa.si/xmlns/nyaa">
+  <channel>
+    <title>Nyaa</title>
+    <item>
+      <title>[SubsPlease] Frieren - 28 (1080p) [F00BAR12].mkv</title>
+      <link>magnet:?xt=urn:btih:AAA&amp;dn=Frieren</link>
+      <guid>https://nyaa.si/view/1000001</guid>
+      <nyaa:seeders>120</nyaa:seeders>
+    </item>
+    <item>
+      <title>[Erai-raws] Wistoria - Wand and Sword - 08 [720p][HEVC].mkv</title>
+      <link>https://nyaa.si/download/1000002.torrent</link>
+      <guid>https://nyaa.si/view/1000002</guid>
+      <nyaa:seeders>33</nyaa:seeders>
+    </item>
+    <item>
+      <title>[Group] Some Show S02E03 [2160p].mkv</title>
+      <link>magnet:?xt=urn:btih:CCC</link>
+      <guid>https://nyaa.si/view/1000003</guid>
+    </item>
+  </channel>
+</rss>
