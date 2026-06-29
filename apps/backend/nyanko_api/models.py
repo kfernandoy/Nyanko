@@ -19,6 +19,8 @@ class ProviderCapabilitiesResponse(BaseModel):
     statistics: bool
     seasons: bool
     manga: bool
+    preferences: bool = False
+    preferences_editable: bool = False
 
 
 class ProviderInfo(BaseModel):
@@ -28,34 +30,49 @@ class ProviderInfo(BaseModel):
     capabilities: ProviderCapabilitiesResponse
 
 
-SyncDirection = Literal["import", "bidirectional", "export"]
-
-
 class AccountInfo(BaseModel):
     id: int
     provider: str
     alias: str
     authenticated: bool
-    sync_direction: SyncDirection
     is_primary: bool
     last_synced_at: str | None = None
 
 
 class AccountUpdate(BaseModel):
-    sync_direction: SyncDirection | None = None
     is_primary: bool | None = None
 
 
-class AssociationCandidateInfo(BaseModel):
+class LibraryFolder(BaseModel):
     id: int
-    source_identity_id: int
-    source_provider: str
-    source_external_id: str
-    source_title: str
-    candidate_media_id: int
-    candidate_title: str
-    confidence: float
-    status: str
+    path: str
+    recursive: bool
+
+
+class LibraryFolderCreate(BaseModel):
+    path: str
+    recursive: bool = True
+
+
+class ScanSummary(BaseModel):
+    total: int
+    matched: int
+    unmatched: int
+
+
+class ScanSettings(BaseModel):
+    scan_on_startup: bool
+
+
+class PendingLocalItem(BaseModel):
+    media_id: int
+    external_id: int
+    title: str
+    cover_image: str | None = None
+    progress: int
+    next_episode: int
+    next_path: str
+    available_count: int
 
 
 class ConflictInfo(BaseModel):
@@ -76,16 +93,6 @@ class ConflictInfo(BaseModel):
 class ConflictResolution(BaseModel):
     resolution: Literal["local", "remote", "manual"]
     value: str | None = None
-
-
-class LinkedIdentityInfo(BaseModel):
-    identity_id: int
-    media_id: int
-    provider: str
-    external_id: str
-    title: str
-    confidence: float
-    identity_count: int
 
 
 class AniListTitle(BaseModel):
@@ -117,6 +124,7 @@ class MediaItem(BaseModel):
     updated_at: int | None = None
     canonical_id: int | None = None
     provider: str | None = None
+    account_alias: str | None = None
     started_at: str | None = None
     completed_at: str | None = None
 
@@ -145,6 +153,7 @@ class PlaybackCandidate(BaseModel):
     content_kind: Literal["episode", "trailer", "preview", "opening", "ending", "unknown"] = "unknown"
     site_adapter: str | None = None
     search_hints: list[str] = Field(default_factory=list)
+    next_episode_url: str | None = None
 
 
 class ExtensionPairRequest(BaseModel):
@@ -189,6 +198,7 @@ class ExtensionPlaybackEvent(BaseModel):
     site_adapter: str = Field(default="generic", min_length=1, max_length=80)
     site_identifier: str | None = Field(default=None, max_length=500)
     search_hints: list[str] = Field(default_factory=list)
+    next_episode_url: str | None = Field(default=None, max_length=2000)
 
 
 class ActivityItem(BaseModel):
@@ -341,6 +351,7 @@ class MediaDetails(BaseModel):
     next_episode: int | None = None
     next_airing_at: int | None = None
     score_format: str
+    canonical_id: int | None = None
     list_entry: MediaListEntry | None = None
     characters: list[CharacterEdge] = Field(default_factory=list)
     staff: list[StaffEdge] = Field(default_factory=list)
@@ -402,12 +413,17 @@ class PlaybackMatchResponse(BaseModel):
     candidate: PlaybackCandidate
     match: MediaItem | None = None
     match_score: float
+    # Alternative library entries the user can pick when the single match is weak,
+    # ambiguous or wrong — so detection never silently assumes an irrelevant series.
+    suggestions: list[MediaItem] = Field(default_factory=list)
 
 
 class PlaybackConfirmRequest(BaseModel):
     event_id: int | None = None
     media_id: int
     progress: int
+    site_identifier: str | None = None
+    site_adapter: str | None = None
 
 
 class PlaybackUndoResponse(BaseModel):
@@ -504,6 +520,27 @@ class UserPreferencesUpdate(BaseModel):
     display_adult_content: bool
 
 
+class WontWatchItem(BaseModel):
+    external_id: str
+    title: str | None = None
+    cover_image: str | None = None
+
+
+class WontWatchRequest(BaseModel):
+    media_id: int
+    title: str | None = None
+    cover_image: str | None = None
+
+
+class WontWatchState(BaseModel):
+    items: list[WontWatchItem]
+    show_marked: bool
+
+
+class DiscoverSettingsUpdate(BaseModel):
+    show_marked: bool
+
+
 class MatchCorrectionRequest(BaseModel):
     raw_title: str
     media_id: int
@@ -519,6 +556,10 @@ class LibrarySearchResponse(BaseModel):
 class SearchResult(BaseModel):
     id: int
     title: str
+    title_romaji: str | None = None
+    title_english: str | None = None
+    title_native: str | None = None
+    synonyms: list[str] = Field(default_factory=list)
     format: str | None = None
     status: str | None = None
     episodes: int | None = None
@@ -527,6 +568,8 @@ class SearchResult(BaseModel):
     average_score: int | None = None
     popularity: int = 0
     cover_image: str | None = None
+    year: int | None = None
+    genres: list[str] = Field(default_factory=list)
 
 
 class SearchFilters(BaseModel):
@@ -536,6 +579,7 @@ class SearchFilters(BaseModel):
     genre: str | None = None
     format: str | None = None
     year: int | None = None
+    season: str | None = None
     status: str | None = None
     is_adult: bool = False
     media_type: Literal["ANIME", "MANGA"] = "ANIME"
@@ -545,3 +589,67 @@ class SearchFilters(BaseModel):
 class GlobalSearchResponse(BaseModel):
     results: list[SearchResult]
     has_next_page: bool = False
+
+
+class TorrentSource(BaseModel):
+    id: int
+    name: str
+    url: str
+    enabled: bool
+
+
+class TorrentSourceInput(BaseModel):
+    name: str
+    url: str
+    enabled: bool = True
+
+
+class TorrentFilter(BaseModel):
+    id: int
+    field: str
+    op: str
+    value: str
+    action: str
+    enabled: bool
+    priority: int = 0
+
+
+class TorrentFilterInput(BaseModel):
+    field: str
+    op: str
+    value: str
+    action: str
+    enabled: bool = True
+    priority: int = 0
+
+
+class TorrentSettings(BaseModel):
+    auto_check: bool = True
+    interval_min: int = 60
+    download_mode: str = "magnet"   # magnet | folder
+    watch_folder: str = ""
+    preferred_resolution: str = "1080p"
+
+
+class TorrentItem(BaseModel):
+    signature: str
+    raw_title: str
+    link: str
+    media_id: int | None = None
+    media_title: str | None = None
+    episode: int | None = None
+    resolution: str | None = None
+    group: str | None = None
+    seeders: int | None = None
+    confidence: float
+    is_new: bool
+
+
+class TorrentActionRequest(BaseModel):
+    signature: str
+
+
+class TorrentDownloadResponse(BaseModel):
+    action: str          # "magnet" | "saved"
+    link: str | None = None
+    path: str | None = None
