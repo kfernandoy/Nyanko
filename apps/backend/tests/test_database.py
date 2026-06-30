@@ -793,6 +793,24 @@ def test_torrent_seen_flags(tmp_path):
     assert db.is_torrent_discarded("sig1") is True
 
 
+def test_get_local_series_matched_files_use_canonical_title(tmp_path):
+    db = Database(tmp_path / "t.db"); db.initialize()
+    db.sync_provider_library("anilist", "AniList", [
+        MediaItem(id=1, title="Sousou no Frieren", status="CURRENT", progress=12)
+    ])
+    media_id = db.canonical_media_id("anilist", 1)
+    db.replace_local_files([
+        {"path": "/a/frieren-01.mkv", "media_id": media_id, "episode": 1, "parsed_title": "frieren"},
+        {"path": "/a/frieren-02.mkv", "media_id": media_id, "episode": 2, "parsed_title": "frieren"},
+    ])
+    series = db.get_local_series()
+    assert len(series) == 1
+    s = series[0]
+    assert s["matched"] is True
+    assert s["episode_count"] == 2
+    assert s["title"] == "Sousou no Frieren"
+
+
 def test_get_local_series_groups_scanned_files(tmp_path):
     db = Database(tmp_path / "t.db"); db.initialize()
     # media canónica para matchear
