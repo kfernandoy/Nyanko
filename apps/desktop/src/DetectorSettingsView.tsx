@@ -44,7 +44,7 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
   const { t, lang, setLang, theme, setTheme, titleLanguage, setTitleLanguage, discordRpc, setDiscordRpc, discordFields, setDiscordFields } = useApp();
   const providerLabel = PROVIDER_LABELS[activeAccount.provider] ?? activeAccount.provider;
   const [tab, setTab] = useState<SettingsTab>("proveedores");
-  const [appTab, setAppTab] = useState<"anime" | "general">("anime");
+  // ponytail: appTab removed — only "general" subtab remains
   const [recogTab, setRecogTab] = useState<"general" | "reproductores" | "plataformas">("general");
   const [detectors, setDetectors] = useState<DetectorInfo[]>([]);
   const [saving, setSaving] = useState<string | null>(null);
@@ -205,9 +205,11 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
             <div className="profile-heading">
               <div><h2>Preferencias de {providerLabel}</h2></div>
             </div>
+            <div className="preference-fields">
+              <label>Idioma de títulos<select value={titleLanguage} onChange={(event) => setTitleLanguage(event.target.value as TitleLanguage)}><option value="ROMAJI">Romaji</option><option value="ENGLISH">Inglés</option><option value="NATIVE">Nativo</option></select></label>
+            </div>
             {capabilities.preferences_editable ? <>
               <div className="preference-fields">
-                <label>Idioma de títulos<select value={titleLanguage} onChange={(event) => setTitleLanguage(event.target.value as TitleLanguage)}><option value="ROMAJI">Romaji</option><option value="ENGLISH">Inglés</option><option value="NATIVE">Nativo</option></select></label>
                 {activeAccount.provider === "anilist" && <label>Formato de puntuación<select value={preferences.score_format} onChange={(event) => setPreferences({ ...preferences, score_format: event.target.value as UserPreferences["score_format"] })}><option value="POINT_100">100 puntos</option><option value="POINT_10_DECIMAL">10 puntos decimal</option><option value="POINT_10">10 puntos</option><option value="POINT_5">5 estrellas</option><option value="POINT_3">3 emociones</option></select></label>}
                 <label className="checkbox-field"><input type="checkbox" checked={preferences.display_adult_content} onChange={(event) => setPreferences({ ...preferences, display_adult_content: event.target.checked })} /> Mostrar contenido adulto</label>
               </div>
@@ -225,12 +227,6 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
     {tab === "biblioteca" && <LibrarySettingsView />}
 
     {tab === "aplicacion" && <>
-      <div className="settings-tabs provider-subtabs">
-        <button className={appTab === "anime" ? "active" : ""} onClick={() => setAppTab("anime")}>{t("settings.subtab.anime")}</button>
-        <button className={appTab === "general" ? "active" : ""} onClick={() => setAppTab("general")}>{t("settings.subtab.general")}</button>
-      </div>
-
-      {appTab === "general" && <>
         <div className="profile-settings">
           <div className="profile-heading"><div><h2>{t("settings.appearance.title")}</h2><span>{t("settings.appearance.subtitle")}</span></div></div>
           <div className="preference-fields">
@@ -298,7 +294,6 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
             <button className="toggle" disabled aria-disabled="true"><i /></button>
           </article>
         ))}</div>
-      </>}
     </>}
 
     {tab === "reconocimiento" && <>
