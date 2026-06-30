@@ -1312,6 +1312,28 @@ def test_torrent_feed_clears_unread_badge(client, monkeypatch):
     assert client.get("/api/torrents/unread-count").json() == {"count": 0}
 
 
+def test_torrent_filter_taiga_crud(client):
+    body = {
+        "name": "Solo SubsPlease 1080p", "action": "select", "match": "all", "scope": "all",
+        "enabled": True,
+        "conditions": [{"element": "group", "operator": "is", "value": "SubsPlease"},
+                       {"element": "resolution", "operator": "equals", "value": "1080p"}],
+        "anime_ids": [],
+    }
+    created = client.post("/api/torrents/filters", json=body).json()
+    assert created["name"] == "Solo SubsPlease 1080p"
+    assert created["action"] == "select"
+    assert len(created["conditions"]) == 2
+    fid = created["id"]
+    listed = client.get("/api/torrents/filters").json()
+    assert any(f["id"] == fid for f in listed)
+    updated_body = {**body, "name": "Solo SubsPlease 1080p v2", "enabled": False}
+    updated = client.put(f"/api/torrents/filters/{fid}", json=updated_body).json()
+    assert updated["name"] == "Solo SubsPlease 1080p v2" and not updated["enabled"]
+    assert client.delete(f"/api/torrents/filters/{fid}").status_code == 204
+    assert all(f["id"] != fid for f in client.get("/api/torrents/filters").json())
+
+
 def test_torrent_download_folder_mode_empty_watch_folder(client):
     """download_mode=folder with blank watch_folder must return 400, not write to CWD."""
     import nyanko_api.main as _main

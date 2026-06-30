@@ -203,16 +203,6 @@ CREATE TABLE IF NOT EXISTS torrent_sources (
   kind TEXT NOT NULL DEFAULT 'release',
   created_at INTEGER NOT NULL DEFAULT 0
 );
-CREATE TABLE IF NOT EXISTS torrent_filters (
-  id INTEGER PRIMARY KEY,
-  field TEXT NOT NULL,
-  op TEXT NOT NULL,
-  value TEXT NOT NULL,
-  action TEXT NOT NULL,
-  enabled INTEGER NOT NULL DEFAULT 1,
-  priority INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL DEFAULT 0
-);
 CREATE TABLE IF NOT EXISTS torrent_seen (
   signature TEXT PRIMARY KEY,
   media_id INTEGER,
@@ -250,6 +240,7 @@ class Database:
         with self.connect() as connection:
             connection.execute("PRAGMA foreign_keys = ON")
             connection.executescript(SCHEMA)
+            self._migrate_torrent_filters(connection)
             columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(cache)").fetchall()
             }
@@ -401,6 +392,62 @@ class Database:
         }
         if column not in columns:
             connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    @staticmethod
+    def _migrate_torrent_filters(connection: sqlite3.Connection) -> None:
+        cols = {r["name"] for r in connection.execute("PRAGMA table_info(torrent_filters)").fetchall()}
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS torrent_filter_conditions (
+              id INTEGER PRIMARY KEY,
+              filter_id INTEGER NOT NULL REFERENCES torrent_filters(id) ON DELETE CASCADE,
+              element TEXT NOT NULL, operator TEXT NOT NULL, value TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS torrent_filter_anime (
+              filter_id INTEGER NOT NULL REFERENCES torrent_filters(id) ON DELETE CASCADE,
+              media_id INTEGER NOT NULL,
+              PRIMARY KEY (filter_id, media_id)
+            );
+            """
+        )
+        if "field" in cols:  # old C7 schema -> migrate
+            old = connection.execute(
+                "SELECT id, field, op, value, action, enabled FROM torrent_filters"
+            ).fetchall()
+            connection.execute("ALTER TABLE torrent_filters RENAME TO torrent_filters_old_c7")
+            connection.execute(
+                """
+                CREATE TABLE torrent_filters (
+                  id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+                  action TEXT NOT NULL, match TEXT NOT NULL, scope TEXT NOT NULL,
+                  enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            action_map = {"exclude": "discard", "include": "select", "prefer": "prefer"}
+            for r in old:
+                cur = connection.execute(
+                    "INSERT INTO torrent_filters(name, action, match, scope, enabled, created_at) "
+                    "VALUES (?, ?, 'all', 'all', ?, ?)",
+                    (f"{r['field']} {r['op']} {r['value']}",
+                     action_map.get(r["action"], "discard"), r["enabled"], int(time.time())),
+                )
+                connection.execute(
+                    "INSERT INTO torrent_filter_conditions(filter_id, element, operator, value) "
+                    "VALUES (?, ?, ?, ?)",
+                    (cur.lastrowid, r["field"], r["op"], r["value"]),
+                )
+            connection.execute("DROP TABLE torrent_filters_old_c7")
+        else:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS torrent_filters (
+                  id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+                  action TEXT NOT NULL, match TEXT NOT NULL, scope TEXT NOT NULL,
+                  enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
 
     def _requires_canonical_migration(self) -> bool:
         if self.path == Path(":memory:") or not self.path.exists() or self.path.stat().st_size == 0:
@@ -1915,34 +1962,67 @@ class Database:
 
     def list_torrent_filters(self) -> list[dict]:
         with self.connect() as connection:
-            rows = connection.execute(
-                "SELECT id, field, op, value, action, enabled, priority "
-                "FROM torrent_filters ORDER BY priority, id"
+            filters = connection.execute(
+                "SELECT id, name, action, match, scope, enabled FROM torrent_filters ORDER BY id"
             ).fetchall()
-            return [dict(row) for row in rows]
+            result = []
+            for f in filters:
+                conds = connection.execute(
+                    "SELECT element, operator, value FROM torrent_filter_conditions WHERE filter_id = ?",
+                    (f["id"],),
+                ).fetchall()
+                anime = connection.execute(
+                    "SELECT media_id FROM torrent_filter_anime WHERE filter_id = ?", (f["id"],)
+                ).fetchall()
+                result.append({
+                    "id": f["id"], "name": f["name"], "action": f["action"],
+                    "match": f["match"], "scope": f["scope"], "enabled": bool(f["enabled"]),
+                    "conditions": [dict(c) for c in conds],
+                    "anime_ids": [a["media_id"] for a in anime],
+                })
+            return result
 
     def add_torrent_filter(
-        self, field: str, op: str, value: str, action: str,
-        enabled: bool = True, priority: int = 0,
+        self, name: str, action: str, match: str, scope: str,
+        enabled: bool, conditions: list[dict], anime_ids: list[int],
     ) -> int:
         with self.connect() as connection:
-            cursor = connection.execute(
-                "INSERT INTO torrent_filters(field, op, value, action, enabled, priority, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (field, op, value, action, 1 if enabled else 0, priority, int(time.time())),
+            cur = connection.execute(
+                "INSERT INTO torrent_filters(name, action, match, scope, enabled, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (name, action, match, scope, 1 if enabled else 0, int(time.time())),
             )
-            return int(cursor.lastrowid)
+            fid = int(cur.lastrowid)
+            self._write_filter_children(connection, fid, conditions, anime_ids)
+            return fid
 
     def update_torrent_filter(
-        self, filter_id: int, field: str, op: str, value: str, action: str,
-        enabled: bool, priority: int,
+        self, filter_id: int, name: str, action: str, match: str, scope: str,
+        enabled: bool, conditions: list[dict], anime_ids: list[int],
     ) -> None:
         with self.connect() as connection:
             connection.execute(
-                "UPDATE torrent_filters SET field = ?, op = ?, value = ?, action = ?, "
-                "enabled = ?, priority = ? WHERE id = ?",
-                (field, op, value, action, 1 if enabled else 0, priority, filter_id),
+                "UPDATE torrent_filters SET name=?, action=?, match=?, scope=?, enabled=? WHERE id=?",
+                (name, action, match, scope, 1 if enabled else 0, filter_id),
             )
+            connection.execute("DELETE FROM torrent_filter_conditions WHERE filter_id=?", (filter_id,))
+            connection.execute("DELETE FROM torrent_filter_anime WHERE filter_id=?", (filter_id,))
+            self._write_filter_children(connection, filter_id, conditions, anime_ids)
+
+    @staticmethod
+    def _write_filter_children(
+        connection: sqlite3.Connection, filter_id: int,
+        conditions: list[dict], anime_ids: list[int],
+    ) -> None:
+        connection.executemany(
+            "INSERT INTO torrent_filter_conditions(filter_id, element, operator, value) "
+            "VALUES (?, ?, ?, ?)",
+            [(filter_id, c["element"], c["operator"], c["value"]) for c in conditions],
+        )
+        connection.executemany(
+            "INSERT OR IGNORE INTO torrent_filter_anime(filter_id, media_id) VALUES (?, ?)",
+            [(filter_id, mid) for mid in anime_ids],
+        )
 
     def delete_torrent_filter(self, filter_id: int) -> None:
         with self.connect() as connection:

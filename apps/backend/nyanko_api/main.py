@@ -114,6 +114,7 @@ from .models import (
     WontWatchState,
     TorrentSource,
     TorrentSourceInput,
+    TorrentCondition,
     TorrentFilter,
     TorrentFilterInput,
     TorrentSettings,
@@ -443,6 +444,10 @@ _TORRENT_KEYS = {
     "client_path": ("torrent_client_path", ""),
     "folder_per_series": ("torrent_folder_per_series", "0"),
     "append_episode": ("torrent_append_episode", "0"),
+    "filters_enabled": ("torrent_filters_enabled", "1"),
+    "global_discard_not_in_list": ("torrent_global_discard_not_in_list", "1"),
+    "global_discard_seen": ("torrent_global_discard_seen", "1"),
+    "global_prefer_resolution": ("torrent_global_prefer_resolution", "1"),
 }
 
 
@@ -466,6 +471,10 @@ def _get_torrent_settings(database: Database) -> TorrentSettings:
         client_path=value(*_TORRENT_KEYS["client_path"]),
         folder_per_series=value(*_TORRENT_KEYS["folder_per_series"]) == "1",
         append_episode=value(*_TORRENT_KEYS["append_episode"]) == "1",
+        filters_enabled=value(*_TORRENT_KEYS["filters_enabled"]) == "1",
+        global_discard_not_in_list=value(*_TORRENT_KEYS["global_discard_not_in_list"]) == "1",
+        global_discard_seen=value(*_TORRENT_KEYS["global_discard_seen"]) == "1",
+        global_prefer_resolution=value(*_TORRENT_KEYS["global_prefer_resolution"]) == "1",
     )
 
 
@@ -503,8 +512,16 @@ async def _compute_torrent_feed(
             continue
         parsed.extend(torrents_mod.parse_feed(xml_text, source["id"]))
     settings_t = _get_torrent_settings(database)
-    feed = torrents_mod.build_feed(parsed, library, filters, seen, discarded,
-                                   preferred_resolution=settings_t.preferred_resolution)
+    feed = torrents_mod.build_feed(
+        parsed, library, filters, seen, discarded,
+        filters_enabled=settings_t.filters_enabled,
+        globals_={
+            "discard_not_in_list": settings_t.global_discard_not_in_list,
+            "discard_seen": settings_t.global_discard_seen,
+            "prefer_resolution": settings_t.global_prefer_resolution,
+        },
+        preferred_resolution=settings_t.preferred_resolution,
+    )
     _torrent_link_cache.update({item.signature: item.link for item in feed})
     _torrent_item_cache.update({
         item.signature: {"media_title": item.media_title, "episode": item.episode}
@@ -2822,13 +2839,17 @@ def torrent_filters(database: Database = Depends(get_database)) -> list[TorrentF
 
 @app.post("/api/torrents/filters", response_model=TorrentFilter)
 def add_torrent_filter(body: TorrentFilterInput, database: Database = Depends(get_database)) -> TorrentFilter:
-    fid = database.add_torrent_filter(body.field, body.op, body.value, body.action, body.enabled, body.priority)
+    fid = database.add_torrent_filter(
+        body.name, body.action, body.match, body.scope, body.enabled,
+        [c.model_dump() for c in body.conditions], body.anime_ids)
     return TorrentFilter(id=fid, **body.model_dump())
 
 
 @app.put("/api/torrents/filters/{filter_id}", response_model=TorrentFilter)
 def update_torrent_filter(filter_id: int, body: TorrentFilterInput, database: Database = Depends(get_database)) -> TorrentFilter:
-    database.update_torrent_filter(filter_id, body.field, body.op, body.value, body.action, body.enabled, body.priority)
+    database.update_torrent_filter(
+        filter_id, body.name, body.action, body.match, body.scope, body.enabled,
+        [c.model_dump() for c in body.conditions], body.anime_ids)
     return TorrentFilter(id=filter_id, **body.model_dump())
 
 
@@ -2858,6 +2879,10 @@ def put_torrent_settings(body: TorrentSettings, database: Database = Depends(get
     database.set_setting("torrent_client_path", body.client_path)
     database.set_setting("torrent_folder_per_series", "1" if body.folder_per_series else "0")
     database.set_setting("torrent_append_episode", "1" if body.append_episode else "0")
+    database.set_setting("torrent_filters_enabled", "1" if body.filters_enabled else "0")
+    database.set_setting("torrent_global_discard_not_in_list", "1" if body.global_discard_not_in_list else "0")
+    database.set_setting("torrent_global_discard_seen", "1" if body.global_discard_seen else "0")
+    database.set_setting("torrent_global_prefer_resolution", "1" if body.global_prefer_resolution else "0")
     return _get_torrent_settings(database)
 
 

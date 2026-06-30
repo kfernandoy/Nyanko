@@ -606,23 +606,31 @@ class TorrentSourceInput(BaseModel):
     kind: str = "release"
 
 
+class TorrentCondition(BaseModel):
+    element: str
+    operator: str
+    value: str
+
+
 class TorrentFilter(BaseModel):
     id: int
-    field: str
-    op: str
-    value: str
+    name: str
     action: str
-    enabled: bool
-    priority: int = 0
+    match: str = "all"
+    scope: str = "all"
+    enabled: bool = True
+    conditions: list[TorrentCondition] = Field(default_factory=list)
+    anime_ids: list[int] = Field(default_factory=list)
 
 
 class TorrentFilterInput(BaseModel):
-    field: str
-    op: str
-    value: str
+    name: str
     action: str
+    match: str = "all"
+    scope: str = "all"
     enabled: bool = True
-    priority: int = 0
+    conditions: list[TorrentCondition] = Field(default_factory=list)
+    anime_ids: list[int] = Field(default_factory=list)
 
 
 class TorrentSettings(BaseModel):
@@ -635,6 +643,10 @@ class TorrentSettings(BaseModel):
     client_path: str = ""
     folder_per_series: bool = False
     append_episode: bool = False
+    filters_enabled: bool = True
+    global_discard_not_in_list: bool = True
+    global_discard_seen: bool = True
+    global_prefer_resolution: bool = True
 
 
 class TorrentItem(BaseModel):

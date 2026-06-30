@@ -58,12 +58,16 @@ def _text(item: ET.Element, tag: str) -> str | None:
     return None
 
 
-_FIELD_GETTERS = {
+_ELEMENT_GETTERS = {
+    "filename": lambda p: p.filename or p.raw_title,
+    "title": lambda p: p.title or p.raw_title,
     "group": lambda p: p.group or "",
     "resolution": lambda p: p.resolution or "",
-    "title": lambda p: p.title or p.raw_title,
     "episode": lambda p: p.episode,
+    "size": lambda p: p.size or "",
+    "seeders": lambda p: p.seeders,
 }
+_NUMERIC_ELEMENTS = {"episode", "seeders"}
 _WATCHING_STATUSES = {"CURRENT", "REPEATING"}
 
 
@@ -86,25 +90,43 @@ class FeedItem:
     is_new: bool = False
 
 
-def _match_op(op: str, field_value, target: str) -> bool:
-    if op in ("gt", "lt"):
-        try:
-            number = int(field_value) if field_value is not None else None
-            bound = int(target)
-        except (TypeError, ValueError):
+def _size_to_bytes(text: str) -> float | None:
+    m = re.match(r"\s*([\d.]+)\s*([KMGT]?i?B)\b", text or "", re.IGNORECASE)
+    if not m:
+        return None
+    units = {"B": 1, "KIB": 1024, "MIB": 1024**2, "GIB": 1024**3, "TIB": 1024**4,
+             "KB": 1000, "MB": 1000**2, "GB": 1000**3, "TB": 1000**4}
+    return float(m.group(1)) * units.get(m.group(2).upper(), 1)
+
+
+def _op(operator: str, field_value, target: str, element: str) -> bool:
+    if operator in ("gt", "lt"):
+        if element == "size":
+            number = _size_to_bytes(str(field_value)); bound = _size_to_bytes(target)
+        else:
+            try:
+                number = float(field_value) if field_value is not None else None
+                bound = float(target)
+            except (TypeError, ValueError):
+                return False
+        if number is None or bound is None:
             return False
-        if number is None:
-            return False
-        return number > bound if op == "gt" else number < bound
+        return number > bound if operator == "gt" else number < bound
     text = ("" if field_value is None else str(field_value)).casefold()
     needle = target.casefold()
-    if op == "contains":
-        return needle in text
-    if op == "not_contains":
-        return needle not in text
-    if op == "equals":
+    if operator in ("is", "equals"):
         return text == needle
-    if op == "regex":
+    if operator in ("is_not", "not_equals"):
+        return text != needle
+    if operator == "contains":
+        return needle in text
+    if operator == "not_contains":
+        return needle not in text
+    if operator == "begins_with":
+        return text.startswith(needle)
+    if operator == "ends_with":
+        return text.endswith(needle)
+    if operator == "regex":
         try:
             return re.search(target, str(field_value or ""), re.IGNORECASE) is not None
         except re.error:
@@ -112,35 +134,26 @@ def _match_op(op: str, field_value, target: str) -> bool:
     return False
 
 
-def _rule_matches(parsed: ParsedTorrent, rule: dict) -> bool:
-    getter = _FIELD_GETTERS.get(rule["field"])
+def _condition_true(parsed: ParsedTorrent, cond: dict) -> bool:
+    getter = _ELEMENT_GETTERS.get(cond["element"])
     if getter is None:
         return False
-    return _match_op(rule["op"], getter(parsed), rule["value"])
+    return _op(cond["operator"], getter(parsed), cond["value"], cond["element"])
 
 
-def passes_filters(parsed: ParsedTorrent, filters: list[dict]) -> bool:
-    """False solo si una regla `exclude` activa coincide. `include`/`prefer` no excluyen."""
-    for rule in filters:
-        if not rule.get("enabled", 1):
-            continue
-        if rule["action"] == "exclude" and _rule_matches(parsed, rule):
-            return False
-    return True
+def _filter_applies(filt: dict, media_id: int | None) -> bool:
+    if filt.get("scope", "all") != "limited":
+        return True
+    return media_id is not None and media_id in set(filt.get("anime_ids") or [])
 
 
-def _forced_include(parsed: ParsedTorrent, filters: list[dict]) -> bool:
-    return any(
-        rule.get("enabled", 1) and rule["action"] == "include" and _rule_matches(parsed, rule)
-        for rule in filters
-    )
-
-
-def _prefer_rank(parsed: ParsedTorrent, filters: list[dict]) -> int:
-    return sum(
-        1 for rule in filters
-        if rule.get("enabled", 1) and rule["action"] == "prefer" and _rule_matches(parsed, rule)
-    )
+def _filter_matches(parsed: ParsedTorrent, filt: dict) -> bool:
+    conds = filt.get("conditions") or []
+    if not conds:
+        return False
+    if filt.get("match", "all") == "any":
+        return any(_condition_true(parsed, c) for c in conds)
+    return all(_condition_true(parsed, c) for c in conds)
 
 
 def build_feed(
@@ -149,54 +162,51 @@ def build_feed(
     filters: list[dict],
     seen: set[str],
     discarded: set[str],
+    *,
+    filters_enabled: bool = True,
+    globals_: dict | None = None,
     min_confidence: float = 0.6,
     preferred_resolution: str | None = None,
 ) -> list[FeedItem]:
+    g = globals_ or {}
     index = build_token_index(library)
     by_id = {item.id: item for item in library}
+    active = [f for f in filters if f.get("enabled", True)] if filters_enabled else []
     results: list[tuple[int, FeedItem]] = []
     for parsed in parsed_items:
         sig = signature(parsed.source_id, parsed.guid)
         if sig in discarded:
             continue
-        if not passes_filters(parsed, filters):
-            continue
         match, score = match_from_index(parsed.title, index, min_score=min_confidence)
-        forced = _forced_include(parsed, filters)
-        keep = False
         media_id = match.id if match else None
-        if match is not None:
-            entry = by_id[match.id]
-            is_new_episode = parsed.episode is not None and parsed.episode > entry.progress
-            keep = entry.status in _WATCHING_STATUSES and is_new_episode
-        if forced:
-            keep = True
-        if not keep:
+        applicable = [f for f in active if _filter_applies(f, media_id) and _filter_matches(parsed, f)]
+        if any(f["action"] == "discard" for f in applicable):
             continue
+        selected = any(f["action"] == "select" for f in applicable)
+        if not selected:
+            if g.get("discard_not_in_list") and match is None:
+                continue
+            if g.get("discard_seen") and match is not None:
+                entry = by_id[match.id]
+                fresh = parsed.episode is not None and parsed.episode > entry.progress
+                if not (entry.status in _WATCHING_STATUSES and fresh):
+                    continue
+        prefer_rank = sum(1 for f in applicable if f["action"] == "prefer")
         results.append((
-            _prefer_rank(parsed, filters),
+            prefer_rank,
             FeedItem(
-                signature=sig,
-                raw_title=parsed.raw_title,
-                link=parsed.link,
-                media_id=media_id,
-                media_title=match.title if match else None,
-                episode=parsed.episode,
-                resolution=parsed.resolution,
-                group=parsed.group,
-                seeders=parsed.seeders,
-                size=parsed.size,
-                description=parsed.description,
-                filename=parsed.filename,
-                torrent_date=parsed.torrent_date,
-                confidence=score,
-                is_new=sig not in seen,
+                signature=sig, raw_title=parsed.raw_title, link=parsed.link,
+                media_id=media_id, media_title=match.title if match else None,
+                episode=parsed.episode, resolution=parsed.resolution, group=parsed.group,
+                seeders=parsed.seeders, size=parsed.size, description=parsed.description,
+                filename=parsed.filename, torrent_date=parsed.torrent_date,
+                confidence=score, is_new=sig not in seen,
             ),
         ))
-    # prefer primero; luego preferred_resolution como desempate; dentro, nuevos antes y mayor seeders.
+    pref_res = preferred_resolution if g.get("prefer_resolution") else None
     results.sort(key=lambda r: (
         -r[0],
-        0 if (preferred_resolution and r[1].resolution == preferred_resolution) else 1,
+        0 if (pref_res and r[1].resolution == pref_res) else 1,
         not r[1].is_new,
         -(r[1].seeders or 0),
     ))

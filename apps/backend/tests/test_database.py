@@ -779,14 +779,20 @@ def test_torrent_source_kind(tmp_path):
     assert any(s["kind"] == "release" for s in db.list_torrent_sources())
 
 
-def test_torrent_filter_crud(tmp_path):
-    db = Database(tmp_path / "t.db")
-    db.initialize()
-    fid = db.add_torrent_filter("resolution", "equals", "1080p", "prefer", True, 0)
-    rows = db.list_torrent_filters()
-    assert any(f["id"] == fid and f["action"] == "prefer" for f in rows)
+def test_torrent_filter_taiga_crud(tmp_path):
+    db = Database(tmp_path / "t.db"); db.initialize()
+    fid = db.add_torrent_filter(
+        name="Solo 1080 de SubsPlease", action="select", match="all", scope="all",
+        enabled=True,
+        conditions=[{"element": "resolution", "operator": "equals", "value": "1080p"},
+                    {"element": "group", "operator": "is", "value": "SubsPlease"}],
+        anime_ids=[],
+    )
+    f = next(x for x in db.list_torrent_filters() if x["id"] == fid)
+    assert f["action"] == "select" and f["match"] == "all"
+    assert len(f["conditions"]) == 2 and f["anime_ids"] == []
     db.delete_torrent_filter(fid)
-    assert all(f["id"] != fid for f in db.list_torrent_filters())
+    assert all(x["id"] != fid for x in db.list_torrent_filters())
 
 
 def test_torrent_seen_flags(tmp_path):

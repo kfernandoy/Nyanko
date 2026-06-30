@@ -61,35 +61,13 @@ def _parsed(**kw):
     return torrents.ParsedTorrent(**base)
 
 
-def test_passes_filters_exclude_wins():
-    filt = [{"field": "group", "op": "equals", "value": "SubsPlease",
-             "action": "exclude", "enabled": 1, "priority": 0}]
-    assert torrents.passes_filters(_parsed(), filt) is False
-
-
-def test_passes_filters_resolution_contains():
-    filt = [{"field": "resolution", "op": "equals", "value": "720p",
-             "action": "exclude", "enabled": 1, "priority": 0}]
-    assert torrents.passes_filters(_parsed(resolution="1080p"), filt) is True
-    assert torrents.passes_filters(_parsed(resolution="720p"), filt) is False
-
-
-def test_passes_filters_episode_gt():
-    filt = [{"field": "episode", "op": "lt", "value": "10",
-             "action": "exclude", "enabled": 1, "priority": 0}]
-    assert torrents.passes_filters(_parsed(episode=5), filt) is False
-    assert torrents.passes_filters(_parsed(episode=28), filt) is True
-
-
-def test_passes_filters_disabled_ignored():
-    filt = [{"field": "group", "op": "equals", "value": "SubsPlease",
-             "action": "exclude", "enabled": 0, "priority": 0}]
-    assert torrents.passes_filters(_parsed(), filt) is True
+_GLOBALS = {"discard_not_in_list": True, "discard_seen": True, "prefer_resolution": True}
 
 
 def test_build_feed_new_episode_only():
     library = [_lib_entry(progress=27)]
-    items = torrents.build_feed([_parsed(episode=28)], library, [], set(), set())
+    items = torrents.build_feed([_parsed(episode=28)], library, [], set(), set(),
+                                filters_enabled=True, globals_=_GLOBALS)
     assert len(items) == 1
     assert items[0].media_id == 1
     assert items[0].episode == 28
@@ -98,29 +76,88 @@ def test_build_feed_new_episode_only():
 
 def test_build_feed_skips_already_watched():
     library = [_lib_entry(progress=28)]
-    items = torrents.build_feed([_parsed(episode=28)], library, [], set(), set())
+    items = torrents.build_feed([_parsed(episode=28)], library, [], set(), set(),
+                                filters_enabled=True, globals_=_GLOBALS)
     assert items == []
 
 
 def test_build_feed_skips_non_current_status():
     library = [_lib_entry(status="COMPLETED", progress=12)]
-    items = torrents.build_feed([_parsed(episode=28)], library, [], set(), set())
+    items = torrents.build_feed([_parsed(episode=28)], library, [], set(), set(),
+                                filters_enabled=True, globals_=_GLOBALS)
     assert items == []
 
 
 def test_build_feed_skips_unmatched():
     library = [_lib_entry(title="Totally Other Show")]
-    items = torrents.build_feed([_parsed(episode=28)], library, [], set(), set())
+    items = torrents.build_feed([_parsed(episode=28)], library, [], set(), set(),
+                                filters_enabled=True, globals_=_GLOBALS)
     assert items == []
 
 
 def test_build_feed_marks_not_new_and_skips_discarded():
     library = [_lib_entry(progress=27)]
     sig = torrents.signature(1, "g1")
-    items = torrents.build_feed([_parsed(episode=28)], library, [], {sig}, set())
+    items = torrents.build_feed([_parsed(episode=28)], library, [], {sig}, set(),
+                                filters_enabled=True, globals_=_GLOBALS)
     assert items[0].is_new is False
-    discarded = torrents.build_feed([_parsed(episode=28)], library, [], {sig}, {sig})
+    discarded = torrents.build_feed([_parsed(episode=28)], library, [], {sig}, {sig},
+                                    filters_enabled=True, globals_=_GLOBALS)
     assert discarded == []
+
+
+def _filter(action="discard", match="all", scope="all", conditions=None, anime_ids=None):
+    return {"action": action, "match": match, "scope": scope, "enabled": True,
+            "conditions": conditions or [], "anime_ids": anime_ids or []}
+
+
+def test_engine_discard_condition():
+    f = _filter(action="discard", conditions=[{"element": "group", "operator": "is", "value": "SubsPlease"}])
+    lib = [_lib_entry(progress=27)]
+    out = torrents.build_feed([_parsed(episode=28)], lib, [f], set(), set(),
+                              filters_enabled=True, globals_=_GLOBALS)
+    assert out == []  # descartado por grupo
+
+
+def test_engine_select_overrides_globals():
+    # serie NO en lista; un select fuerza incluir aunque discard_not_in_list esté on
+    f = _filter(action="select", conditions=[{"element": "resolution", "operator": "equals", "value": "1080p"}])
+    out = torrents.build_feed([_parsed(title="Desconocida", episode=5)], [], [f], set(), set(),
+                              filters_enabled=True, globals_=_GLOBALS)
+    assert len(out) == 1
+
+
+def test_engine_match_any():
+    f = _filter(action="discard", match="any",
+                conditions=[{"element": "group", "operator": "is", "value": "Nope"},
+                            {"element": "resolution", "operator": "equals", "value": "1080p"}])
+    lib = [_lib_entry(progress=27)]
+    out = torrents.build_feed([_parsed(episode=28, resolution="1080p")], lib, [f], set(), set(),
+                              filters_enabled=True, globals_=_GLOBALS)
+    assert out == []  # una condición (resolution) basta con match=any
+
+
+def test_engine_scope_limited():
+    f = _filter(action="discard", scope="limited", anime_ids=[999],
+                conditions=[{"element": "group", "operator": "is", "value": "SubsPlease"}])
+    lib = [_lib_entry(id=1, progress=27)]  # media_id 1, no 999 -> filtro no aplica
+    out = torrents.build_feed([_parsed(episode=28)], lib, [f], set(), set(),
+                              filters_enabled=True, globals_=_GLOBALS)
+    assert len(out) == 1  # no descartado: el filtro limited no aplica a media 1
+
+
+def test_globals_discard_not_in_list():
+    out = torrents.build_feed([_parsed(title="Desconocida", episode=5)], [], [], set(), set(),
+                              filters_enabled=True, globals_=_GLOBALS)
+    assert out == []
+
+
+def test_filters_disabled_skips_user_rules_keeps_globals():
+    f = _filter(action="discard", conditions=[{"element": "group", "operator": "is", "value": "SubsPlease"}])
+    lib = [_lib_entry(progress=27)]
+    out = torrents.build_feed([_parsed(episode=28)], lib, [f], set(), set(),
+                              filters_enabled=False, globals_=_GLOBALS)
+    assert len(out) == 1  # la regla de usuario se ignora; globales mantienen el item válido
 
 
 def test_parse_feed_extended_fields():
@@ -144,16 +181,18 @@ def test_build_feed_preferred_resolution_ordering():
 
     # preferred_resolution="1080p": 1080p ranks before 720p (input order: 720p first).
     feed = torrents.build_feed(
-        [item_720, item_1080], library, [], set(), set(), preferred_resolution="1080p"
+        [item_720, item_1080], library, [], set(), set(),
+        filters_enabled=True, globals_=_GLOBALS, preferred_resolution="1080p",
     )
     assert feed[0].resolution == "1080p"
     assert feed[1].resolution == "720p"
 
     # A user prefer rule on 720p dominates over preferred_resolution="1080p".
-    prefer_720 = [{"field": "resolution", "op": "equals", "value": "720p",
-                   "action": "prefer", "enabled": 1, "priority": 0}]
+    prefer_720 = [_filter(action="prefer",
+                          conditions=[{"element": "resolution", "operator": "equals", "value": "720p"}])]
     feed2 = torrents.build_feed(
-        [item_1080, item_720], library, prefer_720, set(), set(), preferred_resolution="1080p"
+        [item_1080, item_720], library, prefer_720, set(), set(),
+        filters_enabled=True, globals_=_GLOBALS, preferred_resolution="1080p",
     )
     assert feed2[0].resolution == "720p"   # user prefer wins
     assert feed2[1].resolution == "1080p"
