@@ -293,6 +293,8 @@ export interface ScanSummary {
   unmatched: number;
 }
 
+export interface LocalSeries { media_id: number | null; title: string; episode_count: number; matched: boolean; }
+
 export interface PendingLocalItem {
   media_id: number;
   external_id: number;

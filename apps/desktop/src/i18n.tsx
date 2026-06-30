@@ -136,6 +136,7 @@ const translations: Record<Lang, Record<string, string>> = {
 
     "np.none": "No hay reproducción detectada", "np.none.detail": "Abre un reproductor compatible y vuelve aquí.",
     "np.local.title": "Pendientes en local", "np.local.episode": "Episodio", "np.local.available": "disponibles", "np.local.play": "Reproducir episodio", "np.playerSource": "Reproductor", "np.movie": "Película",
+    "local.seeMore": "Ver más", "local.back": "Volver", "local.title": "Biblioteca local", "local.loading": "Cargando…", "local.empty": "No hay series escaneadas.", "local.episodes": "episodios", "local.unmatched": "sin asociar",
     "np.source": "FUENTE", "np.confidence": "CONFIANZA", "np.paused": "PAUSADO", "np.finished": "FINALIZADO",
     "np.episode": "Episodio", "np.episode.unknown": "Episodio sin identificar", "np.activeWindow": "ventana activa",
     "np.correct.title": "Corregir coincidencia",
@@ -315,6 +316,7 @@ const translations: Record<Lang, Record<string, string>> = {
 
     "np.none": "No playback detected", "np.none.detail": "Open a compatible player and come back here.",
     "np.local.title": "Available locally", "np.local.episode": "Episode", "np.local.available": "available", "np.local.play": "Play episode", "np.playerSource": "Player", "np.movie": "Movie",
+    "local.seeMore": "See more", "local.back": "Back", "local.title": "Local library", "local.loading": "Loading…", "local.empty": "No scanned series.", "local.episodes": "episodes", "local.unmatched": "unmatched",
     "np.source": "SOURCE", "np.confidence": "CONFIDENCE", "np.paused": "PAUSED", "np.finished": "FINISHED",
     "np.episode": "Episode", "np.episode.unknown": "Unidentified episode", "np.activeWindow": "active window",
     "np.correct.title": "Correct match",

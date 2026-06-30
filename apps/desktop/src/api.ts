@@ -38,6 +38,7 @@ import type {
   TorrentFilter,
   TorrentSettings,
   TorrentDownloadResponse,
+  LocalSeries,
 } from "./types";
 
 const DEFAULT_API_URL = "http://127.0.0.1:8765";
@@ -237,6 +238,7 @@ export const api = {
   // El escaneo recorre el disco; necesita mucho más que el timeout genérico de 15s.
   scanLibrary: () => request<ScanSummary>("/api/library/scan", { method: "POST" }, 300_000),
   pendingLocal: () => request<PendingLocalItem[]>("/api/library/pending-local"),
+  getLocalLibrary: () => request<LocalSeries[]>("/api/library/local"),
   getScanSettings: () => request<{ scan_on_startup: boolean }>("/api/library/scan-settings"),
   setScanSettings: (scanOnStartup: boolean) =>
     request<{ scan_on_startup: boolean }>("/api/library/scan-settings", { method: "PUT", body: JSON.stringify({ scan_on_startup: scanOnStartup }) }),

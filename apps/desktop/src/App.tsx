@@ -11,6 +11,7 @@ import { DetectorSettingsView } from "./DetectorSettingsView";
 import { PlaybackHistoryView } from "./PlaybackHistoryView";
 import { DiscoveryView } from "./DiscoveryView";
 import { TorrentsView } from "./TorrentsView";
+import { LocalLibraryView } from "./LocalLibraryView";
 import type {
   AccountUpdateResult,
   ActivityItem,
@@ -40,7 +41,7 @@ import type {
 } from "./types";
 
 type Filter = "ALL" | "CURRENT" | "PLANNING" | "COMPLETED" | "PAUSED" | "DROPPED";
-type View = "library" | "manga" | "now-playing" | "history" | "activity" | "seasons" | "statistics" | "discovery" | "torrents" | "settings";
+type View = "library" | "manga" | "now-playing" | "history" | "activity" | "seasons" | "statistics" | "discovery" | "torrents" | "settings" | "local-library";
 type CacheableView = "library" | "activity" | "seasons" | "statistics" | "details";
 type Season = "WINTER" | "SPRING" | "SUMMER" | "FALL";
 type MediaType = "ANIME" | "MANGA";
@@ -798,7 +799,7 @@ export default function App() {
         ) : view === "manga" ? (
           <MangaLibraryView items={manga} loading={sectionLoading && !mangaLoaded} onSelect={(item) => void openDetails(item.id, "MANGA", item.provider && item.account_alias ? { provider: item.provider, alias: item.account_alias } : activeAccount, item.canonical_id)} onRefresh={() => { setMangaLoaded(false); void loadManga(); }} />
         ) : view === "now-playing" ? (
-          <NowPlayingView candidate={candidate} match={match} prefs={playbackPrefs} onIgnore={() => void ignorePlayback()} onUndo={() => void undoPlayback()} onSelect={openDetails} onCorrected={async (next) => { setMatch(next); if (next.match) { await confirmMatch(next); } }} />
+          <NowPlayingView candidate={candidate} match={match} prefs={playbackPrefs} onIgnore={() => void ignorePlayback()} onUndo={() => void undoPlayback()} onSelect={openDetails} onCorrected={async (next) => { setMatch(next); if (next.match) { await confirmMatch(next); } }} onSeeMore={() => setView("local-library")} />
         ) : view === "history" ? (
           <PlaybackHistoryView refreshKey={historyVersion} onSelect={openDetails} onRefresh={() => setHistoryVersion((v) => v + 1)} />
         ) : view === "discovery" ? (
@@ -818,6 +819,8 @@ export default function App() {
           />
         ) : view === "torrents" ? (
           <TorrentsView />
+        ) : view === "local-library" ? (
+          <LocalLibraryView onBack={() => setView("now-playing")} />
         ) : sectionLoading ? (
           <Empty title={t("common.loading")} />
         ) : view === "activity" ? (
@@ -844,7 +847,7 @@ type CombinedResult =
   | { source: "library"; item: MediaItem }
   | { source: "global"; item: SearchResult };
 
-function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, onCorrected }: {
+function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, onCorrected, onSeeMore }: {
   candidate: PlaybackCandidate | null;
   match: PlaybackMatchResponse | null;
   prefs: PlaybackPreferences | null;
@@ -852,6 +855,7 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
   onUndo: () => void;
   onSelect: (id: number) => void;
   onCorrected: (match: PlaybackMatchResponse) => Promise<void> | void;
+  onSeeMore?: () => void;
 }) {
   const { t } = useApp();
   const [correcting, setCorrecting] = useState(false);
@@ -1005,7 +1009,7 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
 
   if (!candidate) {
     return <div className="now-playing-view">
-      <PendingLocalReminder onSelect={onSelect} />
+      <PendingLocalReminder onSelect={onSelect} onSeeMore={onSeeMore} />
       <Empty title={t("np.none")} detail={t("np.none.detail")} />
     </div>;
   }
@@ -1042,7 +1046,7 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
   const isMovie = match?.match ? (match.match.format === "MOVIE" || match.match.episodes === 1) : false;
   return (
     <section className="now-playing-view">
-      <PendingLocalReminder onSelect={onSelect} />
+      <PendingLocalReminder onSelect={onSelect} onSeeMore={onSeeMore} />
       <div className="detection-card">
         <div className="pulse" />
         <div>
@@ -2184,7 +2188,7 @@ function Empty({ title, detail }: { title: string; detail?: string }) {
   return <div className="empty"><strong>{title}</strong>{detail && <span>{detail}</span>}</div>;
 }
 
-function PendingLocalReminder({ onSelect }: { onSelect: (id: number) => void }) {
+function PendingLocalReminder({ onSelect, onSeeMore }: { onSelect: (id: number) => void; onSeeMore?: () => void }) {
   const { t } = useApp();
   const [items, setItems] = useState<PendingLocalItem[]>([]);
 
@@ -2205,5 +2209,6 @@ function PendingLocalReminder({ onSelect }: { onSelect: (id: number) => void }) 
         </article>
       ))}
     </div>
+    {onSeeMore && <button className="small" onClick={onSeeMore}>{t("local.seeMore")}</button>}
   </div>;
 }
