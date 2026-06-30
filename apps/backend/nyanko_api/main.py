@@ -437,6 +437,7 @@ _TORRENT_KEYS = {
     "download_mode": ("torrent_download_mode", "magnet"),
     "watch_folder": ("torrent_watch_folder", ""),
     "preferred_resolution": ("torrent_preferred_resolution", "1080p"),
+    "on_new": ("torrent_on_new", "notify"),
 }
 
 
@@ -456,6 +457,7 @@ def _get_torrent_settings(database: Database) -> TorrentSettings:
         download_mode=value(*_TORRENT_KEYS["download_mode"]),
         watch_folder=value(*_TORRENT_KEYS["watch_folder"]),
         preferred_resolution=value(*_TORRENT_KEYS["preferred_resolution"]),
+        on_new=value(*_TORRENT_KEYS["on_new"]),
     )
 
 
@@ -484,7 +486,7 @@ async def _compute_torrent_feed(
     discarded = {s for s in seen if database.is_torrent_discarded(s)}
     parsed: list[torrents_mod.ParsedTorrent] = []
     for source in database.list_torrent_sources():
-        if not source["enabled"]:
+        if not source["enabled"] or source["kind"] != "release":
             continue
         try:
             xml_text = await asyncio.to_thread(_fetch_torrent_xml, source["url"])
@@ -2786,14 +2788,14 @@ def torrent_sources(database: Database = Depends(get_database)) -> list[TorrentS
 
 @app.post("/api/torrents/sources", response_model=TorrentSource)
 def add_torrent_source(body: TorrentSourceInput, database: Database = Depends(get_database)) -> TorrentSource:
-    sid = database.add_torrent_source(body.name, body.url, body.enabled)
-    return TorrentSource(id=sid, name=body.name, url=body.url, enabled=body.enabled)
+    sid = database.add_torrent_source(body.name, body.url, body.enabled, kind=body.kind)
+    return TorrentSource(id=sid, name=body.name, url=body.url, enabled=body.enabled, kind=body.kind)
 
 
 @app.put("/api/torrents/sources/{source_id}", response_model=TorrentSource)
 def update_torrent_source(source_id: int, body: TorrentSourceInput, database: Database = Depends(get_database)) -> TorrentSource:
-    database.update_torrent_source(source_id, body.name, body.url, body.enabled)
-    return TorrentSource(id=source_id, name=body.name, url=body.url, enabled=body.enabled)
+    database.update_torrent_source(source_id, body.name, body.url, body.enabled, kind=body.kind)
+    return TorrentSource(id=source_id, name=body.name, url=body.url, enabled=body.enabled, kind=body.kind)
 
 
 @app.delete("/api/torrents/sources/{source_id}", status_code=204)
@@ -2835,6 +2837,7 @@ def put_torrent_settings(body: TorrentSettings, database: Database = Depends(get
     database.set_setting("torrent_download_mode", body.download_mode)
     database.set_setting("torrent_watch_folder", body.watch_folder)
     database.set_setting("torrent_preferred_resolution", body.preferred_resolution)
+    database.set_setting("torrent_on_new", body.on_new)
     return _get_torrent_settings(database)
 
 

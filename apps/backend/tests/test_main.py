@@ -1233,6 +1233,12 @@ def test_torrent_settings_roundtrip(client):
     assert client.get("/api/torrents/settings").json()["download_mode"] == "folder"
 
 
+def test_torrent_on_new_setting(client):
+    body = client.get("/api/torrents/settings").json()
+    body["on_new"] = "download"
+    assert client.put("/api/torrents/settings", json=body).json()["on_new"] == "download"
+
+
 def test_torrent_feed_filters_to_new_episodes(client, monkeypatch):
     # Library with Frieren on CURRENT, progress 27.
     monkeypatch.setattr("nyanko_api.main._fetch_torrent_xml", lambda url: _NYAA_XML)

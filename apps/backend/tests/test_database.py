@@ -770,6 +770,15 @@ def test_torrent_source_crud(tmp_path):
     assert all(s["id"] != sid for s in db.list_torrent_sources())
 
 
+def test_torrent_source_kind(tmp_path):
+    db = Database(tmp_path / "t.db"); db.initialize()
+    sid = db.add_torrent_source("Buscar", "https://x/?q=%title%", True, kind="search")
+    row = next(s for s in db.list_torrent_sources() if s["id"] == sid)
+    assert row["kind"] == "search"
+    # el seed Nyaa por defecto es 'release'
+    assert any(s["kind"] == "release" for s in db.list_torrent_sources())
+
+
 def test_torrent_filter_crud(tmp_path):
     db = Database(tmp_path / "t.db")
     db.initialize()

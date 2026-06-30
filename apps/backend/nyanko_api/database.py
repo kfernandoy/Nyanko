@@ -200,6 +200,7 @@ CREATE TABLE IF NOT EXISTS torrent_sources (
   name TEXT NOT NULL,
   url TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
+  kind TEXT NOT NULL DEFAULT 'release',
   created_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS torrent_filters (
@@ -282,6 +283,7 @@ class Database:
             self._backfill_normalized_titles(connection)
             self._add_column(connection, "library_entries", "started_at", "TEXT")
             self._add_column(connection, "library_entries", "completed_at", "TEXT")
+            self._add_column(connection, "torrent_sources", "kind", "TEXT NOT NULL DEFAULT 'release'")
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_media_titles_normalized "
                 "ON media_titles(normalized_title)"
@@ -1887,24 +1889,24 @@ class Database:
     def list_torrent_sources(self) -> list[dict]:
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT id, name, url, enabled FROM torrent_sources ORDER BY id"
+                "SELECT id, name, url, enabled, kind FROM torrent_sources ORDER BY id"
             ).fetchall()
             return [dict(row) for row in rows]
 
-    def add_torrent_source(self, name: str, url: str, enabled: bool = True) -> int:
+    def add_torrent_source(self, name: str, url: str, enabled: bool = True, kind: str = "release") -> int:
         with self.connect() as connection:
             cursor = connection.execute(
-                "INSERT INTO torrent_sources(name, url, enabled, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (name, url, 1 if enabled else 0, int(time.time())),
+                "INSERT INTO torrent_sources(name, url, enabled, kind, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (name, url, 1 if enabled else 0, kind, int(time.time())),
             )
             return int(cursor.lastrowid)
 
-    def update_torrent_source(self, source_id: int, name: str, url: str, enabled: bool) -> None:
+    def update_torrent_source(self, source_id: int, name: str, url: str, enabled: bool, kind: str = "release") -> None:
         with self.connect() as connection:
             connection.execute(
-                "UPDATE torrent_sources SET name = ?, url = ?, enabled = ? WHERE id = ?",
-                (name, url, 1 if enabled else 0, source_id),
+                "UPDATE torrent_sources SET name = ?, url = ?, enabled = ?, kind = ? WHERE id = ?",
+                (name, url, 1 if enabled else 0, kind, source_id),
             )
 
     def delete_torrent_source(self, source_id: int) -> None:

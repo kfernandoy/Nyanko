@@ -596,12 +596,14 @@ class TorrentSource(BaseModel):
     name: str
     url: str
     enabled: bool
+    kind: str = "release"
 
 
 class TorrentSourceInput(BaseModel):
     name: str
     url: str
     enabled: bool = True
+    kind: str = "release"
 
 
 class TorrentFilter(BaseModel):
@@ -629,6 +631,7 @@ class TorrentSettings(BaseModel):
     download_mode: str = "magnet"   # magnet | folder
     watch_folder: str = ""
     preferred_resolution: str = "1080p"
+    on_new: str = "notify"          # notify | download
 
 
 class TorrentItem(BaseModel):
