@@ -632,6 +632,9 @@ class TorrentSettings(BaseModel):
     watch_folder: str = ""
     preferred_resolution: str = "1080p"
     on_new: str = "notify"          # notify | download
+    client_path: str = ""
+    folder_per_series: bool = False
+    append_episode: bool = False
 
 
 class TorrentItem(BaseModel):
@@ -660,6 +663,7 @@ class TorrentDownloadResponse(BaseModel):
     action: str          # "magnet" | "saved"
     link: str | None = None
     path: str | None = None
+    client_path: str | None = None
 
 
 class LocalSeries(BaseModel):

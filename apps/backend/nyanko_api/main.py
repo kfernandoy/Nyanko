@@ -142,6 +142,8 @@ DEFAULT_ACCOUNT_ALIAS = "default"
 
 # Caché signature -> link (poblada al construir el feed; el frontend solo manda la signature).
 _torrent_link_cache: dict[str, str] = {}
+# Caché signature -> {media_title, episode} para subcarpeta y append de episodio.
+_torrent_item_cache: dict[str, dict] = {}
 # Contador de novedades calculado por el loop de fondo (Task 5).
 _torrent_unread: dict[str, int] = {"count": 0}
 
@@ -438,6 +440,9 @@ _TORRENT_KEYS = {
     "watch_folder": ("torrent_watch_folder", ""),
     "preferred_resolution": ("torrent_preferred_resolution", "1080p"),
     "on_new": ("torrent_on_new", "notify"),
+    "client_path": ("torrent_client_path", ""),
+    "folder_per_series": ("torrent_folder_per_series", "0"),
+    "append_episode": ("torrent_append_episode", "0"),
 }
 
 
@@ -458,6 +463,9 @@ def _get_torrent_settings(database: Database) -> TorrentSettings:
         watch_folder=value(*_TORRENT_KEYS["watch_folder"]),
         preferred_resolution=value(*_TORRENT_KEYS["preferred_resolution"]),
         on_new=value(*_TORRENT_KEYS["on_new"]),
+        client_path=value(*_TORRENT_KEYS["client_path"]),
+        folder_per_series=value(*_TORRENT_KEYS["folder_per_series"]) == "1",
+        append_episode=value(*_TORRENT_KEYS["append_episode"]) == "1",
     )
 
 
@@ -498,6 +506,10 @@ async def _compute_torrent_feed(
     feed = torrents_mod.build_feed(parsed, library, filters, seen, discarded,
                                    preferred_resolution=settings_t.preferred_resolution)
     _torrent_link_cache.update({item.signature: item.link for item in feed})
+    _torrent_item_cache.update({
+        item.signature: {"media_title": item.media_title, "episode": item.episode}
+        for item in feed
+    })
     return feed
 
 
@@ -2830,6 +2842,11 @@ def get_torrent_settings(database: Database = Depends(get_database)) -> TorrentS
     return _get_torrent_settings(database)
 
 
+def _safe_folder_name(name: str) -> str:
+    import re as _re
+    return _re.sub(r'[<>:"/\\|?*]', "_", name).strip() or "serie"
+
+
 @app.put("/api/torrents/settings", response_model=TorrentSettings)
 def put_torrent_settings(body: TorrentSettings, database: Database = Depends(get_database)) -> TorrentSettings:
     database.set_setting("torrent_auto_check", "1" if body.auto_check else "0")
@@ -2838,6 +2855,9 @@ def put_torrent_settings(body: TorrentSettings, database: Database = Depends(get
     database.set_setting("torrent_watch_folder", body.watch_folder)
     database.set_setting("torrent_preferred_resolution", body.preferred_resolution)
     database.set_setting("torrent_on_new", body.on_new)
+    database.set_setting("torrent_client_path", body.client_path)
+    database.set_setting("torrent_folder_per_series", "1" if body.folder_per_series else "0")
+    database.set_setting("torrent_append_episode", "1" if body.append_episode else "0")
     return _get_torrent_settings(database)
 
 
@@ -2877,13 +2897,19 @@ def torrent_download(
         if not settings_t.watch_folder:
             raise HTTPException(status_code=400, detail="watch_folder no configurado; añádelo en Ajustes de Torrents")
         folder = Path(settings_t.watch_folder)
+        meta = _torrent_item_cache.get(body.signature, {})
+        if settings_t.folder_per_series and meta.get("media_title"):
+            folder = folder / _safe_folder_name(meta["media_title"])
         folder.mkdir(parents=True, exist_ok=True)
-        path = folder / f"{body.signature}.torrent"
+        name = body.signature
+        if settings_t.append_episode and meta.get("episode") is not None:
+            name = f"{name} - {int(meta['episode']):02d}"
+        path = folder / f"{name}.torrent"
         response = httpx.get(link, timeout=20.0, follow_redirects=True)
         response.raise_for_status()
         path.write_bytes(response.content)
         return TorrentDownloadResponse(action="saved", path=str(path))
-    return TorrentDownloadResponse(action="magnet", link=link)
+    return TorrentDownloadResponse(action="magnet", link=link, client_path=settings_t.client_path or None)
 
 
 @app.post("/api/torrents/discard", status_code=204)

@@ -1189,6 +1189,13 @@ _NYAA_XML = """\
 </rss>"""
 
 
+def _async_return(value):
+    """Wrap a value in an async callable — reuses the established mock pattern."""
+    async def _inner(*a, **k):
+        return value
+    return _inner
+
+
 @pytest.fixture
 def client(database, monkeypatch):
     import nyanko_api.main as _main
@@ -1201,6 +1208,7 @@ def client(database, monkeypatch):
     database.add_torrent_source("test-feed", "https://test/rss", True)
     # Clear module-level caches so tests don't bleed into each other.
     _main._torrent_link_cache.clear()
+    _main._torrent_item_cache.clear()
     _main._torrent_unread["count"] = 0
     with TestClient(app) as c:
         yield c
@@ -1349,4 +1357,37 @@ def test_torrent_feed_refresh_param_wires_through(client, database, monkeypatch)
     # Force refresh — provider.library MUST be called.
     client.get("/api/torrents/feed?refresh=true")
     assert call_count["n"] == 1, "refresh=true must bypass cache and call provider.library"
+
+
+def test_torrent_download_settings_roundtrip(client):
+    body = client.get("/api/torrents/settings").json()
+    body.update(folder_per_series=True, append_episode=True, client_path="C:/qbit.exe")
+    out = client.put("/api/torrents/settings", json=body).json()
+    assert out["folder_per_series"] and out["append_episode"] and out["client_path"] == "C:/qbit.exe"
+
+
+def test_torrent_download_folder_per_series(client, monkeypatch, tmp_path):
+    import nyanko_api.main as _main
+    from nyanko_api import torrents as torrents_mod
+
+    monkeypatch.setattr("nyanko_api.main._fetch_torrent_xml", lambda url: _NYAA_XML)
+    monkeypatch.setattr("nyanko_api.main._load_library_for_torrents",
+        _async_return([MediaItem(id=1, title="Frieren", status="CURRENT", progress=27)]))
+    s = client.get("/api/torrents/settings").json()
+    s.update(download_mode="folder", watch_folder=str(tmp_path), folder_per_series=True)
+    client.put("/api/torrents/settings", json=s)
+    # Populate feed cache; force a .torrent entry (fixture item 2 is .torrent, Frieren metadata)
+    client.get("/api/torrents/feed?refresh=true")
+    sig = torrents_mod.signature(1, "https://nyaa.si/view/1000002")
+    _main._torrent_link_cache[sig] = "https://nyaa.si/download/1000002.torrent"
+    _main._torrent_item_cache[sig] = {"media_title": "Frieren", "episode": 28}
+
+    class _FakeResp:
+        content = b"fake-torrent"
+        def raise_for_status(self): pass
+
+    monkeypatch.setattr("nyanko_api.main.httpx.get", lambda *a, **k: _FakeResp())
+    res = client.post("/api/torrents/download", json={"signature": sig}).json()
+    assert res["action"] == "saved"
+    assert "Frieren" in res["path"]  # subfolder created
 
