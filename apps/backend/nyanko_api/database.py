@@ -505,6 +505,42 @@ class Database:
                 ],
             )
 
+    def get_local_series(self) -> list[dict]:
+        """Series escaneadas agrupadas. Matcheadas por media_id (con título canónico);
+        no matcheadas agrupadas por parsed_title (media_id None)."""
+        with self.connect() as connection:
+            matched = connection.execute(
+                """
+                SELECT lf.media_id AS media_id,
+                       COALESCE(mt.title, lf.parsed_title) AS title,
+                       COUNT(*) AS episode_count
+                FROM local_files lf
+                LEFT JOIN media_titles mt
+                  ON mt.media_id = lf.media_id AND mt.is_primary = 1
+                WHERE lf.media_id IS NOT NULL
+                GROUP BY lf.media_id
+                ORDER BY title COLLATE NOCASE
+                """
+            ).fetchall()
+            unmatched = connection.execute(
+                """
+                SELECT parsed_title AS title, COUNT(*) AS episode_count
+                FROM local_files
+                WHERE media_id IS NULL AND parsed_title IS NOT NULL
+                GROUP BY parsed_title
+                ORDER BY title COLLATE NOCASE
+                """
+            ).fetchall()
+            result = [
+                {"media_id": r["media_id"], "title": r["title"] or "", "episode_count": r["episode_count"], "matched": True}
+                for r in matched
+            ]
+            result += [
+                {"media_id": None, "title": r["title"] or "", "episode_count": r["episode_count"], "matched": False}
+                for r in unmatched
+            ]
+            return result
+
     def get_local_files_summary(self) -> dict:
         with self.connect() as connection:
             total = connection.execute("SELECT COUNT(*) FROM local_files").fetchone()[0]

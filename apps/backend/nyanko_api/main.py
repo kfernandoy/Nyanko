@@ -119,6 +119,7 @@ from .models import (
     TorrentItem,
     TorrentActionRequest,
     TorrentDownloadResponse,
+    LocalSeries,
 )
 from .normalizer import normalize, normalize_title
 from .providers import MyAnimeListProvider, build_provider_registry
@@ -1075,6 +1076,11 @@ def set_scan_settings(
 ) -> ScanSettings:
     database.set_setting(SCAN_ON_STARTUP_KEY, "1" if body.scan_on_startup else "0")
     return body
+
+
+@app.get("/api/library/local", response_model=list[LocalSeries])
+def local_library(database: Database = Depends(get_database)) -> list[LocalSeries]:
+    return [LocalSeries(**s) for s in database.get_local_series()]
 
 
 @app.post("/api/data/clear", status_code=204)

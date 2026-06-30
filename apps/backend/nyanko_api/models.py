@@ -657,3 +657,10 @@ class TorrentDownloadResponse(BaseModel):
     action: str          # "magnet" | "saved"
     link: str | None = None
     path: str | None = None
+
+
+class LocalSeries(BaseModel):
+    media_id: int | None = None
+    title: str
+    episode_count: int
+    matched: bool

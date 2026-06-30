@@ -1207,6 +1207,12 @@ def client(database, monkeypatch):
     app.dependency_overrides.pop(get_database, None)
 
 
+def test_local_library_endpoint(client):
+    resp = client.get("/api/library/local")
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
+
+
 def test_torrent_sources_crud(client):
     created = client.post("/api/torrents/sources",
                           json={"name": "S", "url": "https://x/rss"}).json()

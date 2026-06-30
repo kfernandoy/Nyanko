@@ -793,3 +793,18 @@ def test_torrent_seen_flags(tmp_path):
     assert db.is_torrent_discarded("sig1") is True
 
 
+def test_get_local_series_groups_scanned_files(tmp_path):
+    db = Database(tmp_path / "t.db"); db.initialize()
+    # media canónica para matchear
+    db.replace_local_files([
+        {"path": "/a/Frieren - 01.mkv", "media_id": None, "episode": 1, "parsed_title": "Frieren"},
+        {"path": "/a/Frieren - 02.mkv", "media_id": None, "episode": 2, "parsed_title": "Frieren"},
+        {"path": "/a/Bocchi - 01.mkv", "media_id": None, "episode": 1, "parsed_title": "Bocchi"},
+    ])
+    series = db.get_local_series()
+    by_title = {s["title"]: s for s in series}
+    assert by_title["Frieren"]["episode_count"] == 2
+    assert by_title["Bocchi"]["episode_count"] == 1
+    assert all(s["matched"] is False for s in series)  # sin media_id
+
+
