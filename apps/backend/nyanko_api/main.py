@@ -43,6 +43,7 @@ from .detectors import (
 )
 from .instance import find_free_port, generate_token, read_token_file, write_port_file, write_token_file
 from .matcher import build_token_index, find_best_match, find_best_search_match, match_from_index, rank_matches
+from .stats import statistics_from_items
 from .kitsu import KitsuClient, KitsuCredential, KitsuError
 from .myanimelist import MyAnimeListClient, MyAnimeListCredential, MyAnimeListError
 from .secrets import (
@@ -1443,20 +1444,22 @@ async def statistics(
     settings: Settings = Depends(get_settings),
     database: Database = Depends(get_database),
 ) -> StatisticsResponse:
-    media_provider = _get_provider(settings, provider)
-    if not media_provider.capabilities.statistics:
-        # provider has no stats API — derive from locally synced library
-        return database.local_statistics(provider, account)
+    # ponytail: derive from live library — native distributions are unreliable (empty for some accounts)
     try:
-        stats, status = await cached_value(
-            database,
-            account_cache_key(provider, account, "statistics:v2"),
-            600,
-            StatisticsResponse,
-            lambda: media_provider.statistics(token),
+        media_provider = _get_provider(settings, provider)
+        anime, cache_status = await cached_list(
+            database, account_cache_key(provider, account, "list"), 300, MediaItem,
+            lambda: media_provider.library(token),
         )
-        response.headers["X-Cache-Status"] = status.value
-        return stats
+        response.headers["X-Cache-Status"] = cache_status.value
+        if media_provider.capabilities.manga:
+            manga, _ = await cached_list(
+                database, account_cache_key(provider, account, "list:manga"), 300, MediaItem,
+                lambda: media_provider.library_manga(token),
+            )
+        else:
+            manga = []
+        return statistics_from_items(anime, manga)
     except Exception as error:
         raise_provider_auth_error(error, provider, account)
 
@@ -1470,19 +1473,22 @@ async def statistics_export(
     settings: Settings = Depends(get_settings),
     database: Database = Depends(get_database),
 ) -> StatisticsResponse:
-    media_provider = _get_provider(settings, provider)
-    response.headers["Content-Disposition"] = 'attachment; filename="nyanko-stats.json"'
-    if not media_provider.capabilities.statistics:
-        return database.local_statistics(provider, account)
+    # ponytail: derive from live library — native distributions are unreliable (empty for some accounts)
     try:
-        stats, _ = await cached_value(
-            database,
-            account_cache_key(provider, account, "statistics:v2"),
-            600,
-            StatisticsResponse,
-            lambda: media_provider.statistics(token),
+        media_provider = _get_provider(settings, provider)
+        response.headers["Content-Disposition"] = 'attachment; filename="nyanko-stats.json"'
+        anime, _ = await cached_list(
+            database, account_cache_key(provider, account, "list"), 300, MediaItem,
+            lambda: media_provider.library(token),
         )
-        return stats
+        if media_provider.capabilities.manga:
+            manga, _ = await cached_list(
+                database, account_cache_key(provider, account, "list:manga"), 300, MediaItem,
+                lambda: media_provider.library_manga(token),
+            )
+        else:
+            manga = []
+        return statistics_from_items(anime, manga)
     except Exception as error:
         raise_provider_auth_error(error, provider, account)
 
