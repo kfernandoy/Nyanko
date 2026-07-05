@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 
@@ -32,6 +33,63 @@ def _cred_file(provider: str, account_alias: str) -> Path | None:
     return _credentials_dir / f"{provider}_{account_alias}.token"
 
 
+# El fallback a fichero es inevitable: los JWT de MAL exceden el límite del
+# credential blob de Windows. En Windows lo ciframos con DPAPI por usuario
+# (CryptProtectData) para no dejar tokens en texto plano; en otras plataformas
+# no hay DPAPI y se guarda tal cual (solo el usuario dueño de la carpeta lee).
+_DPAPI_MAGIC = b"NYDPAPI1\n"
+
+
+def _dpapi_crypt(data: bytes, protect: bool) -> bytes | None:
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class DATA_BLOB(ctypes.Structure):
+            _fields_ = [
+                ("cbData", wintypes.DWORD),
+                ("pbData", ctypes.POINTER(ctypes.c_char)),
+            ]
+
+        crypt32 = ctypes.windll.crypt32
+        kernel32 = ctypes.windll.kernel32
+        buf = ctypes.create_string_buffer(data, len(data))
+        in_blob = DATA_BLOB(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+        out_blob = DATA_BLOB()
+        fn = crypt32.CryptProtectData if protect else crypt32.CryptUnprotectData
+        if not fn(
+            ctypes.byref(in_blob), None, None, None, None, 0, ctypes.byref(out_blob)
+        ):
+            raise ctypes.WinError()
+        try:
+            return ctypes.string_at(out_blob.pbData, out_blob.cbData)
+        finally:
+            kernel32.LocalFree(out_blob.pbData)
+    except Exception:
+        return None
+
+
+def _write_cred_file(cred_file: Path, credential: str) -> None:
+    protected = _dpapi_crypt(credential.encode("utf-8"), protect=True)
+    if protected is not None:
+        cred_file.write_bytes(_DPAPI_MAGIC + protected)
+    else:
+        cred_file.write_text(credential, encoding="utf-8")
+
+
+def _read_cred_file(cred_file: Path) -> str | None:
+    raw = cred_file.read_bytes()
+    if raw.startswith(_DPAPI_MAGIC):
+        plain = _dpapi_crypt(raw[len(_DPAPI_MAGIC) :], protect=False)
+        return plain.decode("utf-8") if plain is not None else None
+    # Fichero antiguo en texto plano: devuélvelo y migra a formato cifrado.
+    credential = raw.decode("utf-8")
+    _write_cred_file(cred_file, credential)
+    return credential
+
+
 def credential_username(provider: str, account_alias: str) -> str:
     return f"provider:{provider}:account:{account_alias}:access_token"
 
@@ -60,7 +118,7 @@ def _read_provider_credential(provider: str, account_alias: str) -> str | None:
     # fallback: file-based storage for credentials too large for the keyring
     cred_file = _cred_file(provider, account_alias)
     if cred_file and cred_file.exists():
-        return cred_file.read_text(encoding="utf-8")
+        return _read_cred_file(cred_file)
     return None
 
 
@@ -80,7 +138,7 @@ def set_provider_credential(
         cred_file = _cred_file(provider, account_alias)
         if cred_file is None:
             raise RuntimeError("No credentials directory configured and keyring rejected the credential")
-        cred_file.write_text(credential, encoding="utf-8")
+        _write_cred_file(cred_file, credential)
     else:
         delete_provider_credential(provider, account_alias)
 

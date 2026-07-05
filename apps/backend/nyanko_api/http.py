@@ -81,6 +81,26 @@ class RateLimitedClient:
         self._client: httpx.AsyncClient | None = None
         self._client_loop: asyncio.AbstractEventLoop | None = None
 
+    def _retire_client(self, current_loop: asyncio.AbstractEventLoop) -> None:
+        # Cierra el cliente anterior antes de reemplazarlo para no filtrar su pool
+        # de conexiones. Si su loop sigue vivo, programa aclose() en él; si el loop
+        # murió (típico entre tests, un loop por test) simplemente lo descarta.
+        old = self._client
+        old_loop = self._client_loop
+        self._client = None
+        self._client_loop = None
+        if old is None or getattr(old, "is_closed", False):
+            return
+        aclose = getattr(old, "aclose", None)
+        if not callable(aclose):
+            return
+        if old_loop is None or old_loop.is_closed():
+            return
+        if old_loop is current_loop:
+            old_loop.create_task(aclose())
+        else:
+            asyncio.run_coroutine_threadsafe(aclose(), old_loop)
+
     @retry_with_backoff(max_retries=3, base_delay=1.0, max_delay=30.0)
     async def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         async with (
@@ -95,6 +115,7 @@ class RateLimitedClient:
                 or self._client_loop is not loop
                 or getattr(self._client, "is_closed", False)
             ):
+                self._retire_client(loop)
                 self._client = httpx.AsyncClient(timeout=self._timeout)
                 self._client_loop = loop
             response = await self._client.request(method, url, **kwargs)
