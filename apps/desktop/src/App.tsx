@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { openUrl, openPath } from "@tauri-apps/plugin-opener";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { openUrl, openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { useContextMenu, type CtxItem } from "./ContextMenu";
+import { useCompact } from "./hooks";
+import { KittenLogo } from "./KittenLogo";
 import { api, playbackSocket, setActiveAccount, type ActiveAccount } from "./api";
-import { useApp } from "./i18n";
-import { displayTitle } from "./title";
+import { useApp, mediaFormatLabel } from "./i18n";
+import { displayTitle, foldTitle } from "./title";
 import { setDiscordActivity, clearDiscordActivity } from "./discord";
 import { getAutostart, setAutostart } from "./autostart";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { DetectorSettingsView } from "./DetectorSettingsView";
 import { PlaybackHistoryView } from "./PlaybackHistoryView";
@@ -23,6 +27,7 @@ import type {
   GlobalSearchResponse,
   Health,
   LibrarySearchResponse,
+  LocalSeries,
   MediaDetails,
   MediaEntryUpdate,
   MediaItem,
@@ -55,6 +60,75 @@ function currentAnimeSeason(): { season: Season; year: number } {
 
 function errorMessage(reason: unknown, fallback: string): string {
   return reason instanceof Error ? reason.message : typeof reason === "string" ? reason : fallback;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function previewDetails(item: MediaItem, mediaType: MediaType, scoreFormat: MediaDetails["score_format"]): MediaDetails {
+  return {
+    id: item.id,
+    title: item.title,
+    title_romaji: item.title_romaji ?? null,
+    title_english: item.title_english ?? null,
+    title_native: item.title_native ?? null,
+    synonyms: item.synonyms ?? [],
+    description: null,
+    site_url: item.site_url ?? "",
+    banner_image: null,
+    cover_image: item.cover_image,
+    color: null,
+    format: item.format ?? null,
+    media_type: mediaType,
+    status: item.status,
+    source: null,
+    season: item.season ?? null,
+    season_year: item.year ?? null,
+    episodes: item.episodes,
+    chapters: item.chapters ?? null,
+    volumes: item.volumes ?? null,
+    duration: null,
+    genres: item.genres ?? [],
+    studios: [],
+    country: null,
+    average_score: null,
+    next_episode: null,
+    next_airing_at: null,
+    score_format: scoreFormat,
+    canonical_id: item.canonical_id ?? null,
+    list_entry: null,
+    characters: [],
+    staff: [],
+    relations: [],
+    recommendations: [],
+    trailer: null,
+  };
+}
+
+const HAS_TAURI = "__TAURI_INTERNALS__" in window;
+
+// Barra de título propia: la ventana va sin decoración nativa (decorations: false)
+// para que minimizar/maximizar/cerrar adopten los estilos de la app. Cerrar dispara
+// CloseRequested, así que el comportamiento de bandeja se conserva.
+function Titlebar() {
+  const window_ = getCurrentWindow();
+  return (
+    <div className="titlebar" data-tauri-drag-region>
+      <span className="titlebar-brand" data-tauri-drag-region>Nyanko</span>
+      <div className="titlebar-buttons">
+        <button aria-label="Minimizar" onClick={() => void window_.minimize()}>
+          <svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" /></svg>
+        </button>
+        <button aria-label="Maximizar" onClick={() => void window_.toggleMaximize()}>
+          <svg width="10" height="10" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" /></svg>
+        </button>
+        <button className="titlebar-close" aria-label="Cerrar" onClick={() => void window_.close()}>
+          <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0 L10 10 M10 0 L0 10" stroke="currentColor" /></svg>
+        </button>
+      </div>
+    </div>
+  );
 }
 
 const DEFAULT_CAPABILITIES: ProviderCapabilities = {
@@ -105,7 +179,12 @@ export default function App() {
   const [candidate, setCandidate] = useState<PlaybackCandidate | null>(null);
   const [match, setMatch] = useState<PlaybackMatchResponse | null>(null);
   const [playbackPrefs, setPlaybackPrefs] = useState<PlaybackPreferences | null>(null);
-  const [view, setView] = useState<View>("library");
+  // #<vista> en la URL abre esa pestaña directamente (deep-link / depuración)
+  const [view, setView] = useState<View>(() => {
+    const requested = window.location.hash.slice(1) as View;
+    const views: View[] = ["library", "manga", "now-playing", "history", "activity", "seasons", "statistics", "discovery", "torrents", "settings", "local-library"];
+    return views.includes(requested) ? requested : "library";
+  });
   const [season, setSeason] = useState(currentAnimeSeason);
   const [filter, setFilter] = useState<Filter>("CURRENT");
   const [query, setQuery] = useState("");
@@ -131,6 +210,9 @@ export default function App() {
   const [accountUsername, setAccountUsername] = useState<string>("");
   const [accountAvatar, setAccountAvatar] = useState<string | null>(null);
   const [displayAdult, setDisplayAdult] = useState(false);
+  // Formato de puntuación del perfil (POINT_10, POINT_5…): rige el input de score
+  // hasta que llegue el detalle real con su propio score_format.
+  const [profileScoreFormat, setProfileScoreFormat] = useState<string>("POINT_10");
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 
   const setCacheStatus = useCallback((view: CacheableView, status: CacheStatus | null) => {
@@ -148,24 +230,27 @@ export default function App() {
       const activeAlias = selected?.alias ?? "default";
       setActiveAccount(activeProv, activeAlias);
       setActiveAccountState({ provider: activeProv, alias: activeAlias });
-      const providerList = await api.providers();
+      // Con la cuenta activa fijada, el resto no depende entre sí: en paralelo.
+      const [providerList, service] = await Promise.all([api.providers(), api.health()]);
       const activeProvider = providerList.find(p => p.name === (selected?.provider ?? "anilist"));
       setCapabilities(activeProvider?.capabilities ?? DEFAULT_CAPABILITIES);
-      const service = await api.health();
       setHealth(service);
       if (service.authenticated) {
-        const { data, cacheStatus } = await api.mediaList();
-        setMedia(data);
-        setCacheStatus("library", cacheStatus);
-        try {
-          const { data: prefs } = await api.preferences();
+        const [listResult, prefsResult] = await Promise.allSettled([api.mediaList(), api.preferences()]);
+        if (listResult.status === "rejected") throw listResult.reason;
+        setMedia(listResult.value.data);
+        setCacheStatus("library", listResult.value.cacheStatus);
+        if (prefsResult.status === "fulfilled") {
+          const prefs = prefsResult.value.data;
           setAccountUsername(prefs.username || "");
           setAccountAvatar(prefs.avatar || null);
           setDisplayAdult(Boolean(prefs.display_adult_content));
-        } catch { /* provider without preferences — keep empty */ }
+          setProfileScoreFormat(prefs.score_format || "POINT_10");
+        } // proveedor sin preferencias — se mantienen vacías
       } else {
-        setMedia([]);
-        setCacheStatus("library", null);
+        const localResult = await api.mediaList("combined").catch(() => null);
+        setMedia(localResult?.data ?? []);
+        setCacheStatus("library", localResult?.cacheStatus ?? null);
         setAccountUsername("");
         setAccountAvatar(null);
         setDisplayAdult(false);
@@ -191,13 +276,18 @@ export default function App() {
     api.playbackPreferences().then(setPlaybackPrefs).catch(() => {});
   }, [health?.authenticated]);
 
+  // Al volver a la app (p. ej. tras autorizar OAuth en el navegador), reconciliar
+  // cuentas/salud/biblioteca en silencio. Con la caché caliente son requests locales.
   useEffect(() => {
-    if (!health?.authenticated) return;
-    setMedia([]);
-    setManga([]);
-    setMangaLoaded(false);
-    void load(true);
-  }, [health?.authenticated, load]);
+    let last = 0;
+    const onFocus = () => {
+      if (Date.now() - last < 5000) return;
+      last = Date.now();
+      void load(true);
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [load]);
 
   const loadManga = useCallback(async (silent = false) => {
     if (!silent) setSectionLoading(true);
@@ -302,6 +392,13 @@ export default function App() {
     let socket: WebSocket | undefined;
     let reconnectTimer: number | undefined;
     let disposed = false;
+    // Guardia de secuencia: los re-matches van cada pocos segundos y una respuesta
+    // vieja que llegue tarde no debe pisar a la más reciente.
+    let matchSeq = 0;
+    // Los reproductores empujan la posición cada segundo; re-matchear en cada tick
+    // saturaba el backend. Mismo episodio → re-match como mucho cada 8 s.
+    let lastMatchSignature = "";
+    let lastMatchAt = 0;
     const connect = async () => {
       if (disposed) return;
       socket = await playbackSocket();
@@ -309,6 +406,7 @@ export default function App() {
         const next = JSON.parse(event.data) as PlaybackCandidate | null;
         setCandidate(next);
         if (!next) {
+          matchSeq += 1; // invalida cualquier match en vuelo
           setMatch(null);
           return;
         }
@@ -321,8 +419,13 @@ export default function App() {
         // Already auto-confirmed this episode: keep showing it, but don't re-match every
         // position tick (no churn, no flicker).
         if (confirmedSignatureRef.current === signature) return;
+        if (signature === lastMatchSignature && Date.now() - lastMatchAt < 8000) return;
+        lastMatchSignature = signature;
+        lastMatchAt = Date.now();
+        const seq = ++matchSeq;
         api.matchPlayback(next)
           .then((result) => {
+            if (seq !== matchSeq) return; // llegó tarde: ya hay un match más nuevo
             if (result.event_status === "ignored") {
               setCandidate(null);
               setMatch(null);
@@ -333,12 +436,14 @@ export default function App() {
             // displayed/RP episode respects the catalogue (movies, episode caps).
             setMatch(result);
             setCandidate(result.candidate);
+            // Precalienta el detalle del match para que abrir su card sea instantáneo.
+            if (result.match) void api.mediaDetails(result.match.id).catch(() => {});
             if (result.event_status === "confirmed") {
               confirmedSignatureRef.current = signature;
               void load(true); // refresh the library after an automatic update
             }
           })
-          .catch(() => setMatch(null));
+          .catch(() => { if (seq === matchSeq) setMatch(null); });
       };
       socket.onclose = () => {
         if (!disposed) reconnectTimer = window.setTimeout(connect, 2000);
@@ -598,17 +703,6 @@ export default function App() {
     await load();
   };
 
-  const logout = async () => {
-    await api.logout();
-    resetRemoteState();
-    setCandidate(null);
-    setMatch(null);
-    setHealth({ status: "ok", authenticated: false });
-    setView("library");
-  };
-
-
-
   const libraryMap = useMemo(() => {
     const map = new Map<number, MediaItem>();
     for (const item of media) {
@@ -616,6 +710,32 @@ export default function App() {
     }
     return map;
   }, [media]);
+
+  // Como Taiga: sin menú del navegador; el clic derecho es de la app.
+  // Se permite el nativo solo en campos editables (copiar/pegar).
+  useEffect(() => {
+    const block = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, [contenteditable='true']")) return;
+      event.preventDefault();
+    };
+    document.addEventListener("contextmenu", block);
+    return () => document.removeEventListener("contextmenu", block);
+  }, []);
+
+  const { openMenu, menu: contextMenu } = useContextMenu();
+
+  // Episodios locales por id externo, para "Reproducir siguiente" / "Abrir carpeta"
+  // desde la biblioteca (los ids externos coinciden con MediaItem.id del proveedor).
+  const [localByExternal, setLocalByExternal] = useState<Map<number, LocalSeries>>(new Map());
+  useEffect(() => {
+    if (!health?.authenticated) return;
+    void api.getLocalLibrary()
+      .then((list) => setLocalByExternal(new Map(
+        list.filter((s) => s.external_id != null).map((s) => [s.external_id!, s]),
+      )))
+      .catch(() => {});
+  }, [health?.authenticated, view]);
 
   const setSeasonWithReset = (next: { season: Season; year: number }) => {
     setSeason(next);
@@ -644,39 +764,99 @@ export default function App() {
     }
   };
 
+  // Detalles ya vistos en esta sesión: reabrir una card los muestra al instante
+  // y el refetch corre en silencio por detrás.
+  const detailsCacheRef = useRef(new Map<string, MediaDetails>());
+  const detailCacheKey = (source: ActiveAccount, mediaType: string, mediaId: number) =>
+    `${source.provider}:${source.alias}:${mediaType}:${mediaId}`;
+  // Token de la apertura vigente: cerrar el modal o abrir otra card lo invalida,
+  // así una respuesta que llega tarde no reabre ni pisa lo que el usuario ve.
+  const detailRequestRef = useRef(0);
+
+  const closeDetails = useCallback(() => {
+    // Invalida la apertura vigente y apaga el overlay: si se cierra mientras un
+    // fetch sigue en vuelo, su `finally` verá el token cambiado y no lo apagará él.
+    detailRequestRef.current += 1;
+    setDetails(null);
+    setDetailLoading(false);
+  }, []);
+
+  const reloadStaleDetails = async (
+    mediaId: number,
+    mediaType: "ANIME" | "MANGA",
+    detailSource: ActiveAccount,
+    requestId: number,
+  ) => {
+    for (const delay of [1200, 2500, 4000]) {
+      await sleep(delay);
+      if (detailRequestRef.current !== requestId) return;
+      try {
+        const { data, cacheStatus } = mediaType === "MANGA"
+          ? await api.mangaDetails(mediaId, detailSource)
+          : await api.mediaDetails(mediaId, detailSource);
+        detailsCacheRef.current.set(detailCacheKey(detailSource, mediaType, mediaId), data);
+        if (detailRequestRef.current !== requestId) return;
+        setDetails(data);
+        if (data.canonical_id) setDetailCanonicalId(data.canonical_id);
+        setCacheStatus("details", cacheStatus);
+        if (cacheStatus !== "stale") return;
+      } catch {
+        return;
+      }
+    }
+  };
+
   const openDetails = async (
     mediaId: number,
     mediaType: "ANIME" | "MANGA" = "ANIME",
     accountOverride?: ActiveAccount,
     canonicalId?: number | null,
+    preview?: MediaItem,
   ) => {
-    setDetailLoading(true);
-    setError(null);
+    const requestId = (detailRequestRef.current += 1);
     const detailSource = accountOverride ?? activeAccount;
+    const cached = detailsCacheRef.current.get(detailCacheKey(detailSource, mediaType, mediaId));
+    if (cached) {
+      setDetails(cached);
+      setDetailLoading(false);
+    } else {
+      setDetails(preview ? previewDetails(preview, mediaType, profileScoreFormat) : null);
+      setDetailLoading(true);
+    }
+    setError(null);
     setDetailAccount(detailSource);
-    setDetailCanonicalId(canonicalId ?? null);
+    setDetailCanonicalId(cached?.canonical_id ?? canonicalId ?? null);
     try {
       const { data, cacheStatus } = mediaType === "MANGA"
         ? await api.mangaDetails(mediaId, detailSource)
         : await api.mediaDetails(mediaId, detailSource);
+      detailsCacheRef.current.set(detailCacheKey(detailSource, mediaType, mediaId), data);
+      if (detailRequestRef.current !== requestId) return;  // cerró o abrió otra card
       setDetails(data);
       if (data.canonical_id) setDetailCanonicalId(data.canonical_id);
       setCacheStatus("details", cacheStatus);
+      if (cacheStatus === "stale") void reloadStaleDetails(mediaId, mediaType, detailSource, requestId);
     } catch (reason) {
-      setError(errorMessage(reason, mediaType === "MANGA" ? "No se pudo cargar el manga" : "No se pudo cargar el anime"));
+      if (detailRequestRef.current === requestId && !cached) setError(errorMessage(reason, mediaType === "MANGA" ? "No se pudo cargar el manga" : "No se pudo cargar el anime"));
     } finally {
-      setDetailLoading(false);
+      if (detailRequestRef.current === requestId) setDetailLoading(false);
     }
   };
 
   const refreshDetails = async () => {
     if (!details) return;
+    const requestId = detailRequestRef.current;
     const [{ data: updated, cacheStatus }] = await Promise.all([
       (details.media_type === "MANGA"
         ? api.mangaDetails(details.id, detailAccount)
         : api.mediaDetails(details.id, detailAccount)),
       load(true),
     ]);
+    detailsCacheRef.current.set(
+      detailCacheKey(detailAccount, details.media_type ?? "ANIME", details.id),
+      updated,
+    );
+    if (detailRequestRef.current !== requestId) return;  // se cerró/cambió durante el refetch
     setDetails(updated);
     setCacheStatus("details", cacheStatus);
     setActivityLoaded(false);
@@ -692,12 +872,143 @@ export default function App() {
     setMedia((current) => current.map((m) =>
       m.id === item.id ? { ...m, progress: nextProgress, status: update.status ?? m.status } : m));
     try {
+      // El backend aplica el cambio local y lo encola hacia el proveedor; no hace falta
+      // refetch (la lista en vivo superpone las mutaciones pendientes).
       await api.bulkUpdateEntry(targetId, update);
-      await load(true);
     } catch (reason) {
       setError(errorMessage(reason, "No se pudo actualizar el progreso"));
       await load(true);
     }
+  };
+
+  const quickProgressManga = async (item: MediaItem, nextProgress: number) => {
+    const targetId = item.canonical_id ?? item.id;
+    const update: MediaEntryUpdate = { progress: nextProgress };
+    if (item.chapters && nextProgress >= item.chapters) update.status = "COMPLETED";
+    else if (item.status === "PLANNING") update.status = "CURRENT";
+    setManga((current) => current.map((m) =>
+      m.id === item.id ? { ...m, progress: nextProgress, status: update.status ?? m.status } : m));
+    try {
+      await api.bulkUpdateEntry(targetId, update);
+    } catch (reason) {
+      setError(errorMessage(reason, "No se pudo actualizar el progreso"));
+      setMangaLoaded(false);
+      await loadManga();
+    }
+  };
+
+  const openExternal = async (url: string) => {
+    if ("__TAURI_INTERNALS__" in window) await openUrl(url);
+    else window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const quickStatus = async (item: MediaItem, status: string, mediaType: MediaType) => {
+    const setList = mediaType === "MANGA" ? setManga : setMedia;
+    setList((current) => current.map((m) => (m.id === item.id ? { ...m, status } : m)));
+    try {
+      await api.bulkUpdateEntry(item.canonical_id ?? item.id, { status });
+    } catch (reason) {
+      setError(errorMessage(reason, "No se pudo cambiar el estado"));
+      if (mediaType === "MANGA") { setMangaLoaded(false); await loadManga(); } else await load(true);
+    }
+  };
+
+  const quickScore = async (item: MediaItem, score: number, mediaType: MediaType) => {
+    const setList = mediaType === "MANGA" ? setManga : setMedia;
+    setList((current) => current.map((m) => (m.id === item.id ? { ...m, score: score || null } : m)));
+    try {
+      await api.bulkUpdateEntry(item.canonical_id ?? item.id, { score });
+    } catch (reason) {
+      setError(errorMessage(reason, "No se pudo guardar la puntuación"));
+      if (mediaType === "MANGA") { setMangaLoaded(false); await loadManga(); } else await load(true);
+    }
+  };
+
+  // Menú rápido de puntuación según el formato del perfil (10, 100, 5★, 3…),
+  // guardando siempre sobre la escala canónica 0-100.
+  const scoreMenuItems = (item: MediaItem, mediaType: MediaType): CtxItem[] => {
+    const steps = profileScoreFormat === "POINT_5" ? 5 : profileScoreFormat === "POINT_3" ? 3 : 10;
+    const menuValue = (step: number) => (profileScoreFormat === "POINT_100" ? step * 10 : step);
+    const current = item.score ? scoreFromCanonical(item.score, profileScoreFormat) : 0;
+    const currentStep = profileScoreFormat === "POINT_100" ? Math.round(current / 10) : Math.round(current);
+    return [
+      ...Array.from({ length: steps }, (_, i) => steps - i).map((step) => ({
+        label: `★ ${menuValue(step)}`,
+        checked: currentStep === step,
+        onClick: () => void quickScore(item, scoreToCanonical(menuValue(step), profileScoreFormat), mediaType),
+      })),
+      { sep: true } as CtxItem,
+      { label: t("score.none"), checked: currentStep === 0, onClick: () => void quickScore(item, 0, mediaType) },
+    ];
+  };
+
+  const removeFromList = async (item: MediaItem, mediaType: MediaType) => {
+    if (!window.confirm(`¿Eliminar ${item.title} de tu lista?`)) return;
+    const account = item.provider && item.account_alias
+      ? { provider: item.provider, alias: item.account_alias }
+      : activeAccount;
+    try {
+      // La lista no trae el id de la entrada; los detalles sí.
+      const { data } = mediaType === "MANGA"
+        ? await api.mangaDetails(item.id, account)
+        : await api.mediaDetails(item.id, account);
+      if (data.list_entry) await api.deleteEntry(data.list_entry.id, account);
+      if (mediaType === "MANGA") { setMangaLoaded(false); await loadManga(); } else await load(true);
+    } catch (reason) {
+      setError(errorMessage(reason, "No se pudo eliminar la entrada"));
+    }
+  };
+
+  // Submenú "Buscar en" con los mismos sitios que Taiga.
+  const searchSitesMenu = (title: string, kind: "anime" | "manga"): CtxItem[] => {
+    const q = encodeURIComponent(title);
+    const sites: [string, string][] = [
+      ["AniList", `https://anilist.co/search/${kind}?search=${q}`],
+      ["MyAnimeList", `https://myanimelist.net/${kind}.php?q=${q}`],
+      ["Kitsu", `https://kitsu.app/${kind}?text=${q}`],
+      ["Anime News Network", `https://www.animenewsnetwork.com/search?q=${q}`],
+      ["Wikipedia", `https://en.wikipedia.org/wiki/Special:Search?search=${q}`],
+      ["YouTube", `https://www.youtube.com/results?search_query=${q}`],
+      ["Reddit", `https://www.reddit.com/search?q=${q}`],
+      ...(kind === "anime" ? [["Nyaa.si", `https://nyaa.si/?f=0&c=1_2&q=${q}`] as [string, string]] : []),
+    ];
+    return sites.map(([label, url]) => ({ label, onClick: () => void openExternal(url) }));
+  };
+
+  const libraryItemMenu = (item: MediaItem, mediaType: MediaType): CtxItem[] => {
+    const account = item.provider && item.account_alias
+      ? { provider: item.provider, alias: item.account_alias }
+      : activeAccount;
+    const local = mediaType === "ANIME" ? localByExternal.get(item.id) : undefined;
+    const total = mediaType === "MANGA" ? item.chapters : item.episodes;
+    const atMax = total != null && item.progress >= total;
+    const bump = mediaType === "MANGA" ? quickProgressManga : quickProgress;
+    return [
+      { label: t("ctx.info"), onClick: () => void openDetails(item.id, mediaType, account, item.canonical_id, item) },
+      { label: t("ctx.search"), sub: searchSitesMenu(item.title, mediaType === "MANGA" ? "manga" : "anime") },
+      ...(item.site_url ? [{ label: t("ctx.webPage"), onClick: () => void openExternal(item.site_url!) }] : []),
+      { sep: true } as CtxItem,
+      { label: mediaType === "MANGA" ? t("ctx.addChapter") : t("ctx.addEpisode"), disabled: atMax, onClick: () => void bump(item, item.progress + 1) },
+      {
+        label: t("ctx.status"),
+        sub: (["CURRENT", "PLANNING", "COMPLETED", "PAUSED", "DROPPED"] as const).map((status) => ({
+          label: t(`badge.${status}`),
+          checked: item.status === status,
+          onClick: () => void quickStatus(item, status, mediaType),
+        })),
+      },
+      { label: t("ctx.score"), sub: scoreMenuItems(item, mediaType) },
+      ...(local?.next_path ? [
+        { sep: true } as CtxItem,
+        {
+          label: `${t("np.local.play")}${local.next_episode != null ? ` · ${local.next_episode}` : ""}`,
+          onClick: () => void openPath(local.next_path!),
+        },
+        { label: t("ctx.openFolder"), onClick: () => void revealItemInDir(local.next_path!) },
+      ] : []),
+      { sep: true } as CtxItem,
+      { label: t("ctx.delete"), danger: true, onClick: () => void removeFromList(item, mediaType) },
+    ];
   };
 
   const loadMoreActivity = async () => {
@@ -718,9 +1029,11 @@ export default function App() {
   };
 
   return (
-    <div className="app-shell">
+    <>
+    {HAS_TAURI && <Titlebar />}
+    <div className={`app-shell${HAS_TAURI ? " with-titlebar" : ""}`}>
       <aside className="sidebar">
-        <div className="brand"><span>猫</span><strong>Nyanko</strong></div>
+        <div className="brand"><KittenLogo /><strong>Nyanko</strong></div>
         <nav>
           {([
             "library",
@@ -732,9 +1045,9 @@ export default function App() {
             "statistics",
             "discovery",
             "torrents",
-            "settings",
           ] as View[]).map((key) => (
             <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key)}>
+              <NavIcon view={key} />
               {t(`nav.${key}`)}
               {key === "now-playing" && candidate && <span className="nav-dot" />}
               {key === "torrents" && torrentUnread > 0 && <span className="nav-badge">{torrentUnread}</span>}
@@ -757,13 +1070,17 @@ export default function App() {
             <strong>{accountUsername || activeAccount.alias}</strong>
             <small>{{ anilist: "AniList", mal: "MyAnimeList", kitsu: "Kitsu" }[activeAccount.provider] ?? activeAccount.provider}</small>
           </div>
+          <button
+            className={`account-gear${view === "settings" ? " active" : ""}`}
+            title={t("nav.settings")}
+            onClick={(event) => { event.stopPropagation(); setAccountMenuOpen(false); setView("settings"); }}
+          >
+            <NavIcon view="settings" />
+          </button>
           {accountMenuOpen && (
             <div className="account-dropdown">
               <button onClick={() => { setAccountMenuOpen(false); void toggleDetection(); }}>
                 {detectionPaused ? t("account.resumeDetection") : t("account.pauseDetection")}
-              </button>
-              <button onClick={() => { setAccountMenuOpen(false); setView("settings"); }}>
-                {t("account.settings")}
               </button>
               <button className="danger" onClick={() => { setAccountMenuOpen(false); void clearLocalData(); }}>
                 {t("account.logout")}
@@ -792,12 +1109,12 @@ export default function App() {
           </div>
         )}
 
-        {!health?.authenticated && view !== "settings" ? (
+        {!loading && !health?.authenticated && media.length === 0 && view !== "settings" ? (
           <Empty title={t("common.connectAccount")} detail={t("common.connectAccount.detail")} />
         ) : view === "library" ? (
-          <LibraryView items={media} filter={filter} query={query} loading={loading} setFilter={setFilter} setQuery={setQuery} onProgress={quickProgress} onSelect={(item) => void openDetails(item.id, "ANIME", item.provider && item.account_alias ? { provider: item.provider, alias: item.account_alias } : activeAccount, item.canonical_id)} />
+          <LibraryView items={media} filter={filter} query={query} loading={loading} setFilter={setFilter} setQuery={setQuery} onProgress={quickProgress} onContext={(event, item) => openMenu(event, libraryItemMenu(item, "ANIME"))} onScore={(event, item) => openMenu(event, scoreMenuItems(item, "ANIME"))} onSelect={(item) => void openDetails(item.id, "ANIME", item.provider && item.account_alias ? { provider: item.provider, alias: item.account_alias } : activeAccount, item.canonical_id, item)} />
         ) : view === "manga" ? (
-          <MangaLibraryView items={manga} loading={sectionLoading && !mangaLoaded} onSelect={(item) => void openDetails(item.id, "MANGA", item.provider && item.account_alias ? { provider: item.provider, alias: item.account_alias } : activeAccount, item.canonical_id)} onRefresh={() => { setMangaLoaded(false); void loadManga(); }} />
+          <MangaLibraryView items={manga} loading={sectionLoading && !mangaLoaded} onContext={(event, item) => openMenu(event, libraryItemMenu(item, "MANGA"))} onScore={(event, item) => openMenu(event, scoreMenuItems(item, "MANGA"))} onSelect={(item) => void openDetails(item.id, "MANGA", item.provider && item.account_alias ? { provider: item.provider, alias: item.account_alias } : activeAccount, item.canonical_id, item)} onProgress={quickProgressManga} />
         ) : view === "now-playing" ? (
           <NowPlayingView candidate={candidate} match={match} prefs={playbackPrefs} onIgnore={() => void ignorePlayback()} onUndo={() => void undoPlayback()} onSelect={openDetails} onCorrected={async (next) => { setMatch(next); if (next.match) { await confirmMatch(next); } }} onSeeMore={() => setView("local-library")} />
         ) : view === "history" ? (
@@ -811,7 +1128,6 @@ export default function App() {
             capabilities={capabilities}
             onSync={forceSync}
             onPreferencesChanged={refreshAfterPreferences}
-            onLogout={logout}
             onConnectAccount={connectAccount}
             onAccountChanged={changeAccount}
             autostart={autostart}
@@ -820,7 +1136,7 @@ export default function App() {
         ) : view === "torrents" ? (
           <TorrentsView />
         ) : view === "local-library" ? (
-          <LocalLibraryView onBack={() => setView("now-playing")} />
+          <LocalLibraryView onBack={() => setView("now-playing")} onSelect={(s) => void openDetails(s.external_id!, "ANIME", s.provider && s.account_alias ? { provider: s.provider, alias: s.account_alias } : activeAccount, s.media_id)} />
         ) : sectionLoading ? (
           <Empty title={t("common.loading")} />
         ) : view === "activity" ? (
@@ -831,9 +1147,11 @@ export default function App() {
           <StatisticsView statistics={statistics} onExport={() => void handleStatisticsExport()} />
         )}
       </main>
+      {contextMenu}
       {detailLoading && <div className="modal-backdrop"><div className="modal-loading">{t("common.loadingInfo")}</div></div>}
-      {details && <DetailsModal details={details} canonicalId={detailCanonicalId} mediaType={details.media_type === "MANGA" ? "MANGA" : "ANIME"} detailAccount={detailAccount} onClose={() => setDetails(null)} onChanged={refreshDetails} onSelect={(id, type) => { setDetails(null); void openDetails(id, type); }} />}
+      {details && <DetailsModal key={`${details.id}-${details.list_entry?.id ?? "preview"}-${details.score_format}`} details={details} canonicalId={detailCanonicalId} mediaType={details.media_type === "MANGA" ? "MANGA" : "ANIME"} detailAccount={detailAccount} onClose={closeDetails} onChanged={refreshDetails} onSelect={(id, type) => { closeDetails(); void openDetails(id, type); }} />}
     </div>
+    </>
   );
 }
 
@@ -970,12 +1288,33 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
     return () => window.clearInterval(id);
   }, [match, prefs, candidate?.position_seconds, candidate?.paused, justConfirmed]);
 
+  // Reloj interpolado: el reproductor reporta la posición a saltos de 1-3 s (sondeo
+  // del detector + websocket); entre reportes el timer avanza localmente segundo a
+  // segundo y se re-ancla con cada posición real que llega.
+  const [smoothPosition, setSmoothPosition] = useState<number | null>(null);
+  useEffect(() => {
+    const anchor = candidate?.position_seconds ?? null;
+    setSmoothPosition(anchor);
+    if (anchor == null || candidate?.paused) return;
+    const anchorTime = Date.now();
+    const duration = candidate?.duration_seconds;
+    const id = window.setInterval(() => {
+      const next = anchor + (Date.now() - anchorTime) / 1000;
+      setSmoothPosition(duration != null ? Math.min(next, duration) : next);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [candidate?.position_seconds, candidate?.paused, candidate?.duration_seconds]);
+
   const applyResult = async (mediaId: number, source: "library" | "global", status?: string) => {
     if (!candidate) return;
     setActionError(null);
     if (source === "global" && status) {
       setAdding({ id: mediaId, status });
     }
+    // Óptimista: el panel se cierra ya y el guardado sigue por detrás; si falla,
+    // se reabre con el error. dismissed evita que el auto-search se relance mientras.
+    setCorrecting(false);
+    setDismissed(true);
     try {
       // The add (remote) and the correction (local) are independent — fire together.
       await Promise.all([
@@ -984,9 +1323,9 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
       ]);
       const corrected = await api.matchPlayback(candidate);
       await onCorrected(corrected);
-      setCorrecting(false);
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : "No se pudo aplicar la corrección");
+      setCorrecting(true);
     } finally {
       setAdding(null);
     }
@@ -1040,8 +1379,9 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
     return hours > 0 ? `${hours}:${padded}` : padded;
   };
 
+  const displayPosition = smoothPosition ?? candidate.position_seconds;
   const progressPercent = candidate.duration_seconds
-    ? Math.min(100, Math.max(0, (candidate.position_seconds ?? 0) / candidate.duration_seconds * 100))
+    ? Math.min(100, Math.max(0, (displayPosition ?? 0) / candidate.duration_seconds * 100))
     : 0;
   const isMovie = match?.match ? (match.match.format === "MOVIE" || match.match.episodes === 1) : false;
   return (
@@ -1056,7 +1396,7 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
           {candidate.duration_seconds != null && candidate.duration_seconds > 0 && (
             <div className="detection-progress">
               <div className="detection-progress-bar" style={{ width: `${progressPercent}%` }} />
-              <small>{formatSeconds(candidate.position_seconds)} / {formatSeconds(candidate.duration_seconds)}</small>
+              <small>{formatSeconds(displayPosition)} / {formatSeconds(candidate.duration_seconds)}</small>
             </div>
           )}
         </div>
@@ -1091,7 +1431,7 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
                       {libraryItem && <span className="season-library-badge">{t(`badge.${libraryItem.status}`)}</span>}
                     </div>
                     <span className="clickable" title={t("np.viewEntry")} onClick={() => onSelect(item.id)}>{item.title}</span>
-                    <small>{item.format ?? t("common.anime")}{(item as SearchResult).average_score ? ` · ${(item as SearchResult).average_score}%` : ""}</small>
+                    <small>{item.format ? mediaFormatLabel(t, item.format) : t("common.anime")}{(item as SearchResult).average_score ? ` · ${(item as SearchResult).average_score}%` : ""}</small>
                     {isLibrary ? (
                       <button className="primary small" onClick={() => void applyResult(item.id, "library")}>{t("np.useThis")}</button>
                     ) : (
@@ -1118,7 +1458,7 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
             <div className="poster" style={match.match.cover_image ? { backgroundImage: `url(${match.match.cover_image})` } : undefined} />
             <div className="now-playing-match-info">
               <strong title={match.match.title}>{match.match.title}</strong>
-              <span>{match.match.format?.replace("_", " ")}{match.match.year ? ` · ${match.match.year}` : ""}</span>
+              <span>{mediaFormatLabel(t, match.match.format)}{match.match.year ? ` · ${match.match.year}` : ""}</span>
               <span>{match.match.progress} / {match.match.episodes ?? "?"} {t("np.episodes")}</span>
             </div>
           </article>
@@ -1181,6 +1521,36 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
 
 type SortKey = "TITLE" | "PROGRESS_DESC" | "SCORE_DESC" | "UPDATED_DESC";
 
+// Íconos de navegación: trazos estilo Feather (MIT) embebidos, sin dependencia.
+function NavIcon({ view }: { view: string }) {
+  const shapes: Record<string, React.ReactNode> = {
+    library: <><rect x="2" y="7" width="20" height="15" rx="2" /><polyline points="17 2 12 7 7 2" /></>,
+    manga: <><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></>,
+    "now-playing": <><circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16 10 8" /></>,
+    history: <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
+    activity: <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />,
+    seasons: <><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></>,
+    statistics: <><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></>,
+    discovery: <><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>,
+    torrents: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>,
+    settings: <><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></>,
+  };
+  return (
+    <svg
+      className="nav-icon"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >{shapes[view]}</svg>
+  );
+}
+
 function LibraryToolbar({
   filter,
   setFilter,
@@ -1194,7 +1564,6 @@ function LibraryToolbar({
   counts,
   statusLabels,
   searchPlaceholder,
-  onRefresh,
   children,
 }: {
   filter: Filter;
@@ -1209,11 +1578,10 @@ function LibraryToolbar({
   counts: Record<Filter, number> & { total: number };
   statusLabels: Record<Filter, string>;
   searchPlaceholder: string;
-  onRefresh?: () => void;
   children?: React.ReactNode;
 }) {
   const { t } = useApp();
-  const formatLabel = (format: string) => format.replace("_", " ");
+  const formatLabel = (format: string) => mediaFormatLabel(t, format);
   return <>
     <section className="toolbar">
       <div className="filters">
@@ -1224,7 +1592,6 @@ function LibraryToolbar({
         ))}
       </div>
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchPlaceholder} />
-      {onRefresh && <button className="small" onClick={onRefresh}>{t("common.reload")}</button>}
     </section>
     <div className="season-filters library-filters">
       <select value={sort} onChange={(event) => setSort(event.target.value as SortKey)}>
@@ -1244,13 +1611,18 @@ function LibraryToolbar({
 
 type LibraryLayout = "grid" | "list";
 
-function LibraryView({ items, filter, query, loading, setFilter, setQuery, onSelect, onProgress }: {
+function LibraryView({ items, filter, query, loading, setFilter, setQuery, onSelect, onProgress, onContext, onScore }: {
   items: MediaItem[]; filter: Filter; query: string; loading: boolean;
   setFilter: (filter: Filter) => void; setQuery: (query: string) => void; onSelect: (item: MediaItem) => void;
   onProgress: (item: MediaItem, nextProgress: number) => Promise<void>;
+  onContext?: (event: React.MouseEvent, item: MediaItem) => void;
+  onScore?: (event: React.MouseEvent, item: MediaItem) => void;
 }) {
   const { t, titleLanguage } = useApp();
-  const [sort, setSort] = useState<SortKey>("TITLE");
+  const compact = useCompact();
+  // Por defecto "última actualización"; la elección del usuario persiste (localStorage).
+  const [sort, setSort] = useState<SortKey>(() => (localStorage.getItem("library-sort") as SortKey) || "UPDATED_DESC");
+  const setSortPersist = (next: SortKey) => { setSort(next); localStorage.setItem("library-sort", next); };
   const [layout, setLayout] = useState<LibraryLayout>(() => (localStorage.getItem("library-layout") as LibraryLayout) || "grid");
   const setLayoutPersist = (next: LibraryLayout) => { setLayout(next); localStorage.setItem("library-layout", next); };
   const [formatFilter, setFormatFilter] = useState<string>("ALL");
@@ -1267,13 +1639,13 @@ function LibraryView({ items, filter, query, loading, setFilter, setQuery, onSel
   const tags = useMemo(() => Array.from(new Set(items.flatMap((item) => item.tags ?? []))).sort(), [items]);
 
   const visible = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
+    const normalized = foldTitle(query);
     const result = items
       .map((item) => ({ ...item, title: displayTitle(item, titleLanguage) }))
       .filter(
         (item) =>
           (filter === "ALL" || item.status === filter) &&
-          (!normalized || item.title.toLocaleLowerCase().includes(normalized)) &&
+          (!normalized || foldTitle(item.title).includes(normalized)) &&
           (formatFilter === "ALL" || item.format === formatFilter) &&
           (yearFilter === "ALL" || String(item.year) === yearFilter) &&
           (genreFilter === "ALL" || (item.genres ?? []).includes(genreFilter)) &&
@@ -1295,7 +1667,7 @@ function LibraryView({ items, filter, query, loading, setFilter, setQuery, onSel
       query={query}
       setQuery={setQuery}
       sort={sort}
-      setSort={setSort}
+      setSort={setSortPersist}
       formatFilter={formatFilter}
       setFormatFilter={setFormatFilter}
       formats={formats}
@@ -1315,70 +1687,102 @@ function LibraryView({ items, filter, query, loading, setFilter, setQuery, onSel
         <option value="ALL">{t("lib.tag.all")}</option>
         {tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
       </select>
-      <div className="layout-toggle">
+      {!compact && <div className="layout-toggle">
         <button className={layout === "grid" ? "active" : ""} title={t("lib.layout.grid")} onClick={() => setLayoutPersist("grid")}>▦</button>
         <button className={layout === "list" ? "active" : ""} title={t("lib.layout.list")} onClick={() => setLayoutPersist("list")}>☰</button>
-      </div>
+      </div>}
     </LibraryToolbar>
-    {loading ? <Empty title={t("lib.loading.anime")} /> : visible.length === 0 ? <Empty title={t("common.noResults")} detail={t("common.tryOtherFilter")} /> : layout === "grid" ? (
-      <section className="media-grid">{visible.map((item) => <MediaCard key={item.id} item={item} mediaType="ANIME" onSelect={onSelect} />)}</section>
+    {loading ? <Empty title={t("lib.loading.anime")} /> : visible.length === 0 ? <Empty title={t("common.noResults")} detail={t("common.tryOtherFilter")} /> : layout === "grid" && !compact ? (
+      <section className="media-grid">{visible.map((item) => <MediaCard key={item.id} item={item} mediaType="ANIME" onSelect={onSelect} onContext={onContext} onScore={onScore} onProgress={onProgress} />)}</section>
     ) : (
-      <section className="media-list">{visible.map((item) => <MediaListRow key={item.id} item={item} onSelect={onSelect} onProgress={onProgress} />)}</section>
+      <section className="media-list">{visible.map((item) => <MediaListRow key={item.id} item={item} onSelect={onSelect} onProgress={onProgress} onContext={onContext} onScore={onScore} />)}</section>
     )}
   </>;
 }
 
-function MediaListRow({ item, onSelect, onProgress }: {
-  item: MediaItem; onSelect: (item: MediaItem) => void; onProgress: (item: MediaItem, nextProgress: number) => Promise<void>;
+function MediaListRow({ item, mediaType = "ANIME", onSelect, onProgress, onContext, onScore }: {
+  item: MediaItem; mediaType?: MediaType; onSelect: (item: MediaItem) => void;
+  onProgress?: (item: MediaItem, nextProgress: number) => Promise<void>;
+  onContext?: (event: React.MouseEvent, item: MediaItem) => void;
+  onScore?: (event: React.MouseEvent, item: MediaItem) => void;
 }) {
   const { t } = useApp();
   const [busy, setBusy] = useState(false);
-  const total = item.episodes ?? null;
+  const total = mediaType === "MANGA" ? (item.chapters ?? null) : (item.episodes ?? null);
   const atMax = total != null && item.progress >= total;
+  const seasonYear = item.season && item.year
+    ? `${t(`season.${item.season.toLowerCase()}`)} ${item.year}`
+    : item.year ? String(item.year) : null;
+  const scoreLabel = item.score ? `★ ${Math.round(item.score) / 10}` : null;
   const bump = async () => {
-    if (busy || atMax) return;
+    if (busy || atMax || !onProgress) return;
     setBusy(true);
     try { await onProgress(item, item.progress + 1); } finally { setBusy(false); }
   };
   return (
-    <article className="media-row" onClick={() => onSelect(item)}>
+    <article className="media-row" onClick={() => onSelect(item)} onContextMenu={onContext ? (event) => onContext(event, item) : undefined}>
       {item.cover_image ? <img src={item.cover_image} alt="" loading="lazy" /> : <div className="media-row-noimg" />}
       <div className="media-row-main">
         <strong>{item.title}</strong>
-        <small>{[item.format, item.year ? String(item.year) : null].filter(Boolean).join(" · ")}</small>
+        <small>{[mediaFormatLabel(t, item.format) || null, seasonYear].filter(Boolean).join(" · ")}</small>
       </div>
       <span className={`media-row-badge status-${item.status.toLowerCase()}`}>{t(`badge.${item.status}`)}</span>
       <span className="media-row-progress">{item.progress}{total != null ? ` / ${total}` : ""}</span>
-      <span className="media-row-score">{item.score ? `★ ${Math.round(item.score) / 10}` : "—"}</span>
+      {onScore ? (
+        <button
+          className="media-row-score scoreable"
+          title={t("ctx.score")}
+          onClick={(event) => { event.stopPropagation(); onScore(event, item); }}
+        >{scoreLabel ?? "★ –"}</button>
+      ) : (
+        <span className="media-row-score">{scoreLabel ?? "—"}</span>
+      )}
       <div className="media-row-actions" onClick={(event) => event.stopPropagation()}>
-        <button className="row-plus" disabled={busy || atMax} title={atMax ? t("lib.row.completed") : t("lib.row.addEpisode")} onClick={() => void bump()}>+1</button>
+        {onProgress && <button className="row-plus" disabled={busy || atMax} title={atMax ? t("lib.row.completed") : t("lib.row.addEpisode")} onClick={() => void bump()}>+1</button>}
         <button className="row-edit" title={t("lib.row.edit")} onClick={() => onSelect(item)}>✎</button>
       </div>
     </article>
   );
 }
 
-function MangaLibraryView({ items, loading, onSelect, onRefresh }: {
-  items: MediaItem[]; loading: boolean; onSelect: (item: MediaItem) => void; onRefresh: () => void;
+function MangaLibraryView({ items, loading, onSelect, onProgress, onContext, onScore }: {
+  items: MediaItem[]; loading: boolean; onSelect: (item: MediaItem) => void;
+  onProgress?: (item: MediaItem, nextProgress: number) => Promise<void>;
+  onContext?: (event: React.MouseEvent, item: MediaItem) => void;
+  onScore?: (event: React.MouseEvent, item: MediaItem) => void;
 }) {
   const { t, titleLanguage } = useApp();
+  const compact = useCompact();
   const [filter, setFilter] = useState<Filter>("CURRENT");
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortKey>("TITLE");
+  // Por defecto "última actualización"; la elección del usuario persiste (localStorage).
+  const [sort, setSort] = useState<SortKey>(() => (localStorage.getItem("manga-sort") as SortKey) || "UPDATED_DESC");
+  const setSortPersist = (next: SortKey) => { setSort(next); localStorage.setItem("manga-sort", next); };
+  const [layout, setLayout] = useState<LibraryLayout>(() => (localStorage.getItem("manga-layout") as LibraryLayout) || "grid");
+  const setLayoutPersist = (next: LibraryLayout) => { setLayout(next); localStorage.setItem("manga-layout", next); };
   const [formatFilter, setFormatFilter] = useState<string>("ALL");
+  const [yearFilter, setYearFilter] = useState<string>("ALL");
+  const [genreFilter, setGenreFilter] = useState<string>("ALL");
+  const [tagFilter, setTagFilter] = useState<string>("ALL");
 
   const counts = Object.fromEntries((["CURRENT", "PLANNING", "COMPLETED", "PAUSED", "DROPPED"] as Filter[]).map((status) => [status, items.filter((item) => item.status === status).length])) as Record<Filter, number> & { total: number };
   counts.total = items.length;
   const formats = useMemo(() => Array.from(new Set(items.map((item) => item.format).filter((format): format is string => Boolean(format)))).sort(), [items]);
+  const years = useMemo(() => Array.from(new Set(items.map((item) => item.year).filter((year): year is number => year != null))).sort((a, b) => b - a), [items]);
+  const genres = useMemo(() => Array.from(new Set(items.flatMap((item) => item.genres ?? []))).sort(), [items]);
+  const tags = useMemo(() => Array.from(new Set(items.flatMap((item) => item.tags ?? []))).sort(), [items]);
   const visible = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
+    const normalized = foldTitle(query);
     const result = items
       .map((item) => ({ ...item, title: displayTitle(item, titleLanguage) }))
       .filter(
         (item) =>
           (filter === "ALL" || item.status === filter) &&
-          (!normalized || item.title.toLocaleLowerCase().includes(normalized)) &&
-          (formatFilter === "ALL" || item.format === formatFilter),
+          (!normalized || foldTitle(item.title).includes(normalized)) &&
+          (formatFilter === "ALL" || item.format === formatFilter) &&
+          (yearFilter === "ALL" || String(item.year) === yearFilter) &&
+          (genreFilter === "ALL" || (item.genres ?? []).includes(genreFilter)) &&
+          (tagFilter === "ALL" || (item.tags ?? []).includes(tagFilter)),
       );
     result.sort((a, b) => {
       if (sort === "TITLE") return a.title.localeCompare(b.title);
@@ -1387,7 +1791,7 @@ function MangaLibraryView({ items, loading, onSelect, onRefresh }: {
       return (b.updated_at ?? 0) - (a.updated_at ?? 0);
     });
     return result;
-  }, [filter, formatFilter, items, query, sort, titleLanguage]);
+  }, [filter, formatFilter, genreFilter, items, query, sort, tagFilter, yearFilter, titleLanguage]);
 
   return <>
     <LibraryToolbar
@@ -1396,17 +1800,35 @@ function MangaLibraryView({ items, loading, onSelect, onRefresh }: {
       query={query}
       setQuery={setQuery}
       sort={sort}
-      setSort={setSort}
+      setSort={setSortPersist}
       formatFilter={formatFilter}
       setFormatFilter={setFormatFilter}
       formats={formats}
       counts={counts}
       statusLabels={{ CURRENT: t("filter.reading"), PLANNING: t("filter.planning"), COMPLETED: t("filter.completed"), PAUSED: t("filter.paused"), DROPPED: t("filter.dropped"), ALL: t("filter.all") }}
       searchPlaceholder={t("lib.search.manga")}
-      onRefresh={onRefresh}
-    />
-    {loading ? <Empty title={t("lib.loading.manga")} /> : visible.length === 0 ? <Empty title={t("common.noResults")} detail={t("common.tryOtherFilter")} /> : (
-      <section className="media-grid">{visible.map((item) => <MediaCard key={item.id} item={item} mediaType="MANGA" onSelect={onSelect} />)}</section>
+    >
+      <select value={yearFilter} onChange={(event) => setYearFilter(event.target.value)}>
+        <option value="ALL">{t("lib.year.all")}</option>
+        {years.map((year) => <option key={year} value={String(year)}>{year}</option>)}
+      </select>
+      <select value={genreFilter} onChange={(event) => setGenreFilter(event.target.value)}>
+        <option value="ALL">{t("lib.genre.all")}</option>
+        {genres.map((genre) => <option key={genre} value={genre}>{genre}</option>)}
+      </select>
+      <select value={tagFilter} onChange={(event) => setTagFilter(event.target.value)}>
+        <option value="ALL">{t("lib.tag.all")}</option>
+        {tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+      </select>
+      {!compact && <div className="layout-toggle">
+        <button className={layout === "grid" ? "active" : ""} title={t("lib.layout.grid")} onClick={() => setLayoutPersist("grid")}>▦</button>
+        <button className={layout === "list" ? "active" : ""} title={t("lib.layout.list")} onClick={() => setLayoutPersist("list")}>☰</button>
+      </div>}
+    </LibraryToolbar>
+    {loading ? <Empty title={t("lib.loading.manga")} /> : visible.length === 0 ? <Empty title={t("common.noResults")} detail={t("common.tryOtherFilter")} /> : layout === "grid" && !compact ? (
+      <section className="media-grid">{visible.map((item) => <MediaCard key={item.id} item={item} mediaType="MANGA" onSelect={onSelect} onContext={onContext} onScore={onScore} onProgress={onProgress} />)}</section>
+    ) : (
+      <section className="media-list">{visible.map((item) => <MediaListRow key={item.id} item={item} mediaType="MANGA" onSelect={onSelect} onProgress={onProgress} onContext={onContext} onScore={onScore} />)}</section>
     )}
   </>;
 }
@@ -1491,20 +1913,49 @@ const SEASON_GROUPS: { label: string; key: SeasonFormatKey }[] = [
   { label: "Otros", key: "OTHER" },
 ];
 
-const FORMAT_LABELS: Record<string, string> = {
-  TV: "TV",
-  TV_SHORT: "TV Short",
-  ONA: "ONA",
-  OVA: "OVA",
-  SPECIAL: "Especial",
-  MOVIE: "Película",
-};
-
 function seasonFormatKey(format: string | null | undefined): SeasonFormatKey {
   if (!format) return "OTHER";
   if (["ONA", "OVA", "SPECIAL"].includes(format)) return "ONA_OVA_SPECIAL";
   if (SEASON_GROUPS.some((group) => group.key === format)) return format as SeasonFormatKey;
   return "OTHER";
+}
+
+// "Ep 3 de 14 en" + "7 días, 21 horas", como las cards de AniChart
+function airingCountdownParts(t: (key: string) => string, item: SeasonMedia): { label: string; time: string } | null {
+  if (!item.next_airing_at || !item.next_episode) return null;
+  const seconds = item.next_airing_at - Math.floor(Date.now() / 1000);
+  if (seconds <= 0) return null;
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const unit = (value: number, one: string, many: string) => `${value} ${t(value === 1 ? one : many)}`;
+  const time = days > 0
+    ? `${unit(days, "time.day", "time.days")}, ${unit(hours, "time.hour", "time.hours")}`
+    : hours > 0
+      ? `${unit(hours, "time.hour", "time.hours")}, ${unit(minutes, "time.min", "time.mins")}`
+      : unit(minutes, "time.min", "time.mins");
+  const total = item.episodes ? ` ${t("seasons.of")} ${item.episodes}` : "";
+  return { label: `Ep ${item.next_episode}${total} ${t("seasons.epIn")}`, time };
+}
+
+function plainDescription(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const clean = text.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]+>/g, "").trim();
+  return clean || null;
+}
+
+// Acentos por serie a partir del color de portada de AniList, como AniChart.
+function coverAccents(hex: string | null | undefined): { studio?: CSSProperties; chip?: CSSProperties } {
+  if (!hex || !/^#[0-9a-f]{6}$/i.test(hex)) return {};
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+  return {
+    // El estudio va sobre el degradado oscuro: colores muy oscuros no se leerían.
+    studio: luma >= 90 ? { color: hex } : undefined,
+    chip: { background: hex, color: luma >= 150 ? "#1c1d26" : "#fff" },
+  };
 }
 
 function SeasonsView({ items, season, onMove, onChange, onSelect, libraryMap }: { items: SeasonMedia[]; season: { season: Season; year: number }; onMove: (offset: number) => void; onChange: (season: { season: Season; year: number }) => void; onSelect: (id: number) => void; libraryMap: Map<number, MediaItem> }) {
@@ -1515,8 +1966,8 @@ function SeasonsView({ items, season, onMove, onChange, onSelect, libraryMap }: 
   const [format, setFormat] = useState("ALL");
   const [sort, setSort] = useState("POPULARITY");
   const visibleItems = useMemo(() => {
-    const normalized = search.trim().toLocaleLowerCase();
-    return items.filter((item) => (format === "ALL" || item.format === format) && (!normalized || item.title.toLocaleLowerCase().includes(normalized))).sort((left, right) => {
+    const normalized = foldTitle(search);
+    return items.filter((item) => (format === "ALL" || item.format === format) && (!normalized || foldTitle(item.title).includes(normalized))).sort((left, right) => {
       if (sort === "TITLE") return left.title.localeCompare(right.title);
       if (sort === "SCORE") return (right.average_score ?? 0) - (left.average_score ?? 0);
       if (sort === "DATE") return dateNumber(left.start_date) - dateNumber(right.start_date);
@@ -1525,28 +1976,55 @@ function SeasonsView({ items, season, onMove, onChange, onSelect, libraryMap }: 
   }, [format, items, search, sort]);
   const groups = useMemo(() => {
     if (format !== "ALL") {
-      return [{ label: FORMAT_LABELS[format] ?? format, key: seasonFormatKey(format) }];
+      return [{ label: mediaFormatLabel(t, format), key: seasonFormatKey(format) }];
     }
     return SEASON_GROUPS;
-  }, [format]);
+  }, [format, t]);
   const years = Array.from({ length: new Date().getFullYear() - 1970 + 3 }, (_, index) => new Date().getFullYear() + 2 - index);
   return <>
     <div className="season-controls"><button onClick={() => onMove(-1)}>←</button><select value={season.season} onChange={(event) => onChange({ season: event.target.value as Season, year: season.year })}>{SEASONS.map((value) => <option value={value} key={value}>{labels[value]}</option>)}</select><select value={season.year} onChange={(event) => onChange({ season: season.season, year: Number(event.target.value) })}>{years.map((year) => <option value={year} key={year}>{year}</option>)}</select><button onClick={() => onMove(1)}>→</button></div>
-    <div className="season-filters"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("seasons.search")} /><select value={format} onChange={(event) => setFormat(event.target.value)}><option value="ALL">{t("lib.format.all")}</option><option value="TV">TV</option><option value="TV_SHORT">TV Short</option><option value="ONA">ONA</option><option value="OVA">OVA</option><option value="SPECIAL">{t("seasons.fmt.special")}</option><option value="MOVIE">{t("seasons.fmt.movie")}</option></select><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="POPULARITY">{t("seasons.sort.popularity")}</option><option value="TITLE">{t("seasons.sort.title")}</option><option value="DATE">{t("seasons.sort.date")}</option><option value="SCORE">{t("seasons.sort.score")}</option></select></div>
+    <div className="season-filters"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("seasons.search")} /><select value={format} onChange={(event) => setFormat(event.target.value)}><option value="ALL">{t("lib.format.all")}</option>{["TV", "TV_SHORT", "ONA", "OVA", "SPECIAL", "MOVIE"].map((value) => <option key={value} value={value}>{mediaFormatLabel(t, value)}</option>)}</select><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="POPULARITY">{t("seasons.sort.popularity")}</option><option value="TITLE">{t("seasons.sort.title")}</option><option value="DATE">{t("seasons.sort.date")}</option><option value="SCORE">{t("seasons.sort.score")}</option></select></div>
     {!visibleItems.length ? <Empty title={t("seasons.empty")} /> : groups.map((group) => {
       const groupItems = visibleItems.filter((item) => seasonFormatKey(item.format) === group.key);
       if (!groupItems.length) return null;
       return (
         <section key={group.key} className="season-group">
           <h3 className="season-group-title">{t(`seasons.group.${groupToken[group.key]}`)}</h3>
-          <section className="media-grid">{groupItems.map((item) => {
+          <section className="anichart-grid">{groupItems.map((item) => {
             const libraryEntry = libraryMap.get(item.id);
+            const airing = airingCountdownParts(t, item);
+            const description = plainDescription(item.description);
+            const accents = coverAccents(item.cover_color);
             return (
-              <article className="media-card clickable" key={item.id} onClick={() => onSelect(item.id)}>
-                <div className="poster" style={item.cover_image ? { backgroundImage: `url(${item.cover_image})` } : undefined}>
+              <article className="anichart-card clickable" key={item.id} onClick={() => onSelect(item.id)}>
+                <div className="anichart-poster">
+                  {item.cover_image && <img src={item.cover_image} alt="" loading="lazy" />}
                   {libraryEntry && <span className="season-library-badge">{t(`badge.${libraryEntry.status}`)}</span>}
+                  <div className="anichart-overlay">
+                    <strong>{item.title}</strong>
+                    <span style={accents.studio}>{item.studios.slice(0, 2).join(", ") || t("seasons.studioUnknown")}</span>
+                  </div>
                 </div>
-                <div className="media-info"><strong title={item.title}>{item.title}</strong><span className="season-studio">{item.studios.slice(0, 2).join(", ") || t("seasons.studioUnknown")}</span><span>{item.format ?? t("common.anime")} · {item.episodes ?? "?"} {t("seasons.episodes")} · {formatFuzzyDate(item.start_date)}</span><span>{item.average_score ? `${item.average_score}%` : t("seasons.noScore")}{item.next_airing_at && item.next_airing_at > Date.now() / 1000 ? ` · Ep ${item.next_episode ?? "?"} ${t("seasons.epIn")} ${formatCountdown(item.next_airing_at)}` : ""}</span></div>
+                <div className="anichart-info">
+                  <header className="anichart-head">
+                    <div>
+                      {airing ? <>
+                        <small className="airing-label">{airing.label}</small>
+                        <strong className="airing-time">{airing.time}</strong>
+                      </> : (
+                        <strong className="airing-time">{item.status ? t(`mstatus.${item.status}`) : item.format ? mediaFormatLabel(t, item.format) : t("common.anime")}</strong>
+                      )}
+                    </div>
+                    <span className="anichart-score">{item.average_score ? `${item.average_score}%` : ""}</span>
+                  </header>
+                  <small className="anichart-meta">{item.format ? mediaFormatLabel(t, item.format) : t("common.anime")} · {item.episodes ?? "?"} {t("seasons.episodes")} · {formatFuzzyDate(item.start_date)}</small>
+                  {description && <p className="anichart-desc">{description}</p>}
+                  {item.genres.length > 0 && (
+                    <footer className="anichart-foot">
+                      {item.genres.slice(0, 2).map((genre) => <span key={genre} className="genre-chip" style={accents.chip}>{genre}</span>)}
+                    </footer>
+                  )}
+                </div>
               </article>
             );
           })}</section>
@@ -1603,7 +2081,7 @@ function StatisticsView({
       </section>
       <section className="stat-panels">
         <StatBars title={t("stats.genres")} items={stats.genres} />
-        <StatBars title={t("stats.formats")} items={stats.formats} />
+        <StatBars title={t("stats.formats")} items={stats.formats.map((group) => ({ ...group, label: mediaFormatLabel(t, group.label) || group.label }))} />
         <StatBars title={t("stats.years")} items={stats.release_years} />
         {stats.studios.length > 0 && <StatBars title={t("stats.studios")} items={stats.studios} />}
         {stats.countries.length > 0 && <StatBars title={t("stats.countries")} items={stats.countries} />}
@@ -1656,15 +2134,38 @@ function StatBars({ title, items }: { title: string; items: StatisticGroup[] }) 
   );
 }
 
-function MediaCard({ item, mediaType, onSelect }: { item: MediaItem; mediaType: MediaType; onSelect: (item: MediaItem) => void }) {
+function MediaCard({ item, mediaType, onSelect, onContext, onScore, onProgress }: {
+  item: MediaItem; mediaType: MediaType; onSelect: (item: MediaItem) => void;
+  onContext?: (event: React.MouseEvent, item: MediaItem) => void;
+  onScore?: (event: React.MouseEvent, item: MediaItem) => void;
+  onProgress?: (item: MediaItem, nextProgress: number) => Promise<void>;
+}) {
+  const { t } = useApp();
+  const [busy, setBusy] = useState(false);
   const total = mediaType === "MANGA" ? (item.chapters ?? 0) : (item.episodes ?? 0);
+  const atMax = total > 0 && item.progress >= total;
   const percentage = total ? Math.min(100, item.progress / total * 100) : 0;
   const progressLabel = mediaType === "MANGA"
     ? `${item.progress} / ${item.chapters ?? "?"} capítulos${item.volumes ? ` · ${item.volumes} vol.` : ""}`
     : `${item.progress} / ${item.episodes ?? "?"} episodios`;
-  return <article className="media-card clickable" onClick={() => onSelect(item)}>
-    <div className="poster" style={item.cover_image ? { backgroundImage: `url(${item.cover_image})` } : undefined} />
-    <div className="media-info"><strong title={item.title}>{item.title}</strong><span>{progressLabel}</span><div className="progress"><i style={{ width: `${percentage}%` }} /></div>{(item.tags ?? []).length > 0 && <div className="media-tags">{item.tags?.map((tag) => <span key={tag}>{tag}</span>)}</div>}</div>
+  const bump = async () => {
+    if (busy || atMax || !onProgress) return;
+    setBusy(true);
+    try { await onProgress(item, item.progress + 1); } finally { setBusy(false); }
+  };
+  return <article className="media-card clickable" onClick={() => onSelect(item)} onContextMenu={onContext ? (event) => onContext(event, item) : undefined}>
+    <div className="poster" style={item.cover_image ? { backgroundImage: `url(${item.cover_image})` } : undefined}>
+      {onScore && (
+        <button
+          className="poster-score"
+          title={t("ctx.score")}
+          onClick={(event) => { event.stopPropagation(); onScore(event, item); }}
+        >★ {item.score ? Math.round(item.score) / 10 : "–"}</button>
+      )}
+    </div>
+    <div className="media-info"><strong title={item.title}>{item.title}</strong><span className="media-progress-line">{progressLabel}{onProgress && !atMax && (
+      <button className="card-plus" disabled={busy} title={t("lib.row.addEpisode")} onClick={(event) => { event.stopPropagation(); void bump(); }}>+1</button>
+    )}</span><div className="progress"><i style={{ width: `${percentage}%` }} /></div>{(item.tags ?? []).length > 0 && <div className="media-tags">{item.tags?.map((tag) => <span key={tag}>{tag}</span>)}</div>}</div>
   </article>;
 }
 
@@ -1775,7 +2276,8 @@ function DetailsModal({ details, canonicalId, mediaType, detailAccount, onClose,
   const [repeat, setRepeat] = useState(entry?.repeat ?? 0);
   const [privateEntry, setPrivateEntry] = useState(entry?.private ?? false);
   const [notes, setNotes] = useState(entry?.notes ?? "");
-  const [startedAt, setStartedAt] = useState(dateToInput(entry?.started_at));
+  // Alta nueva: hoy como fecha de inicio por defecto (visible y editable antes de guardar).
+  const [startedAt, setStartedAt] = useState(entry ? dateToInput(entry.started_at) : todayInput());
   const [completedAt, setCompletedAt] = useState(dateToInput(entry?.completed_at));
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -1784,6 +2286,7 @@ function DetailsModal({ details, canonicalId, mediaType, detailAccount, onClose,
   const [undoUpdate, setUndoUpdate] = useState<MediaEntryUpdate | null>(null);
   const [undoDelete, setUndoDelete] = useState(false);
   const scoreConfig = scoreInputConfig(details.score_format);
+  const totalUnits = isManga ? (details.chapters ?? null) : (details.episodes ?? null);
 
   const save = async () => {
     const normalizedScore = normalizeScoreInput(score, details.score_format);
@@ -1880,7 +2383,7 @@ function DetailsModal({ details, canonicalId, mediaType, detailAccount, onClose,
       <div className="detail-banner" style={details.banner_image ? { backgroundImage: `linear-gradient(0deg, #11151f 0%, transparent 75%), url(${details.banner_image})` } : undefined} />
       <div className="detail-heading">
         <div className="detail-poster" style={details.cover_image ? { backgroundImage: `url(${details.cover_image})` } : undefined} />
-        <div><p className="eyebrow">{details.format ?? (isManga ? "MANGA" : "ANIME")} {details.season ? `· ${details.season} ${details.season_year ?? ""}` : ""}</p><h2>{displayTitle(details, titleLanguage)}</h2><div className="genre-list">{details.genres.map((genre) => <span key={genre}>{genre}</span>)}</div></div>
+        <div><p className="eyebrow">{details.format ? mediaFormatLabel(t, details.format) : (isManga ? "MANGA" : "ANIME")} {details.season ? `· ${t(`season.${details.season.toLowerCase()}`)} ${details.season_year ?? ""}` : ""}</p><h2>{displayTitle(details, titleLanguage)}</h2><div className="genre-list">{details.genres.map((genre) => <span key={genre}>{genre}</span>)}</div></div>
       </div>
       <div className="detail-tabs">
         <button className={tab === "info" ? "selected" : ""} onClick={() => setTab("info")}>{t("detail.tab.info")}</button>
@@ -1955,7 +2458,7 @@ function DetailsModal({ details, canonicalId, mediaType, detailAccount, onClose,
                     <span className="portrait-badge">{RELATION_TYPE_LABELS[rel.relation_type] ?? "Relacionado"}</span>
                   </div>
                   <span className="portrait-name">{rel.title}</span>
-                  {rel.format && <span className="portrait-sub">{rel.format.replace(/_/g, " ")}</span>}
+                  {rel.format && <span className="portrait-sub">{mediaFormatLabel(t, rel.format)}</span>}
                 </button>
               ))}
             </div>
@@ -2014,15 +2517,32 @@ function DetailsModal({ details, canonicalId, mediaType, detailAccount, onClose,
                 {rec.rating != null && <span className="portrait-badge">★ {rec.rating}</span>}
               </div>
               <span className="portrait-name">{rec.title}</span>
-              {rec.format && <span className="portrait-sub">{rec.format.replace(/_/g, " ")}</span>}
+              {rec.format && <span className="portrait-sub">{mediaFormatLabel(t, rec.format)}</span>}
             </button>
           ))}
         </div>
       </div>}
       {tab === "edit" && <div className="edit-entry">
-        <label>{t("detail.edit.status")}<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="CURRENT">{t("badge.CURRENT")}</option><option value="PLANNING">{t("badge.PLANNING")}</option><option value="COMPLETED">{t("badge.COMPLETED")}</option><option value="PAUSED">{t("badge.PAUSED")}</option><option value="DROPPED">{t("badge.DROPPED")}</option></select></label>
-        <label>{t("detail.edit.progress")}<input type="number" min="0" max={isManga ? (details.chapters ?? undefined) : (details.episodes ?? undefined)} value={progress} onChange={(event) => setProgress(Number(event.target.value))} /></label>
-        <label>{t("detail.edit.score")}<input type="number" min="0" max={scoreConfig.max} step={scoreConfig.step} value={score} onChange={(event) => setScore(Number(event.target.value))} /></label>
+        <label>{t("detail.edit.status")}<select value={status} onChange={(event) => {
+          const next = event.target.value;
+          setStatus(next);
+          // Completar deja la entrada 100% cerrada: progreso al total y fechas de hoy.
+          if (next === "COMPLETED") {
+            if (totalUnits) setProgress(totalUnits);
+            if (!completedAt) setCompletedAt(todayInput());
+            if (!startedAt) setStartedAt(todayInput());
+          }
+        }}><option value="CURRENT">{t("badge.CURRENT")}</option><option value="PLANNING">{t("badge.PLANNING")}</option><option value="COMPLETED">{t("badge.COMPLETED")}</option><option value="PAUSED">{t("badge.PAUSED")}</option><option value="DROPPED">{t("badge.DROPPED")}</option></select></label>
+        <label>{t("detail.edit.progress")}<div className="stepper">
+          <button type="button" aria-label="−1" onClick={() => setProgress((value) => Math.max(0, value - 1))}>−</button>
+          <input type="number" min="0" max={totalUnits ?? undefined} value={progress} onChange={(event) => setProgress(Number(event.target.value))} />
+          <button type="button" aria-label="+1" onClick={() => setProgress((value) => (totalUnits ? Math.min(totalUnits, value + 1) : value + 1))}>+</button>
+        </div></label>
+        <label>{t("detail.edit.score")}<div className="stepper">
+          <button type="button" aria-label="−" onClick={() => setScore((value) => Math.max(0, Number((value - scoreConfig.step).toFixed(1))))}>−</button>
+          <input type="number" min="0" max={scoreConfig.max} step={scoreConfig.step} value={score} onChange={(event) => setScore(Number(event.target.value))} />
+          <button type="button" aria-label="+" onClick={() => setScore((value) => Math.min(scoreConfig.max, Number((value + scoreConfig.step).toFixed(1))))}>+</button>
+        </div></label>
         <label>{t("detail.edit.repeat")}<input type="number" min="0" value={repeat} onChange={(event) => setRepeat(Number(event.target.value))} /></label>
         <label>{t("detail.edit.startDate")}<input type="date" value={startedAt} onChange={(event) => setStartedAt(event.target.value)} /></label>
         <label>{t("detail.edit.endDate")}<input type="date" value={completedAt} onChange={(event) => setCompletedAt(event.target.value)} /></label>
@@ -2082,6 +2602,11 @@ function Fact({ label, value }: { label: string; value: string | number | null |
   return <div><span>{label}</span><strong>{value ?? t("common.unknown")}</strong></div>;
 }
 
+function todayInput(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
 function dateToInput(date?: FuzzyDate): string {
   return date?.year && date.month && date.day ? `${date.year}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}` : "";
 }
@@ -2100,16 +2625,6 @@ function formatFuzzyDate(date: FuzzyDate | null): string {
   const month = date.month ? String(date.month).padStart(2, "0") : "??";
   const day = date.day ? String(date.day).padStart(2, "0") : "??";
   return `${date.year}-${month}-${day}`;
-}
-
-function formatCountdown(timestamp: number): string {
-  const seconds = Math.max(0, timestamp - Math.floor(Date.now() / 1000));
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
 }
 
 function scoreInputConfig(format: string): { max: number; step: number } {
@@ -2195,10 +2710,11 @@ function PendingLocalReminder({ onSelect, onSeeMore }: { onSelect: (id: number) 
   useEffect(() => { void api.pendingLocal().then(setItems).catch(() => {}); }, []);
 
   if (items.length === 0) return null;
+  // Solo un adelanto: los primeros 5, el resto vive en la biblioteca local (Ver más).
   return <div className="pending-local">
     <h3>{t("np.local.title")} ({items.length})</h3>
     <div className="pending-local-list">
-      {items.map((item) => (
+      {items.slice(0, 5).map((item) => (
         <article key={item.media_id} className="pending-local-item clickable" onClick={() => onSelect(item.external_id)} title={item.title}>
           <div className="poster" style={item.cover_image ? { backgroundImage: `url(${item.cover_image})` } : undefined} />
           <div className="pending-local-info">

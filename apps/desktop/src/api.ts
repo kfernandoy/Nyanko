@@ -29,6 +29,7 @@ import type {
   PlaybackPreferences,
   ProviderInfo,
   SearchFilters,
+  SearchResult,
   SeasonMedia,
   SyncStatusResponse,
   UserPreferences,
@@ -131,43 +132,83 @@ async function verifyInstance(apiUrl: string, expectedToken?: string | null): Pr
   }
 }
 
+// El token de instancia se lee de disco y se verifica UNA vez (single-flight) y se
+// reutiliza en memoria: hacerlo por request duplicaba la latencia de toda la app.
+let instanceTokenPromise: Promise<string | null> | null = null;
+
+function resetInstanceToken(): void {
+  instanceTokenPromise = null;
+}
+
+async function loadInstanceToken(apiUrl: string): Promise<string | null> {
+  const expected = await readAppDataFile("instance_token");
+  if (expected) {
+    if (!(await verifyInstance(apiUrl, expected))) {
+      clearApiUrlCache();
+      throw new Error("El servicio local no pertenece a esta instancia de Nyanko");
+    }
+    return expected;
+  }
+  try {
+    const response = await fetchWithTimeout(`${apiUrl}/api/instance`, {}, INSTANCE_TIMEOUT_MS);
+    if (response.ok) {
+      return ((await response.json()) as { token?: string }).token ?? null;
+    }
+  } catch {
+    // La request real de abajo reporta el fallo de conexión de forma consistente.
+  }
+  return null;
+}
+
+function getInstanceToken(apiUrl: string): Promise<string | null> {
+  instanceTokenPromise ??= loadInstanceToken(apiUrl).catch((reason) => {
+    instanceTokenPromise = null;
+    throw reason;
+  });
+  return instanceTokenPromise;
+}
+
 export interface ApiResponse<T> {
   data: T;
   cacheStatus: CacheStatus | null;
 }
 
+function normalizeAssetUrls<T>(value: T, apiUrl: string): T {
+  if (typeof value === "string") {
+    return (value.startsWith("/assets/") ? `${apiUrl}${value}` : value) as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeAssetUrls(item, apiUrl)) as T;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, normalizeAssetUrls(item, apiUrl)]),
+    ) as T;
+  }
+  return value;
+}
+
 async function rawRequest(path: string, options?: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
   const apiUrl = await getApiUrl();
-  const expectedToken = await readAppDataFile("instance_token");
-  if (expectedToken && !(await verifyInstance(apiUrl, expectedToken))) {
+  const instanceToken = await getInstanceToken(apiUrl);
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(`${apiUrl}${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(instanceToken ? { "X-Nyanko-Instance": instanceToken } : {}),
+        ...options?.headers,
+      },
+    }, timeoutMs);
+  } catch (reason) {
+    // Fallo de red: puede que el sidecar se reiniciara con otro token/puerto.
+    resetInstanceToken();
     clearApiUrlCache();
-    throw new Error("El servicio local no pertenece a esta instancia de Nyanko");
+    throw reason;
   }
-  let instanceToken = expectedToken;
-  if (!instanceToken) {
-    try {
-      const instanceResponse = await fetchWithTimeout(
-        `${apiUrl}/api/instance`,
-        {},
-        INSTANCE_TIMEOUT_MS,
-      );
-      if (instanceResponse.ok) {
-        const payload = (await instanceResponse.json()) as { token?: string };
-        instanceToken = payload.token ?? null;
-      }
-    } catch {
-      // The real request below will report the connection failure consistently.
-    }
-  }
-  const response = await fetchWithTimeout(`${apiUrl}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(instanceToken ? { "X-Nyanko-Instance": instanceToken } : {}),
-      ...options?.headers,
-    },
-  }, timeoutMs);
   if (!response.ok) {
+    if (response.status === 401) resetInstanceToken();
     const payload = await response.json().catch(() => null);
     const detail = payload?.detail;
     throw new Error(typeof detail === "string" ? detail : (detail?.message ?? `HTTP ${response.status}`));
@@ -177,13 +218,16 @@ async function rawRequest(path: string, options?: RequestInit, timeoutMs = REQUE
 
 async function request<T>(path: string, options?: RequestInit, timeoutMs?: number): Promise<T> {
   const response = await rawRequest(path, options, timeoutMs);
-  return response.status === 204 ? (undefined as T) : response.json();
+  if (response.status === 204) return undefined as T;
+  return normalizeAssetUrls(await response.json(), await getApiUrl());
 }
 
 async function requestWithCache<T>(path: string, options?: RequestInit): Promise<ApiResponse<T>> {
   const response = await rawRequest(path, options);
   const cacheStatus = response.headers.get("X-Cache-Status") as CacheStatus | null;
-  const data = response.status === 204 ? (undefined as T) : await response.json();
+  const data = response.status === 204
+    ? (undefined as T)
+    : normalizeAssetUrls(await response.json(), await getApiUrl());
   return { data, cacheStatus };
 }
 
@@ -239,9 +283,11 @@ export const api = {
   scanLibrary: () => request<ScanSummary>("/api/library/scan", { method: "POST" }, 300_000),
   pendingLocal: () => request<PendingLocalItem[]>("/api/library/pending-local"),
   getLocalLibrary: () => request<LocalSeries[]>("/api/library/local"),
-  getScanSettings: () => request<{ scan_on_startup: boolean }>("/api/library/scan-settings"),
-  setScanSettings: (scanOnStartup: boolean) =>
-    request<{ scan_on_startup: boolean }>("/api/library/scan-settings", { method: "PUT", body: JSON.stringify({ scan_on_startup: scanOnStartup }) }),
+  associateLocal: (body: { title: string; from_media_id?: number | null; external_id?: number | null; status?: string | null; media?: SearchResult | null }) =>
+    request<void>(withAccount("/api/library/local/associate"), { method: "POST", body: JSON.stringify(body) }),
+  getScanSettings: () => request<{ scan_on_startup: boolean; watch_folders: boolean }>("/api/library/scan-settings"),
+  setScanSettings: (scanOnStartup: boolean, watchFolders: boolean) =>
+    request<{ scan_on_startup: boolean; watch_folders: boolean }>("/api/library/scan-settings", { method: "PUT", body: JSON.stringify({ scan_on_startup: scanOnStartup, watch_folders: watchFolders }) }),
   conflicts: (status = "pending") =>
     request<ConflictInfo[]>(`/api/conflicts?status=${encodeURIComponent(status)}`),
   resolveConflict: (conflictId: number, resolution: ConflictResolution) =>
@@ -395,7 +441,7 @@ export const api = {
     request<void>(`/api/playback/correction/${encodeURIComponent(rawTitle)}`, { method: "DELETE" }),
   torrentFeed: (refresh = false) => request<TorrentItem[]>(`/api/torrents/feed?refresh=${refresh}`),
   torrentUnread: () => request<{ count: number }>("/api/torrents/unread-count"),
-  downloadTorrent: (signature: string) => request<TorrentDownloadResponse>("/api/torrents/download", { method: "POST", body: JSON.stringify({ signature }) }),
+  downloadTorrent: (signature: string, mode?: "magnet" | "torrent") => request<TorrentDownloadResponse>("/api/torrents/download", { method: "POST", body: JSON.stringify({ signature, mode: mode ?? null }) }),
   discardTorrent: (signature: string) => request<void>("/api/torrents/discard", { method: "POST", body: JSON.stringify({ signature }) }),
   torrentSources: () => request<TorrentSource[]>("/api/torrents/sources"),
   addTorrentSource: (b: Omit<TorrentSource, "id">) => request<TorrentSource>("/api/torrents/sources", { method: "POST", body: JSON.stringify(b) }),

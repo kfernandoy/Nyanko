@@ -22,6 +22,7 @@ export interface MediaItem {
   genres?: string[];
   tags?: string[];
   year?: number | null;
+  season?: string | null;
   format?: string | null;
   site_url?: string | null;
   updated_at?: number | null;
@@ -70,7 +71,10 @@ export interface SeasonMedia {
   popularity: number;
   start_date: FuzzyDate | null;
   cover_image: string | null;
+  cover_color: string | null;
   studios: string[];
+  genres: string[];
+  description: string | null;
   next_episode: number | null;
   next_airing_at: number | null;
 }
@@ -293,7 +297,23 @@ export interface ScanSummary {
   unmatched: number;
 }
 
-export interface LocalSeries { media_id: number | null; title: string; episode_count: number; matched: boolean; }
+export interface LocalSeries {
+  media_id: number | null;
+  title: string;
+  title_romaji?: string | null;
+  title_english?: string | null;
+  title_native?: string | null;
+  episode_count: number;
+  matched: boolean;
+  external_id: number | null;
+  provider: string | null;
+  account_alias: string | null;
+  cover_image: string | null;
+  episodes: number | null;
+  progress: number | null;
+  next_episode: number | null;
+  next_path: string | null;
+}
 
 export interface PendingLocalItem {
   media_id: number;
@@ -456,14 +476,34 @@ export interface TorrentItem {
   seeders: number | null;
   confidence: number;
   is_new: boolean;
+  cover_image?: string | null;
 }
-export interface TorrentSource { id: number; name: string; url: string; enabled: boolean; }
+export interface TorrentSource { id: number; name: string; url: string; enabled: boolean; kind?: string; }
+export interface TorrentCondition { element: string; operator: string; value: string; }
 export interface TorrentFilter {
-  id: number; field: string; op: string; value: string;
-  action: string; enabled: boolean; priority: number;
+  id: number;
+  name: string;
+  action: string;              // select | discard | prefer
+  match: string;               // all | any
+  scope: string;               // all | limited
+  enabled: boolean;
+  conditions: TorrentCondition[];
+  anime_ids: number[];
 }
 export interface TorrentSettings {
-  auto_check: boolean; interval_min: number; download_mode: string;
-  watch_folder: string; preferred_resolution: string;
+  auto_check: boolean;
+  interval_min: number;
+  download_mode: string;       // magnet | folder
+  watch_folder: string;
+  preferred_resolution: string;
+  on_new: string;              // notify | download
+  client_path: string;
+  folder_per_series: boolean;
+  append_episode: boolean;
+  use_anime_folder: boolean;
+  filters_enabled: boolean;
+  global_discard_not_in_list: boolean;
+  global_discard_seen: boolean;
+  global_prefer_resolution: boolean;
 }
 export interface TorrentDownloadResponse { action: string; link: string | null; path: string | null; }
