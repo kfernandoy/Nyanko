@@ -123,6 +123,7 @@
       contentKind: episode != null ? "episode" : classifyContent(rawTitle, video?.duration, episode),
       siteIdentifier: genericSiteIdentifier(),
       searchHints: [],
+      nextEpisodeUrl: findNextEpisodeUrl(),
     };
   }
 
@@ -144,6 +145,7 @@
       contentKind: parsed.episode ? "episode" : classifyContent(rawTitle, video?.duration, parsed.episode),
       siteIdentifier: genericSiteIdentifier(),
       searchHints: [],
+      nextEpisodeUrl: findNextEpisodeUrl(),
     };
   }
 
@@ -173,11 +175,52 @@
     return `site:${location.hostname.toLowerCase()}${path}`;
   }
 
+  function slugToTitle(slug) {
+    return slug ? slug.replace(/[-_]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()).trim() : null;
+  }
+
+  function findNextEpisodeUrl() {
+    // ponytail: rel="next" is the web-standard "next in series" link; site adapters
+    // override with a better source when they expose one. Optional, never required.
+    const link = document.querySelector('link[rel="next"], a[rel="next"]');
+    return link?.href || null;
+  }
+
+  // Fan sites without JSON-LD carry a stable series slug and the episode number in the
+  // watch URL. Derive both from the path and seed the title from the slug; the backend
+  // resolves it against the provider catalogue. content.js only runs detect() when a
+  // <video> plays, so listing/search pages never reach here. ``episodeFallback`` covers
+  // patterns where the episode segment is optional (e.g. a movie page).
+  function slugAdapter(name, hostPattern, pathPattern, episodeFallback = null) {
+    return {
+      name,
+      matches: () => hostPattern.test(location.hostname),
+      detect(video) {
+        const base = detectFromMetadata(video);
+        const match = location.pathname.match(pathPattern);
+        if (!match) return base;
+        const slug = match[1].toLowerCase();
+        return {
+          ...base,
+          animeTitle: slugToTitle(slug),
+          episode: match[2] != null ? parseFloat(match[2]) : episodeFallback,
+          contentKind: "episode",
+          siteIdentifier: `${name}:${slug}`,
+        };
+      },
+    };
+  }
+
   const generic = {
     name: "generic",
     matches: () => true,
     detect(video) {
-      return extractFromStructuredMedia(video) || detectFromMetadata(video);
+      // Policy: JSON-LD is the primary source. Fall back to page selectors only when the
+      // structured data omits the series/episode fields (partOfSeries/partOfSeason/
+      // episodeNumber) — a bare VideoObject must not suppress the metadata fallback.
+      const structured = extractFromStructuredMedia(video);
+      if (structured && (structured.episode != null || structured.animeTitle)) return structured;
+      return detectFromMetadata(video) || structured;
     },
   };
 
@@ -236,10 +279,75 @@
     },
   };
 
-  const adapters = [crunchyroll, plex, jellyfin, generic];
+  // Each entry: site name, host matcher, watch-URL path pattern (group 1 = series slug,
+  // group 2 = episode), and an optional fallback episode for slug-only/movie paths.
+  // Hosts that rotate TLDs are matched on the bare name. Patterns ported from MAL-Sync's
+  // page definitions and verified against their test fixtures.
+  const animeflv = slugAdapter("animeflv", /(^|\.)animeflv\.net$/i, /\/ver\/(.+?)-(\d+(?:\.5)?)\/?$/i);
+  const jkanime = slugAdapter("jkanime", /(^|\.)jkanime\.net$/i, /^\/([^/]+)\/(\d+(?:\.5)?)\/?$/);
+  const animefire = slugAdapter("animefire", /(^|\.)animefire\.[a-z]+$/i, /^\/animes\/([^/]+)\/(\d+(?:\.5)?)\/?$/i);
+  const latanime = slugAdapter("latanime", /(^|\.)latanime\.[a-z]+$/i, /\/ver\/(.+)-episodio-(\d+(?:\.5)?)\/?$/i);
+  const tioanime = slugAdapter("tioanime", /(^|\.)tioanime\.[a-z]+$/i, /\/ver\/(.+)-(\d+(?:\.5)?)\/?$/i);
+  const otakustv = slugAdapter("otakustv", /(^|\.)otakustv\.com$/i, /\/anime\/([^/]+)\/(?:round-(\d+)|pelicula)/i, 1);
+  const animeid = slugAdapter("animeid", /(^|\.)animeid\.[a-z]+$/i, /\/v\/(.+)-(\d+(?:\.5)?)\/?$/i);
+  const an1me = slugAdapter("an1me", /(^|\.)an1me\.[a-z]+$/i, /\/wm\/([^/]+)\/episode-(\d+(?:\.5)?)\/?$/i);
+  const animeav1 = slugAdapter("animeav1", /(^|\.)animeav1\.[a-z]+$/i, /\/media\/([^/]+)\/(\d+(?:\.5)?)\/?$/i);
+  const hentaila = slugAdapter("hentaila", /(^|\.)hentaila\.[a-z]+$/i, /\/media\/([^/]+)\/(\d+(?:\.5)?)\/?$/i);
+
+  // More MAL-Sync anime sites whose watch URL carries the series slug and episode.
+  // Sites whose watch URL is only a numeric/hash id (AnimeUnity, AnimesOnline, HinataSoul,
+  // Animelon, Animeworld, AnimeOnsen, Proxer, Shinden…) need DOM/API scraping — out of the
+  // lightweight model; the generic JSON-LD/metadata adapter covers them when they expose it.
+  const slugEpisode = /^\/(.+?)-episode-(\d+(?:\.5)?)\b.*$/i; // slug-episode-N(-lang)
+  const animexin = slugAdapter("animexin", /(^|\.)animexin\.[a-z.]+$/i, slugEpisode);
+  const animeko = slugAdapter("animeko", /(^|\.)animeko\.[a-z]+$/i, slugEpisode);
+  const luciferdonghua = slugAdapter("luciferdonghua", /(^|\.)luciferdonghua\.[a-z.]+$/i, slugEpisode);
+  const kaguya = slugAdapter("kaguya", /(^|\.)kaguya\.app$/i, /\/anime\/watch\/\d+\/[^/]+\/(.+?)-episode-(\d+(?:\.5)?)\/?$/i);
+  const betteranime = slugAdapter("betteranime", /(^|\.)betteranime\.[a-z]+$/i, /\/anime\/[^/]+\/([^/]+)\/episodio-(\d+(?:\.5)?)\/?$/i);
+  const otakufr = slugAdapter("otakufr", /(^|\.)otakufr\.[a-z]+$/i, /^\/episode\/(.+?)-(\d+(?:\.5)?)-[a-z]+\/?$/i);
+  const moeclip = slugAdapter("moeclip", /(^|\.)moeclip\.com$/i, /^\/(.+?)-(\d+(?:\.5)?)-sub[a-z-]*\/?$/i);
+  const desuonline = slugAdapter("desuonline", /(^|\.)desu-online\.[a-z]+$/i, /^\/(.+?)-odcinek-(\d+(?:\.5)?)\/?$/i);
+  const animezone = slugAdapter("animezone", /(^|\.)animezone\.[a-z]+$/i, /^\/odcinek\/([^/]+)\/(\d+(?:\.5)?)\/?$/i);
+  const animeodcinki = slugAdapter("animeodcinki", /(^|\.)anime-odcinki\.[a-z]+$/i, /^\/anime\/([^/]+)\/(\d+(?:\.5)?)\/?$/i);
+  const docchi = slugAdapter("docchi", /(^|\.)docchi\.[a-z]+$/i, /^\/production\/[a-z]+\/([^/]+)\/(\d+(?:\.5)?)\/?$/i);
+  const aniyan = slugAdapter("aniyan", /(^|\.)aniyan\.[a-z]+$/i, /^\/w\/\d+\/(.+?)-episodio-(\d+(?:\.5)?)\/?$/i);
+  const turkanime = slugAdapter("turkanime", /(^|\.)turkanime\.[a-z.]+$/i, /^\/video\/(.+?)-(\d+(?:\.5)?)-bolum\/?$/i);
+  const anidream = slugAdapter("anidream", /(^|\.)anidream\.[a-z]+$/i, /^\/watch\/(.+?)-episodio-(\d+(?:\.5)?)\/?$/i);
+  const sovetromantica = slugAdapter("sovetromantica", /(^|\.)sovetromantica\.com$|(^|\.)ani\.wtf$/i, /^\/anime\/\d+-([^/]+)\/episode_(\d+(?:\.5)?)\b/i);
+  const aninexus = slugAdapter("aninexus", /(^|\.)aninexus\.[a-z]+$/i, /^\/episode\/([^/]+)\/(\d+)(?:-\d+)?\/?$/i);
+  const kickassanime = slugAdapter("kickassanime", /(^|\.)(kickassanime|kaas|kaa)\.[a-z]+$/i, /^\/([^/]+)\/ep-(\d+(?:\.5)?)-[a-z0-9]+\/?$/i);
+  const okanime = slugAdapter("okanime", /(^|\.)okanime\.[a-z]+$/i, /^\/animes\/([^/]+)\/episodes\/.+?-(\d+)(?:[-/]|$)/i);
+
+  const adapters = [
+    crunchyroll, animeflv, jkanime, animefire, latanime, tioanime,
+    otakustv, animeid, an1me, animeav1, hentaila,
+    animexin, animeko, luciferdonghua, kaguya, betteranime, otakufr, moeclip,
+    desuonline, animezone, animeodcinki, docchi, aniyan, turkanime, anidream,
+    sovetromantica, aninexus, kickassanime, okanime,
+    plex, jellyfin, generic,
+  ];
+  // Display labels for the app's per-adapter tracking toggles. Derived from the
+  // adapters array so a new adapter only needs an entry here, never a parallel list.
+  // The app (apps/desktop ExtensionSettingsView) mirrors these name+label pairs.
+  const labels = {
+    crunchyroll: "Crunchyroll", animeflv: "AnimeFLV", jkanime: "Jkanime",
+    animefire: "AnimeFire", latanime: "Latanime",
+    tioanime: "TioAnime", otakustv: "OtakusTV", animeid: "AnimeID", an1me: "An1me",
+    animeav1: "AnimeAV1", hentaila: "Hentaila", animexin: "AnimeXin", animeko: "AnimeKO",
+    luciferdonghua: "LuciferDonghua", kaguya: "Kaguya", betteranime: "BetterAnime",
+    otakufr: "OtakuFR", moeclip: "moeclip", desuonline: "Desu-Online",
+    animezone: "AnimeZone", animeodcinki: "Anime-Odcinki", docchi: "Docchi",
+    aniyan: "Aniyan", turkanime: "TürkAnime", anidream: "AniDream",
+    sovetromantica: "SovetRomantica", aninexus: "AniNexus", kickassanime: "KickAssAnime",
+    okanime: "Okanime", plex: "Plex", jellyfin: "Jellyfin",
+    generic: "Cualquier otro sitio (genérico)",
+  };
+  const catalog = adapters.map((adapter) => ({ name: adapter.name, label: labels[adapter.name] || adapter.name }));
+
   global.NyankoSiteAdapters = {
     classifyContent,
     parseEpisodeFromTitle,
+    catalog,
     select: () => adapters.find((adapter) => adapter.matches()) || generic,
   };
 })(globalThis);

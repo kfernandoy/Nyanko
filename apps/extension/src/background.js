@@ -14,6 +14,20 @@ async function updateBadge(text, color) {
   await api.action.setBadgeText({ text });
 }
 
+async function autoPair(config) {
+  // Invisible token: the extension mints its own. The backend gates this on the
+  // browser-set Origin header, which a web page can't forge — so no manual code.
+  const response = await fetch(`${config.apiUrl}/api/extension/auto-pair`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label: config.label }),
+  });
+  if (!response.ok) throw new Error(`No se pudo emparejar con Nyanko (HTTP ${response.status})`);
+  const next = await response.json();
+  await api.storage.local.set({ token: next.token, tokenExpiresAt: next.expires_at });
+  return { ...config, token: next.token, tokenExpiresAt: next.expires_at };
+}
+
 async function rotateIfNeeded(config) {
   if (!config.token || config.tokenExpiresAt > Date.now() / 1000 + 3 * 86400) return config;
   const response = await fetch(`${config.apiUrl}/api/extension/token/rotate`, {
@@ -29,17 +43,19 @@ async function rotateIfNeeded(config) {
 
 async function publish(event) {
   let config = await settings();
-  if (!config.token) {
-    await updateBadge("!", "#c85362");
-    return { ok: false, error: "La extensión no está emparejada" };
-  }
   try {
+    if (!config.token) config = await autoPair(config);
     config = await rotateIfNeeded(config);
     const response = await fetch(`${config.apiUrl}/api/extension/events`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}` },
       body: JSON.stringify(event),
     });
+    if (response.status === 401) {
+      // Token revoked or expired: drop it so the next event re-pairs automatically.
+      await api.storage.local.set({ token: "", tokenExpiresAt: 0 });
+      throw new Error("Token de Nyanko inválido; se reintentará el emparejamiento");
+    }
     if (!response.ok) throw new Error(`Nyanko respondió HTTP ${response.status}`);
     await api.storage.local.set({ lastEventAt: Date.now(), lastError: "" });
     await updateBadge(event.paused ? "Ⅱ" : "ON", event.paused ? "#8b829e" : "#5d50cb");
