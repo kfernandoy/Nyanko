@@ -40,6 +40,12 @@
     "externalBin": ["binaries/nyanko-api"],
     "createUpdaterArtifacts": true,
     "licenseFile": "EULA.txt",
+    "windows": {
+      "nsis": {
+        "languages": ["Spanish", "English"],
+        "displayLanguageSelector": true
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

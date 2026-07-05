@@ -52,21 +52,28 @@ def _kill_other_devs() -> None:
     # hijo: nuestro propio dev.py son DOS procesos. Excluir también al padre, o el
     # taskkill /T al "otro" arrasaría nuestro propio árbol.
     own = {os.getpid(), os.getppid()}
+    # Solo dev.py de ESTE repo: matar cualquier python con "dev.py" en la línea de
+    # comandos arrasaría dev servers de otros proyectos. El ExecutablePath del venv
+    # (apps/backend/.venv) ancla el match aunque dev.py se lance con ruta relativa.
+    marker = str(BACKEND).lower()
     try:
         out = subprocess.run(
             [
                 "powershell", "-NoProfile", "-Command",
                 "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
-                "ForEach-Object { \"$($_.ProcessId)|$($_.CommandLine)\" }",
+                "ForEach-Object { \"$($_.ProcessId)|$($_.ExecutablePath)|$($_.CommandLine)\" }",
             ],
             capture_output=True, text=True, timeout=20,
         ).stdout
     except (OSError, subprocess.TimeoutExpired):
         return  # sin PowerShell/WMI: _free_port sigue cubriendo al dueño del puerto
     for line in out.splitlines():
-        pid_text, _, command = line.partition("|")
+        pid_text, _, rest = line.partition("|")
+        exe_path, _, command = rest.partition("|")
         pid_text = pid_text.strip()
         if not pid_text.isdigit() or int(pid_text) in own or "dev.py" not in command:
+            continue
+        if marker not in exe_path.lower() and marker not in command.lower():
             continue
         subprocess.run(["taskkill", "/F", "/T", "/PID", pid_text], capture_output=True)
 

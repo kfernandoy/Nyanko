@@ -517,6 +517,17 @@ async def _refresh_media_detail(
     )
 
 
+# El loop solo guarda referencias débiles a las tasks: sin retener la referencia,
+# una task de fondo puede ser recolectada a mitad de ejecución y morir en silencio.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_background(coro) -> None:
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
 def _schedule_detail_asset_download(
     database: Database,
     settings: Settings,
@@ -532,7 +543,7 @@ def _schedule_detail_asset_download(
         except Exception:
             pass
 
-    asyncio.create_task(run())
+    _spawn_background(run())
 
 
 def _schedule_media_refresh(
@@ -1024,7 +1035,7 @@ async def _compute_torrent_feed(
 ) -> list[torrents_mod.FeedItem]:
     filters = database.list_torrent_filters()
     seen = database.list_seen_signatures()
-    discarded = {s for s in seen if database.is_torrent_discarded(s)}
+    discarded = database.list_discarded_signatures()
     parsed: list[torrents_mod.ParsedTorrent] = []
     for source in database.list_torrent_sources():
         if not source["enabled"] or source["kind"] != "release":
@@ -1579,7 +1590,7 @@ async def mal_auth_callback(
         except Exception:
             pass  # ponytail: sync fails silently; user can sync manually from settings
 
-    asyncio.create_task(import_library())
+    _spawn_background(import_library())
     return _oauth_success_page("MyAnimeList")
 
 
@@ -3975,6 +3986,13 @@ def _auto_download_new(database: Database, feed: list[torrents_mod.FeedItem]) ->
     downloaded = 0
     for item in feed:
         if not item.is_new:
+            continue
+        # El link viene tal cual de un RSS configurable (a menudo http plano): sin
+        # allowlist, un feed malicioso puede colar una ruta local/UNC y os.startfile
+        # la ejecutaría. Solo esquemas de descarga legítimos.
+        scheme = (item.link or "").split(":", 1)[0].lower()
+        if scheme not in {"http", "https", "magnet"}:
+            logger.warning("Link de torrent con esquema no permitido: %s", item.raw_title)
             continue
         try:
             if settings_t.download_mode == "folder" and item.link.endswith(".torrent"):

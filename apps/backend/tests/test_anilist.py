@@ -40,11 +40,12 @@ async def test_exchange_code_uses_broker_without_local_secret(monkeypatch):
         async def __aexit__(self, *args):
             return None
 
-        async def request(self, method, url, json=None, **kwargs):
+        async def post(self, url, json=None, **kwargs):
             calls.append((url, json))
             return Response()
 
-    monkeypatch.setattr("nyanko_api.http.httpx.AsyncClient", lambda **kwargs: Client())
+    # El intercambio usa un AsyncClient dedicado (sin reintentos: code de un solo uso).
+    monkeypatch.setattr("nyanko_api.anilist.httpx.AsyncClient", lambda **kwargs: Client())
     settings = Settings(
         anilist_client_id="123",
         anilist_client_secret=None,

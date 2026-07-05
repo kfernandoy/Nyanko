@@ -588,7 +588,11 @@ type AppContextValue = {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppSettingsProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(() => (localStorage.getItem("lang") as Lang) || "es");
+  // Sin preferencia guardada, el idioma sigue al del sistema (mismo criterio que
+  // el selector de idioma del instalador NSIS, que también arranca en el del SO).
+  const [lang, setLangState] = useState<Lang>(
+    () => (localStorage.getItem("lang") as Lang) || (navigator.language?.toLowerCase().startsWith("es") ? "es" : "en"),
+  );
   const [theme, setThemeState] = useState<Theme>(() => (localStorage.getItem("theme") as Theme) || "dark");
   const [titleLanguage, setTitleLanguageState] = useState<TitleLanguage>(() => (localStorage.getItem("titleLanguage") as TitleLanguage) || "ROMAJI");
   const [discordRpc, setDiscordRpcState] = useState<boolean>(() => localStorage.getItem("discordRpc") === "1");

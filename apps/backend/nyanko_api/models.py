@@ -37,6 +37,8 @@ class AccountInfo(BaseModel):
     authenticated: bool
     is_primary: bool
     last_synced_at: str | None = None
+    # False = la fila existe pero nunca hubo login (la crean rutas de lectura).
+    has_credential_ref: bool = False
 
 
 class AccountUpdate(BaseModel):

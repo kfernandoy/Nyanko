@@ -75,31 +75,24 @@ class RateLimitedClient:
         self._base_delay = base_delay
         self._max_delay = max_delay
         self._timeout = timeout
-        # Cliente compartido y perezoso: crear un AsyncClient por request construía
-        # un contexto SSL (~100-200 ms de CPU) y un handshake TLS nuevos cada vez.
-        # Se re-crea si cambia el event loop (los tests usan un loop por test).
-        self._client: httpx.AsyncClient | None = None
-        self._client_loop: asyncio.AbstractEventLoop | None = None
+        # Cliente perezoso POR event loop: crear un AsyncClient por request construía
+        # un contexto SSL (~100-200 ms de CPU) y un handshake TLS nuevos cada vez, y
+        # un único cliente compartido no es seguro con varios loops vivos (el
+        # MutationWorker corre asyncio.run() en otro hilo: reemplazar el cliente del
+        # loop principal podía cerrarlo con requests en vuelo). Las entradas de loops
+        # cerrados se podan en el siguiente acceso; sus conexiones mueren con el loop
+        # y el GC finaliza el resto.
+        self._clients: dict[asyncio.AbstractEventLoop, httpx.AsyncClient] = {}
 
-    def _retire_client(self, current_loop: asyncio.AbstractEventLoop) -> None:
-        # Cierra el cliente anterior antes de reemplazarlo para no filtrar su pool
-        # de conexiones. Si su loop sigue vivo, programa aclose() en él; si el loop
-        # murió (típico entre tests, un loop por test) simplemente lo descarta.
-        old = self._client
-        old_loop = self._client_loop
-        self._client = None
-        self._client_loop = None
-        if old is None or getattr(old, "is_closed", False):
-            return
-        aclose = getattr(old, "aclose", None)
-        if not callable(aclose):
-            return
-        if old_loop is None or old_loop.is_closed():
-            return
-        if old_loop is current_loop:
-            old_loop.create_task(aclose())
-        else:
-            asyncio.run_coroutine_threadsafe(aclose(), old_loop)
+    def _client_for(self, loop: asyncio.AbstractEventLoop) -> httpx.AsyncClient:
+        for stale in [known for known in self._clients if known.is_closed()]:
+            del self._clients[stale]
+        client = self._clients.get(loop)
+        # getattr: los tests sustituyen AsyncClient por fakes sin is_closed.
+        if client is None or getattr(client, "is_closed", False):
+            client = httpx.AsyncClient(timeout=self._timeout)
+            self._clients[loop] = client
+        return client
 
     @retry_with_backoff(max_retries=3, base_delay=1.0, max_delay=30.0)
     async def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
@@ -109,16 +102,7 @@ class RateLimitedClient:
             else contextlib.nullcontext()
         ):
             loop = asyncio.get_running_loop()
-            # getattr: los tests sustituyen AsyncClient por fakes sin is_closed.
-            if (
-                self._client is None
-                or self._client_loop is not loop
-                or getattr(self._client, "is_closed", False)
-            ):
-                self._retire_client(loop)
-                self._client = httpx.AsyncClient(timeout=self._timeout)
-                self._client_loop = loop
-            response = await self._client.request(method, url, **kwargs)
+            response = await self._client_for(loop).request(method, url, **kwargs)
             response.raise_for_status()
             if self._interval:
                 await asyncio.sleep(self._interval)

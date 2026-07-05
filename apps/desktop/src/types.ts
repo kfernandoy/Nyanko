@@ -283,6 +283,8 @@ export interface AccountInfo {
   authenticated: boolean;
   is_primary: boolean;
   last_synced_at: string | null;
+  /** false = la fila existe pero nunca hubo login (la crean rutas de lectura). */
+  has_credential_ref: boolean;
 }
 
 export interface LibraryFolder {

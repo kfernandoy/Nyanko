@@ -159,7 +159,7 @@ export function AccountSettingsView({
         </div>
         {!account || !account.authenticated ? (
           <div className="provider-connect">
-            <p>{account ? t("acc.expired") : `${t("acc.connect")} ${providerLabel(prov)}.`}</p>
+            <p>{account?.has_credential_ref ? t("acc.expired") : `${t("acc.connect")} ${providerLabel(prov)}.`}</p>
             {prov === "kitsu"
               ? (kitsuForm
                 ? <form className="kitsu-login-form" onSubmit={(e) => void connectKitsu(e)}>
@@ -168,8 +168,8 @@ export function AccountSettingsView({
                     <button type="submit" className="primary small" disabled={saving === -1}>{t("acc.connectBtn")}</button>
                     <button type="button" className="small" onClick={() => setKitsuForm(false)}>{t("acc.cancel")}</button>
                   </form>
-                : <button className="primary small" onClick={() => setKitsuForm(true)}>{account ? t("acc.reconnect") : t("acc.auth")}</button>)
-              : <button className="primary small" onClick={() => void onConnect(prov, account?.alias ?? "default")}>{account ? t("acc.reconnect") : t("acc.auth")}</button>
+                : <button className="primary small" onClick={() => setKitsuForm(true)}>{account?.has_credential_ref ? t("acc.reconnect") : t("acc.auth")}</button>)
+              : <button className="primary small" onClick={() => void onConnect(prov, account?.alias ?? "default")}>{account?.has_credential_ref ? t("acc.reconnect") : t("acc.auth")}</button>
             }
             <p className="signup-hint">
               {t("acc.noAccount")}{" "}

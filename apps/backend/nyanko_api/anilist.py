@@ -472,10 +472,15 @@ class AniListClient:
         if not self.settings.anilist_token_broker_url:
             raise AniListError("AniList OAuth credentials are not configured")
         try:
-            response = await self.client.post(
-                self.settings.anilist_token_broker_url,
-                json={"code": code, "redirect_uri": self.settings.anilist_redirect_uri},
-            )
+            # Cliente dedicado SIN reintentos: el code es de un solo uso, así que
+            # reintentar tras un timeout lo quema y AniList responde "Cannot decrypt
+            # the authorization code". 30 s cubre el arranque en frío de la función.
+            async with httpx.AsyncClient(timeout=30.0) as broker_client:
+                response = await broker_client.post(
+                    self.settings.anilist_token_broker_url,
+                    json={"code": code, "redirect_uri": self.settings.anilist_redirect_uri},
+                )
+                response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             # El broker adjunta el motivo de AniList (error/hint) sin datos sensibles.
             try:

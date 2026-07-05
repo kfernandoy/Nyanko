@@ -172,9 +172,17 @@ function installWatchers() {
   window.addEventListener("message", (event) => {
     const data = event.data;
     if (!data || data.__nyanko !== "video" || !data.duration) return;
-    const pausedChanged = data.paused !== lastSubframePaused;
-    lastSubframePaused = data.paused;
-    subframeVideo = { position: data.position, duration: data.duration, paused: data.paused, at: Date.now() };
+    // Cualquier iframe embebido (anuncios, widgets) puede postear al top frame y el
+    // origen del reproductor real no se puede fijar entre sitios; al menos se exige
+    // que posición/duración sean coherentes antes de aceptar el reporte.
+    const duration = Number(data.duration);
+    const position = data.position == null ? 0 : Number(data.position);
+    if (!Number.isFinite(duration) || duration <= 0 || duration > 43200) return;
+    if (!Number.isFinite(position) || position < 0 || position > duration) return;
+    const paused = Boolean(data.paused);
+    const pausedChanged = paused !== lastSubframePaused;
+    lastSubframePaused = paused;
+    subframeVideo = { position, duration, paused, at: Date.now() };
     schedulePublish(pausedChanged);
   });
   new MutationObserver(() => schedulePublish()).observe(document.documentElement, {

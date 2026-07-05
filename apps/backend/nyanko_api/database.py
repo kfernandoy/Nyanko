@@ -1141,10 +1141,13 @@ class Database:
         return account_id
 
     def get_accounts(self) -> list[dict]:
+        # has_credential_ref distingue "nunca conectó" (fila creada por rutas de
+        # lectura, credential_ref NULL) de "sesión caducada" (hubo login real).
         with self.connect() as connection:
             rows = connection.execute(
                 "SELECT id, provider_id AS provider, alias, is_primary, "
-                "last_synced_at FROM accounts WHERE alias = 'default' "
+                "last_synced_at, credential_ref IS NOT NULL AS has_credential_ref "
+                "FROM accounts WHERE alias = 'default' "
                 "ORDER BY provider_id, is_primary DESC, alias"
             ).fetchall()
             return [dict(row) for row in rows]
@@ -1183,7 +1186,8 @@ class Database:
                     )
             row = connection.execute(
                 "SELECT id, provider_id AS provider, alias, is_primary, "
-                "last_synced_at FROM accounts WHERE id = ?",
+                "last_synced_at, credential_ref IS NOT NULL AS has_credential_ref "
+                "FROM accounts WHERE id = ?",
                 (account_id,),
             ).fetchone()
             return dict(row)
@@ -2606,6 +2610,15 @@ class Database:
     def list_seen_signatures(self) -> set[str]:
         with self.connect() as connection:
             rows = connection.execute("SELECT signature FROM torrent_seen").fetchall()
+            return {row["signature"] for row in rows}
+
+    def list_discarded_signatures(self) -> set[str]:
+        # Una sola consulta: iterar torrent_seen con is_torrent_discarded() por firma
+        # era O(n) queries por refresco de feed y torrent_seen crece sin límite.
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT signature FROM torrent_seen WHERE discarded = 1"
+            ).fetchall()
             return {row["signature"] for row in rows}
 
     def is_torrent_discarded(self, signature: str) -> bool:
