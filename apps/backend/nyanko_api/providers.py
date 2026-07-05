@@ -21,6 +21,7 @@ from .models import (
     UserPreferences,
     UserPreferencesUpdate,
 )
+from .kitsu import KitsuClient, KitsuCredential, KitsuError
 from .myanimelist import MyAnimeListClient, MyAnimeListCredential, MyAnimeListError
 
 
@@ -29,11 +30,14 @@ class ProviderCapabilities:
     library: bool = True
     search: bool = True
     details: bool = True
+    batch_details: bool = False
     mutations: bool = True
     activity: bool = False
     statistics: bool = False
     seasons: bool = False
     manga: bool = False
+    preferences: bool = False
+    preferences_editable: bool = False
 
 
 MediaType = Literal["ANIME", "MANGA"]
@@ -59,6 +63,10 @@ class MediaProvider(Protocol):
     ) -> GlobalSearchResponse: ...
 
     async def details(self, credential: str, external_id: int) -> MediaDetails: ...
+
+    async def details_batch(
+        self, credential: str, external_ids: list[int]
+    ) -> list[MediaDetails]: ...
 
     async def update_progress(self, credential: str, update: ProgressUpdate) -> dict: ...
 
@@ -97,6 +105,9 @@ class AniListProvider:
         statistics=True,
         seasons=True,
         manga=True,
+        preferences=True,
+        preferences_editable=True,
+        batch_details=True,
     )
 
     def __init__(self, settings: Settings):
@@ -122,6 +133,11 @@ class AniListProvider:
 
     async def details(self, credential: str, external_id: int) -> MediaDetails:
         return await self.client.media_details(credential, external_id)
+
+    async def details_batch(
+        self, credential: str, external_ids: list[int]
+    ) -> list[MediaDetails]:
+        return await self.client.media_details_batch(credential, external_ids)
 
     async def update_progress(self, credential: str, update: ProgressUpdate) -> dict:
         return await self.client.update_progress(credential, update)
@@ -176,6 +192,8 @@ class MyAnimeListProvider:
         search=True,
         details=True,
         mutations=True,
+        manga=True,
+        preferences=True,
     )
 
     def __init__(self, settings: Settings):
@@ -229,21 +247,94 @@ class MyAnimeListProvider:
         raise MyAnimeListError("MyAnimeList seasons are not enabled")
 
     async def statistics(self, credential: str) -> StatisticsResponse:
-        raise MyAnimeListError("MyAnimeList statistics are not enabled")
+        # No native stats API; the endpoint derives them from the synced library instead.
+        raise MyAnimeListError("MyAnimeList statistics are derived locally")
 
     async def preferences(self, credential: str) -> UserPreferences:
-        raise MyAnimeListError("MyAnimeList preferences are not enabled")
+        parsed = MyAnimeListCredential.loads(credential)
+        return await self.client.preferences(parsed.access_token)
 
     async def update_preferences(
         self, credential: str, update: UserPreferencesUpdate
     ) -> UserPreferences:
-        raise MyAnimeListError("MyAnimeList preferences are not enabled")
+        raise MyAnimeListError("MyAnimeList no permite editar preferencias desde la API")
 
     async def library_manga(self, credential: str) -> list[MediaItem]:
-        raise MyAnimeListError("MyAnimeList manga is not enabled")
+        parsed = MyAnimeListCredential.loads(credential)
+        return await self.client.library_manga(parsed.access_token)
 
     async def manga_details(self, credential: str, external_id: int) -> MediaDetails:
-        raise MyAnimeListError("MyAnimeList manga is not enabled")
+        parsed = MyAnimeListCredential.loads(credential)
+        return await self.client.manga_details(parsed.access_token, external_id)
+
+
+class KitsuProvider:
+    name = "kitsu"
+    display_name = "Kitsu"
+    capabilities = ProviderCapabilities(
+        search=True,
+        details=True,
+        mutations=True,
+        preferences=True,
+        preferences_editable=True,
+    )
+
+    def __init__(self, settings: Settings):
+        self.client = KitsuClient()
+
+    async def library(self, credential: str) -> list[MediaItem]:
+        parsed = KitsuCredential.loads(credential)
+        return await self.client.library(parsed.access_token)
+
+    async def search(self, credential: str, query: str, limit: int = 10) -> list[SearchResult]:
+        parsed = KitsuCredential.loads(credential)
+        return await self.client.search(parsed.access_token, query, limit)
+
+    async def search_manga(self, credential: str, query: str, limit: int = 10) -> list[SearchResult]:
+        raise KitsuError("Kitsu manga search is not yet enabled")
+
+    async def discover(self, credential: str, filters: SearchFilters) -> GlobalSearchResponse:
+        parsed = KitsuCredential.loads(credential)
+        return await self.client.discover(parsed.access_token, filters)
+
+    async def details(self, credential: str, external_id: int) -> MediaDetails:
+        parsed = KitsuCredential.loads(credential)
+        return await self.client.details(parsed.access_token, external_id)
+
+    async def update_progress(self, credential: str, update: ProgressUpdate) -> dict:
+        parsed = KitsuCredential.loads(credential)
+        return await self.client.update_progress(parsed.access_token, update)
+
+    async def edit_entry(self, credential: str, external_id: int, update: MediaEntryUpdate) -> MediaListEntry:
+        parsed = KitsuCredential.loads(credential)
+        return await self.client.edit_entry(parsed.access_token, external_id, update)
+
+    async def delete_entry(self, credential: str, entry_id: int) -> bool:
+        parsed = KitsuCredential.loads(credential)
+        return await self.client.delete_entry(parsed.access_token, entry_id)
+
+    async def activity(self, credential: str, page: int = 1, limit: int = 30) -> list[ActivityItem]:
+        raise KitsuError("Kitsu activity is not enabled")
+
+    async def season(self, credential: str, season: str, year: int) -> list[SeasonMedia]:
+        raise KitsuError("Kitsu seasons are not enabled")
+
+    async def statistics(self, credential: str) -> StatisticsResponse:
+        raise KitsuError("Kitsu statistics are not enabled")
+
+    async def preferences(self, credential: str) -> UserPreferences:
+        parsed = KitsuCredential.loads(credential)
+        return await self.client.preferences(parsed.access_token)
+
+    async def update_preferences(self, credential: str, update: UserPreferencesUpdate) -> UserPreferences:
+        parsed = KitsuCredential.loads(credential)
+        return await self.client.update_preferences(parsed.access_token, update)
+
+    async def library_manga(self, credential: str) -> list[MediaItem]:
+        raise KitsuError("Kitsu manga is not yet enabled")
+
+    async def manga_details(self, credential: str, external_id: int) -> MediaDetails:
+        raise KitsuError("Kitsu manga is not yet enabled")
 
 
 class ProviderRegistry:
@@ -268,4 +359,4 @@ class ProviderRegistry:
 
 
 def build_provider_registry(settings: Settings) -> ProviderRegistry:
-    return ProviderRegistry([AniListProvider(settings), MyAnimeListProvider(settings)])
+    return ProviderRegistry([AniListProvider(settings), MyAnimeListProvider(settings), KitsuProvider(settings)])

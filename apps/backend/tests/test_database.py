@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from nyanko_api.database import Database
 from nyanko_api.main import _cache_refreshes, cached_list, cached_value
-from nyanko_api.models import MediaItem
+from nyanko_api.models import MediaDetails, MediaItem, TrailerInfo
 
 
 class _SampleValue(BaseModel):
@@ -134,6 +134,20 @@ def test_sync_provider_library_reuses_canonical_media(monkeypatch):
     assert local["progress"] == 4
 
 
+def test_sync_provider_library_keeps_primary_title_on_resync(monkeypatch):
+    # El INSERT OR IGNORE anterior nunca restauraba is_primary tras el UPDATE a 0,
+    # y a partir del segundo sync la base quedaba sin ningún título primario.
+    database = memory_database(monkeypatch)
+    item = MediaItem(id=42, title="Example", status="CURRENT", progress=3, episodes=12)
+    database.sync_provider_library("anilist", "AniList", [item])
+    database.sync_provider_library("anilist", "AniList", [item])
+    with database.connect() as connection:
+        primary = connection.execute(
+            "SELECT COUNT(*) FROM media_titles WHERE is_primary = 1"
+        ).fetchone()[0]
+    assert primary == 1
+
+
 def test_cross_provider_import_keeps_providers_independent(monkeypatch):
     database = memory_database(monkeypatch)
     anilist = MediaItem(
@@ -226,11 +240,62 @@ def test_cross_provider_import_does_not_merge_ambiguous_titles(monkeypatch):
 
     database.sync_provider_library("anilist", "AniList", [first, second])
     database.sync_provider_library("mal", "MyAnimeList", [incoming])
-
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM media").fetchone()[0] == 3
+
+
+    # Proveedores independientes: el titulo compartido no se fusiona entre proveedores.
+
+
+def test_sync_media_details_persists_full_local_copy(monkeypatch):
+    database = memory_database(monkeypatch)
+    item = MediaItem(id=42, title="Example", status="CURRENT", progress=3, episodes=12)
+    mapping = database.sync_provider_library("anilist", "AniList", [item])
+    media_id = mapping["42"]
+    details = MediaDetails(
+        id=42,
+        title="Example",
+        title_romaji="Example Romaji",
+        title_english="Example English",
+        title_native="Example Native",
+        synonyms=["Alt Title"],
+        description="Persistent description",
+        site_url="https://example.test/anime/42",
+        banner_image="https://img.test/banner.jpg",
+        cover_image="https://img.test/cover.jpg",
+        format="TV",
+        media_type="ANIME",
+        status="RELEASING",
+        source="MANGA",
+        season="SPRING",
+        season_year=2026,
+        episodes=12,
+        genres=["Drama"],
+        studios=["Studio Test"],
+        country="JP",
+        average_score=88,
+        score_format="POINT_100",
+        trailer=TrailerInfo(id="abc123", site="youtube"),
+    )
+
+    database.sync_media_details("anilist", 42, details)
+    database.set_media_asset_paths(
+        "anilist",
+        42,
+        cover_image_local="/assets/anilist/42/cover.jpg",
+        banner_image_local="/assets/anilist/42/banner.jpg",
+    )
+    persisted = database.get_persisted_media_details("anilist", media_id)
+
+    assert persisted is not None
+    assert persisted.description == "Persistent description"
+    assert persisted.cover_image == "/assets/anilist/42/cover.jpg"
+    assert persisted.banner_image == "/assets/anilist/42/banner.jpg"
+    assert persisted.studios == ["Studio Test"]
+    assert persisted.trailer is not None and persisted.trailer.id == "abc123"
+    assert persisted.canonical_id == media_id
+
     # Proveedores independientes: el título compartido NO se fusiona entre proveedores.
-    assert database.canonical_media_id("mal", 3) != database.canonical_media_id("anilist", 1)
 
 
 def test_cross_provider_import_rejects_conflicting_metadata(monkeypatch):
@@ -771,7 +836,8 @@ def test_torrent_source_crud(tmp_path):
 
 
 def test_torrent_source_kind(tmp_path):
-    db = Database(tmp_path / "t.db"); db.initialize()
+    db = Database(tmp_path / "t.db")
+    db.initialize()
     sid = db.add_torrent_source("Buscar", "https://x/?q=%title%", True, kind="search")
     row = next(s for s in db.list_torrent_sources() if s["id"] == sid)
     assert row["kind"] == "search"
@@ -780,7 +846,8 @@ def test_torrent_source_kind(tmp_path):
 
 
 def test_torrent_filter_taiga_crud(tmp_path):
-    db = Database(tmp_path / "t.db"); db.initialize()
+    db = Database(tmp_path / "t.db")
+    db.initialize()
     fid = db.add_torrent_filter(
         name="Solo 1080 de SubsPlease", action="select", match="all", scope="all",
         enabled=True,
@@ -809,7 +876,8 @@ def test_torrent_seen_flags(tmp_path):
 
 
 def test_get_local_series_matched_files_use_canonical_title(tmp_path):
-    db = Database(tmp_path / "t.db"); db.initialize()
+    db = Database(tmp_path / "t.db")
+    db.initialize()
     db.sync_provider_library("anilist", "AniList", [
         MediaItem(id=1, title="Sousou no Frieren", status="CURRENT", progress=12)
     ])
@@ -827,7 +895,8 @@ def test_get_local_series_matched_files_use_canonical_title(tmp_path):
 
 
 def test_get_local_series_groups_scanned_files(tmp_path):
-    db = Database(tmp_path / "t.db"); db.initialize()
+    db = Database(tmp_path / "t.db")
+    db.initialize()
     # media canónica para matchear
     db.replace_local_files([
         {"path": "/a/Frieren - 01.mkv", "media_id": None, "episode": 1, "parsed_title": "Frieren"},
@@ -841,3 +910,52 @@ def test_get_local_series_groups_scanned_files(tmp_path):
     assert all(s["matched"] is False for s in series)  # sin media_id
 
 
+
+
+# --- Asociación por referencia externa confiable (idMal de AniList) ---
+
+def test_anilist_id_mal_prelinks_mal_identity(monkeypatch):
+    # AniList publica idMal: un sync posterior de MAL debe reutilizar la misma obra
+    # canónica en vez de crear un duplicado.
+    database = memory_database(monkeypatch)
+    anilist_item = MediaItem(
+        id=101, title="Frieren", status="CURRENT", progress=3, episodes=28, id_mal=52991,
+    )
+    mapping = database.sync_provider_library("anilist", "AniList", [anilist_item])
+    canonical = mapping["101"]
+
+    assert database.canonical_media_id("mal", 52991) == canonical
+
+    mal_item = MediaItem(id=52991, title="Sousou no Frieren", status="CURRENT", progress=5, episodes=28)
+    mal_mapping = database.sync_provider_library("mal", "MyAnimeList", [mal_item])
+    assert mal_mapping["52991"] == canonical
+    with database.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM media").fetchone()[0] == 1
+
+
+def test_id_mal_does_not_steal_existing_mal_identity(monkeypatch):
+    # Si MAL sincronizó primero, su identidad ya apunta a su propia fila: el idMal de
+    # AniList no debe re-apuntarla (quedan dos filas, como antes de esta mejora).
+    database = memory_database(monkeypatch)
+    mal_item = MediaItem(id=52991, title="Sousou no Frieren", status="CURRENT", progress=5, episodes=28)
+    mal_mapping = database.sync_provider_library("mal", "MyAnimeList", [mal_item])
+
+    anilist_item = MediaItem(
+        id=101, title="Frieren", status="CURRENT", progress=3, episodes=28, id_mal=52991,
+    )
+    anilist_mapping = database.sync_provider_library("anilist", "AniList", [anilist_item])
+
+    assert database.canonical_media_id("mal", 52991) == mal_mapping["52991"]
+    assert anilist_mapping["101"] != mal_mapping["52991"]
+
+
+def test_id_mal_ignored_for_manga(monkeypatch):
+    # Los ids de anime y manga de MAL comparten espacio numérico; hasta que la identidad
+    # incluya media_type, el pre-enlace se limita a anime.
+    database = memory_database(monkeypatch)
+    manga = MediaItem(
+        id=30002, title="Berserk", status="CURRENT", progress=10,
+        chapters=380, media_type="MANGA", id_mal=2,
+    )
+    database.sync_provider_library("anilist", "AniList", [manga], media_type="MANGA")
+    assert database.canonical_media_id("mal", 2) is None

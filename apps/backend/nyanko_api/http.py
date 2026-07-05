@@ -75,6 +75,11 @@ class RateLimitedClient:
         self._base_delay = base_delay
         self._max_delay = max_delay
         self._timeout = timeout
+        # Cliente compartido y perezoso: crear un AsyncClient por request construía
+        # un contexto SSL (~100-200 ms de CPU) y un handshake TLS nuevos cada vez.
+        # Se re-crea si cambia el event loop (los tests usan un loop por test).
+        self._client: httpx.AsyncClient | None = None
+        self._client_loop: asyncio.AbstractEventLoop | None = None
 
     @retry_with_backoff(max_retries=3, base_delay=1.0, max_delay=30.0)
     async def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
@@ -83,12 +88,20 @@ class RateLimitedClient:
             if self._semaphore is not None
             else contextlib.nullcontext()
         ):
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.request(method, url, **kwargs)
-                response.raise_for_status()
-                if self._interval:
-                    await asyncio.sleep(self._interval)
-                return response
+            loop = asyncio.get_running_loop()
+            # getattr: los tests sustituyen AsyncClient por fakes sin is_closed.
+            if (
+                self._client is None
+                or self._client_loop is not loop
+                or getattr(self._client, "is_closed", False)
+            ):
+                self._client = httpx.AsyncClient(timeout=self._timeout)
+                self._client_loop = loop
+            response = await self._client.request(method, url, **kwargs)
+            response.raise_for_status()
+            if self._interval:
+                await asyncio.sleep(self._interval)
+            return response
 
     async def post(self, url: str, **kwargs: Any) -> httpx.Response:
         return await self.request("POST", url, **kwargs)

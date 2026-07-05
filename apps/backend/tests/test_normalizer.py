@@ -111,3 +111,15 @@ def test_normalize_returns_low_confidence_for_unknown_title():
     assert result.anime_title == "Crunchyroll"
     assert result.episode is None
     assert result.confidence < 0.65
+
+
+def test_airing_season_from_date():
+    from nyanko_api.normalizer import airing_season_from_date
+
+    assert airing_season_from_date("2024-01-07") == "WINTER"
+    assert airing_season_from_date("2024-04-01") == "SPRING"
+    assert airing_season_from_date("2024-08-15") == "SUMMER"
+    assert airing_season_from_date("2024-10-02") == "FALL"
+    assert airing_season_from_date("2024") is None
+    assert airing_season_from_date("") is None
+    assert airing_season_from_date(None) is None

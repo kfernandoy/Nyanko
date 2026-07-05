@@ -3,12 +3,12 @@ import sqlite3
 import time
 from collections import Counter
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
 from .normalizer import normalize_title
-from .models import MediaStatistics, StatisticGroup, StatisticsResponse
+from .models import MediaDetails, MediaStatistics, StatisticGroup, StatisticsResponse
 
 
 SCHEMA = """
@@ -172,6 +172,48 @@ CREATE TABLE IF NOT EXISTS remote_library_entries (
     last_synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(account_id, media_id)
 );
+CREATE TABLE IF NOT EXISTS media_details_cache (
+    media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    provider_id TEXT NOT NULL REFERENCES providers(id),
+    external_id TEXT NOT NULL,
+    title TEXT,
+    title_romaji TEXT,
+    title_english TEXT,
+    title_native TEXT,
+    synonyms_json TEXT NOT NULL DEFAULT '[]',
+    description TEXT,
+    site_url TEXT,
+    banner_image TEXT,
+    cover_image TEXT,
+    banner_image_local TEXT,
+    cover_image_local TEXT,
+    color TEXT,
+    format TEXT,
+    media_type TEXT NOT NULL DEFAULT 'ANIME',
+    status TEXT,
+    source TEXT,
+    season TEXT,
+    season_year INTEGER,
+    episodes INTEGER,
+    chapters INTEGER,
+    volumes INTEGER,
+    duration INTEGER,
+    genres_json TEXT NOT NULL DEFAULT '[]',
+    studios_json TEXT NOT NULL DEFAULT '[]',
+    country TEXT,
+    average_score INTEGER,
+    next_episode INTEGER,
+    next_airing_at INTEGER,
+    score_format TEXT,
+    trailer_json TEXT,
+    characters_json TEXT NOT NULL DEFAULT '[]',
+    staff_json TEXT NOT NULL DEFAULT '[]',
+    relations_json TEXT NOT NULL DEFAULT '[]',
+    recommendations_json TEXT NOT NULL DEFAULT '[]',
+    fetched_at INTEGER NOT NULL DEFAULT 0,
+    payload_hash TEXT,
+    PRIMARY KEY (media_id, provider_id)
+);
 CREATE TABLE IF NOT EXISTS wont_watch (
     provider_id TEXT NOT NULL,
     external_id TEXT NOT NULL,
@@ -210,10 +252,27 @@ CREATE TABLE IF NOT EXISTS torrent_seen (
   downloaded INTEGER NOT NULL DEFAULT 0,
   seen_at INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS pending_mutations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider_id TEXT NOT NULL,
+  account_alias TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  media_id INTEGER,
+  payload TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at INTEGER NOT NULL DEFAULT 0,
+  event_id INTEGER,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 CANONICAL_SCHEMA_VERSION = 7
-CACHE_RESOURCE_LIMITS = {"media:": 100, "season:": 24}
+# media: alto a propósito — los detalles guardados en local son lo que hace que
+# reabrir/editar una card sea instantáneo (estilo Taiga); son JSON pequeños.
+CACHE_RESOURCE_LIMITS = {"media:": 500, "season:": 24, "discover:": 80}
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,6 +326,8 @@ class Database:
             self._add_column(connection, "playback_events", "error_message", "TEXT")
             self._add_column(connection, "match_corrections", "provider_id", "TEXT")
             self._add_column(connection, "match_corrections", "canonical_media_id", "INTEGER")
+            self._add_column(connection, "media_details_cache", "banner_image_local", "TEXT")
+            self._add_column(connection, "media_details_cache", "cover_image_local", "TEXT")
             self._add_column(connection, "media", "release_year", "INTEGER")
             self._add_column(connection, "media", "chapter_count", "INTEGER")
             self._add_column(connection, "media", "volume_count", "INTEGER")
@@ -313,6 +374,15 @@ class Database:
                 for row in rows
             ),
         )
+
+    @staticmethod
+    def _loads_json_or_default(value: str | None, default):
+        if not value:
+            return default
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return default
 
     def _detect_conflict(
         self,
@@ -480,9 +550,14 @@ class Database:
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self.path)
+        # timeout=30s: con el backfill escribiendo en un hilo, una request interactiva
+        # espera el lock en vez de fallar con "database is locked".
+        connection = sqlite3.connect(self.path, timeout=30.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
+        # WAL: los lectores no se bloquean con el escritor del backfill (:memory: lo ignora).
+        if self.path != Path(":memory:"):
+            connection.execute("PRAGMA journal_mode = WAL")
         try:
             yield connection
             connection.commit()
@@ -554,6 +629,193 @@ class Database:
                 ],
             )
 
+    def set_local_files_media(
+        self,
+        media_id: int | None,
+        from_media_id: int | None = None,
+        parsed_title: str | None = None,
+    ) -> int:
+        """(Re)asocia un grupo de archivos escaneados a una obra canónica.
+
+        Identifica el grupo por su media_id actual (grupos matcheados) o por
+        parsed_title (grupos sin asociar). ``media_id=None`` quita la asociación.
+        """
+        matched = int(media_id is not None)
+        with self.connect() as connection:
+            if from_media_id is not None:
+                cursor = connection.execute(
+                    "UPDATE local_files SET media_id = ?, matched = ? WHERE media_id = ?",
+                    (media_id, matched, from_media_id),
+                )
+            else:
+                cursor = connection.execute(
+                    "UPDATE local_files SET media_id = ?, matched = ? WHERE parsed_title = ?",
+                    (media_id, matched, parsed_title),
+                )
+            return cursor.rowcount
+
+    def get_local_parsed_titles(self, media_id: int) -> list[str]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT DISTINCT parsed_title FROM local_files "
+                "WHERE media_id = ? AND parsed_title IS NOT NULL",
+                (media_id,),
+            ).fetchall()
+            return [row["parsed_title"] for row in rows]
+
+    def primary_title(self, media_id: int) -> str | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT title FROM media_titles WHERE media_id = ? "
+                "ORDER BY is_primary DESC, "
+                "CASE language WHEN 'USER_PREFERRED' THEN 0 WHEN 'ROMAJI' THEN 1 ELSE 2 END "
+                "LIMIT 1",
+                (media_id,),
+            ).fetchone()
+            return row["title"] if row else None
+
+    def media_total_units(self, media_id: int) -> int | None:
+        """Episodios (anime) o capítulos (manga) totales del catálogo, si se conocen."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT media_type, episode_count, chapter_count FROM media WHERE id = ?",
+                (media_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return row["chapter_count"] if row["media_type"] == "MANGA" else row["episode_count"]
+
+    # --- Cola de mutaciones: efecto local inmediato, envío al proveedor en segundo plano ---
+
+    def enqueue_mutation(
+        self,
+        provider_id: str,
+        account_alias: str,
+        kind: str,
+        external_id: str | int,
+        payload: dict,
+        media_id: int | None = None,
+        event_id: int | None = None,
+    ) -> int:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO pending_mutations"
+                "(provider_id, account_alias, kind, external_id, media_id, payload, event_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    provider_id,
+                    account_alias,
+                    kind,
+                    str(external_id),
+                    media_id,
+                    json.dumps(payload),
+                    event_id,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def due_mutations(self, now: int, limit: int = 10) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM pending_mutations "
+                "WHERE status = 'pending' AND next_attempt_at <= ? "
+                "ORDER BY id LIMIT ?",
+                (now, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def mark_mutation_done(self, mutation_id: int) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "DELETE FROM pending_mutations WHERE id = ?", (mutation_id,)
+            )
+
+    def mark_mutation_retry(
+        self, mutation_id: int, attempts: int, next_attempt_at: int, error: str
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE pending_mutations SET attempts = ?, next_attempt_at = ?, error = ? "
+                "WHERE id = ?",
+                (attempts, next_attempt_at, error[:500], mutation_id),
+            )
+
+    def mark_mutation_failed(self, mutation_id: int, error: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE pending_mutations SET status = 'failed', error = ? WHERE id = ?",
+                (error[:500], mutation_id),
+            )
+
+    def requeue_mutation_by_event(self, event_id: int) -> bool:
+        """Reactiva la mutación fallida asociada a un evento del historial."""
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE pending_mutations SET status = 'pending', attempts = 0, "
+                "next_attempt_at = 0, error = NULL "
+                "WHERE event_id = ? AND status = 'failed'",
+                (event_id,),
+            )
+            return cursor.rowcount > 0
+
+    def pending_mutation_overrides(
+        self, provider_id: str, account_alias: str
+    ) -> dict[str, dict]:
+        """Cambios aún en cola por external_id, para superponerlos a la lista en vivo
+        hasta que el proveedor los confirme (misma idea que recent_remote_overrides)."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT external_id, payload FROM pending_mutations "
+                "WHERE provider_id = ? AND account_alias = ? AND status = 'pending' "
+                "ORDER BY id",
+                (provider_id, account_alias),
+            ).fetchall()
+        overrides: dict[str, dict] = {}
+        for row in rows:
+            payload = json.loads(row["payload"])
+            changes = {
+                key: payload[key]
+                for key in ("status", "progress", "score")
+                if payload.get(key) is not None
+            }
+            if changes:
+                overrides.setdefault(row["external_id"], {}).update(changes)
+        return overrides
+
+    def has_remote_library_entry(
+        self, provider_id: str, account_alias: str, media_id: int
+    ) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM remote_library_entries rle "
+                "JOIN accounts a ON a.id = rle.account_id "
+                "WHERE a.provider_id = ? AND a.alias = ? AND rle.media_id = ? LIMIT 1",
+                (provider_id, account_alias, media_id),
+            ).fetchone()
+            return row is not None
+
+    def local_series_folder(self, media_id: int) -> str | None:
+        """Carpeta donde ya viven los episodios locales de una obra (el archivo más
+        reciente manda), para descargar los torrents nuevos junto a ellos."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT path FROM local_files WHERE media_id = ? ORDER BY rowid DESC LIMIT 1",
+                (media_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return str(Path(row["path"]).parent)
+
+    def get_local_match_overrides(self) -> dict[str, int]:
+        """Correcciones manuales como {patrón normalizado: media_id canónico},
+        para que el escaneo las respete antes del matching difuso."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT raw_pattern, canonical_media_id FROM match_corrections "
+                "WHERE canonical_media_id IS NOT NULL"
+            ).fetchall()
+            return {row["raw_pattern"]: int(row["canonical_media_id"]) for row in rows}
+
     def get_local_series(self) -> list[dict]:
         """Series escaneadas agrupadas. Matcheadas por media_id (con título canónico);
         no matcheadas agrupadas por parsed_title (media_id None)."""
@@ -561,11 +823,20 @@ class Database:
             matched = connection.execute(
                 """
                 SELECT lf.media_id AS media_id,
-                       COALESCE(mt.title, lf.parsed_title) AS title,
+                       COALESCE(
+                           (SELECT mt.title FROM media_titles mt
+                            WHERE mt.media_id = lf.media_id
+                            ORDER BY mt.is_primary DESC,
+                                     CASE mt.language
+                                         WHEN 'USER_PREFERRED' THEN 0
+                                         WHEN 'ROMAJI' THEN 1
+                                         ELSE 2
+                                     END
+                            LIMIT 1),
+                           lf.parsed_title
+                       ) AS title,
                        COUNT(*) AS episode_count
                 FROM local_files lf
-                LEFT JOIN media_titles mt
-                  ON mt.media_id = lf.media_id AND mt.is_primary = 1
                 WHERE lf.media_id IS NOT NULL
                 GROUP BY lf.media_id
                 ORDER BY title COLLATE NOCASE
@@ -599,11 +870,14 @@ class Database:
             return {"total": total, "matched": matched, "unmatched": total - matched}
 
     def get_local_episodes_by_media(self) -> dict[int, dict[int, str]]:
-        """Matched local files as {canonical_media_id: {episode: path}} (episode not null)."""
+        """Matched local files as {canonical_media_id: {episode: path}}.
+
+        Los archivos sin número de episodio (películas, especiales sueltos) cuentan
+        como episodio 1: si no, la card no ofrecía botón de reproducción."""
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT media_id, episode, path FROM local_files "
-                "WHERE matched = 1 AND media_id IS NOT NULL AND episode IS NOT NULL "
+                "SELECT media_id, COALESCE(episode, 1) AS episode, path FROM local_files "
+                "WHERE matched = 1 AND media_id IS NOT NULL "
                 "ORDER BY path"
             ).fetchall()
         by_media: dict[int, dict[int, str]] = {}
@@ -616,6 +890,17 @@ class Database:
     def get_cache(self, key: str):
         record = self.get_cache_record(key)
         return record.payload if record is not None and not record.stale else None
+
+    def get_cache_meta(self, key: str) -> tuple[int, bool] | None:
+        """(updated_at, stale) sin deserializar el payload: fingerprint barato para
+        memoizar en proceso listas grandes (la de biblioteca ronda los 3 MB de JSON)."""
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT updated_at, expires_at FROM cache WHERE key = ?", (key,)
+            ).fetchone()
+            if not row:
+                return None
+            return row["updated_at"], row["expires_at"] <= int(time.time())
 
     def get_cache_record(self, key: str) -> CacheRecord | None:
         now = int(time.time())
@@ -962,6 +1247,26 @@ class Database:
                         "VALUES (?, ?, ?, ?)",
                         (media_id, provider_id, external_id, payload.get("site_url")),
                     )
+                # Referencia externa confiable: AniList publica el id de MAL de la misma
+                # obra. Pre-registrarla hace que un sync posterior de MAL reutilice esta
+                # fila canónica en vez de duplicarla. OR IGNORE: si MAL sincronizó primero,
+                # su identidad ya apunta a su propia fila y no se roba.
+                # ponytail: solo anime — los ids de anime y manga de MAL son espacios
+                # numéricos distintos y la clave (provider, external_id) no distingue tipo;
+                # extender a manga cuando la identidad incluya media_type.
+                if provider_id == "anilist" and media_type == "ANIME" and payload.get("id_mal"):
+                    # La identidad referencia providers(id); "mal" puede no existir aún.
+                    self.ensure_provider("mal", "MyAnimeList", connection=connection)
+                    connection.execute(
+                        "INSERT OR IGNORE INTO external_identities"
+                        "(media_id, provider_id, external_id, url) "
+                        "VALUES (?, 'mal', ?, ?)",
+                        (
+                            media_id,
+                            str(payload["id_mal"]),
+                            f"https://myanimelist.net/anime/{payload['id_mal']}",
+                        ),
+                    )
                 connection.execute(
                     "UPDATE media SET episode_count = COALESCE(?, episode_count), "
                     "chapter_count = COALESCE(?, chapter_count), "
@@ -983,10 +1288,16 @@ class Database:
                     (media_id,),
                 )
                 for language, title, primary in self._payload_titles(payload):
+                    # Upsert: con INSERT OR IGNORE la fila existente nunca recuperaba
+                    # is_primary=1 tras el UPDATE previo, y la base quedaba sin ningún
+                    # título primario después del segundo sync.
                     connection.execute(
-                        "INSERT OR IGNORE INTO media_titles"
+                        "INSERT INTO media_titles"
                         "(media_id, language, title, normalized_title, is_primary) "
-                        "VALUES (?, ?, ?, ?, ?)",
+                        "VALUES (?, ?, ?, ?, ?) "
+                        "ON CONFLICT(media_id, language, title) DO UPDATE SET "
+                        "is_primary = excluded.is_primary, "
+                        "normalized_title = excluded.normalized_title",
                         (
                             media_id,
                             language,
@@ -1056,9 +1367,13 @@ class Database:
         external_id: str | int,
         details: object,
         media_type: str = "ANIME",
+        *,
+        _connection: sqlite3.Connection | None = None,
     ) -> int | None:
         payload = details.model_dump(mode="json")
-        with self.connect() as connection:
+        # _connection: reutiliza una transacción abierta (persist_details_batch) en vez
+        # de abrir/cerrar una por item — clave para que el backfill no sature el lock.
+        with (nullcontext(_connection) if _connection is not None else self.connect()) as connection:
             identity = connection.execute(
                 "SELECT media_id FROM external_identities WHERE provider_id = ? AND external_id = ?",
                 (provider_id, str(external_id)),
@@ -1149,7 +1464,209 @@ class Database:
                         "UPDATE episodes SET season_id = COALESCE(season_id, ?) WHERE media_id = ?",
                         (season_id, media_id),
                     )
+            serialized_payload = json.dumps(
+                payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
+            connection.execute(
+                "INSERT INTO media_details_cache("
+                "media_id, provider_id, external_id, title, title_romaji, title_english, title_native, "
+                "synonyms_json, description, site_url, banner_image, cover_image, banner_image_local, cover_image_local, color, format, "
+                "media_type, status, source, season, season_year, episodes, chapters, volumes, "
+                "duration, genres_json, studios_json, country, average_score, next_episode, "
+                "next_airing_at, score_format, trailer_json, characters_json, staff_json, "
+                "relations_json, recommendations_json, fetched_at, payload_hash"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(media_id, provider_id) DO UPDATE SET "
+                "external_id = excluded.external_id, title = excluded.title, "
+                "title_romaji = excluded.title_romaji, title_english = excluded.title_english, "
+                "title_native = excluded.title_native, synonyms_json = excluded.synonyms_json, "
+                "description = excluded.description, site_url = excluded.site_url, "
+                "banner_image = excluded.banner_image, cover_image = excluded.cover_image, "
+                "banner_image_local = COALESCE(media_details_cache.banner_image_local, excluded.banner_image_local), "
+                "cover_image_local = COALESCE(media_details_cache.cover_image_local, excluded.cover_image_local), "
+                "color = excluded.color, format = excluded.format, media_type = excluded.media_type, "
+                "status = excluded.status, source = excluded.source, season = excluded.season, "
+                "season_year = excluded.season_year, episodes = excluded.episodes, "
+                "chapters = excluded.chapters, volumes = excluded.volumes, duration = excluded.duration, "
+                "genres_json = excluded.genres_json, studios_json = excluded.studios_json, "
+                "country = excluded.country, average_score = excluded.average_score, "
+                "next_episode = excluded.next_episode, next_airing_at = excluded.next_airing_at, "
+                "score_format = excluded.score_format, trailer_json = excluded.trailer_json, "
+                "characters_json = excluded.characters_json, staff_json = excluded.staff_json, "
+                "relations_json = excluded.relations_json, recommendations_json = excluded.recommendations_json, "
+                "fetched_at = excluded.fetched_at, payload_hash = excluded.payload_hash",
+                (
+                    media_id,
+                    provider_id,
+                    str(external_id),
+                    payload.get("title"),
+                    payload.get("title_romaji"),
+                    payload.get("title_english"),
+                    payload.get("title_native"),
+                    json.dumps(payload.get("synonyms") or [], ensure_ascii=False, separators=(",", ":")),
+                    payload.get("description"),
+                    payload.get("site_url"),
+                    payload.get("banner_image"),
+                    payload.get("cover_image"),
+                    None,
+                    None,
+                    payload.get("color"),
+                    payload.get("format"),
+                    payload.get("media_type") or media_type,
+                    payload.get("status"),
+                    payload.get("source"),
+                    payload.get("season"),
+                    payload.get("season_year"),
+                    payload.get("episodes"),
+                    payload.get("chapters"),
+                    payload.get("volumes"),
+                    payload.get("duration"),
+                    json.dumps(payload.get("genres") or [], ensure_ascii=False, separators=(",", ":")),
+                    json.dumps(payload.get("studios") or [], ensure_ascii=False, separators=(",", ":")),
+                    payload.get("country"),
+                    payload.get("average_score"),
+                    payload.get("next_episode"),
+                    payload.get("next_airing_at"),
+                    payload.get("score_format"),
+                    json.dumps(payload.get("trailer"), ensure_ascii=False, separators=(",", ":"))
+                    if payload.get("trailer") is not None
+                    else None,
+                    json.dumps(payload.get("characters") or [], ensure_ascii=False, separators=(",", ":")),
+                    json.dumps(payload.get("staff") or [], ensure_ascii=False, separators=(",", ":")),
+                    json.dumps(payload.get("relations") or [], ensure_ascii=False, separators=(",", ":")),
+                    json.dumps(payload.get("recommendations") or [], ensure_ascii=False, separators=(",", ":")),
+                    int(time.time()),
+                    str(hash(serialized_payload)),
+                ),
+            )
             return media_id
+
+    def persist_details_batch(
+        self, provider_id: str, details_list: list, media_type: str = "ANIME"
+    ) -> None:
+        """Persiste el texto de varios detalles en UNA sola transacción — un solo lock
+        de escritura y un commit para todo el lote, en vez de 3 conexiones por item."""
+        if not details_list:
+            return
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO settings(key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (f"score_format:{provider_id}", details_list[0].score_format),
+            )
+            for details in details_list:
+                self.sync_media_details(
+                    provider_id, details.id, details, media_type, _connection=connection
+                )
+
+    def get_persisted_media_details(
+        self, provider_id: str, media_id: int
+    ) -> MediaDetails | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM media_details_cache WHERE provider_id = ? AND media_id = ?",
+                (provider_id, media_id),
+            ).fetchone()
+            if row is None:
+                return None
+            payload = {
+                "id": int(row["external_id"]),
+                "title": row["title"],
+                "title_romaji": row["title_romaji"],
+                "title_english": row["title_english"],
+                "title_native": row["title_native"],
+                "synonyms": self._loads_json_or_default(row["synonyms_json"], []),
+                "description": row["description"],
+                "site_url": row["site_url"] or "",
+                "banner_image": row["banner_image_local"] or row["banner_image"],
+                "cover_image": row["cover_image_local"] or row["cover_image"],
+                "color": row["color"],
+                "format": row["format"],
+                "media_type": row["media_type"] or "ANIME",
+                "status": row["status"],
+                "source": row["source"],
+                "season": row["season"],
+                "season_year": row["season_year"],
+                "episodes": row["episodes"],
+                "chapters": row["chapters"],
+                "volumes": row["volumes"],
+                "duration": row["duration"],
+                "genres": self._loads_json_or_default(row["genres_json"], []),
+                "studios": self._loads_json_or_default(row["studios_json"], []),
+                "country": row["country"],
+                "average_score": row["average_score"],
+                "next_episode": row["next_episode"],
+                "next_airing_at": row["next_airing_at"],
+                "score_format": row["score_format"] or "POINT_10",
+                "canonical_id": media_id,
+                "characters": self._loads_json_or_default(row["characters_json"], []),
+                "staff": self._loads_json_or_default(row["staff_json"], []),
+                "relations": self._loads_json_or_default(row["relations_json"], []),
+                "recommendations": self._loads_json_or_default(row["recommendations_json"], []),
+                "trailer": self._loads_json_or_default(row["trailer_json"], None),
+            }
+            try:
+                return MediaDetails.model_validate(payload)
+            except Exception:
+                return None
+
+    def set_media_asset_paths(
+        self,
+        provider_id: str,
+        external_id: str | int,
+        *,
+        cover_image_local: str | None = None,
+        banner_image_local: str | None = None,
+    ) -> None:
+        media_id = self.canonical_media_id(provider_id, external_id)
+        if media_id is None:
+            return
+        updates: list[str] = []
+        parameters: list[object] = []
+        if cover_image_local is not None:
+            updates.append("cover_image_local = ?")
+            parameters.append(cover_image_local)
+        if banner_image_local is not None:
+            updates.append("banner_image_local = ?")
+            parameters.append(banner_image_local)
+        if not updates:
+            return
+        parameters.extend([media_id, provider_id])
+        with self.connect() as connection:
+            connection.execute(
+                f"UPDATE media_details_cache SET {', '.join(updates)} "
+                "WHERE media_id = ? AND provider_id = ?",
+                parameters,
+            )
+
+    def persisted_details_ids(
+        self, provider_id: str, external_ids: list[str]
+    ) -> set[str]:
+        if not external_ids:
+            return set()
+        placeholders = ",".join("?" for _ in external_ids)
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT external_id FROM media_details_cache "
+                f"WHERE provider_id = ? AND external_id IN ({placeholders})",
+                (provider_id, *external_ids),
+            ).fetchall()
+        return {row["external_id"] for row in rows}
+
+    def persisted_cover_map(
+        self, provider_id: str, external_ids: list[str]
+    ) -> dict[str, str]:
+        if not external_ids:
+            return {}
+        placeholders = ",".join("?" for _ in external_ids)
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT external_id, cover_image_local FROM media_details_cache "
+                f"WHERE provider_id = ? AND external_id IN ({placeholders}) "
+                "AND cover_image_local IS NOT NULL",
+                (provider_id, *external_ids),
+            ).fetchall()
+        return {row["external_id"]: row["cover_image_local"] for row in rows}
 
     def local_statistics(self, provider: str, account: str) -> StatisticsResponse:
         """Derive statistics from locally synced remote_library_entries (for providers without a stats API)."""
@@ -1206,10 +1723,24 @@ class Database:
         media_type: str = "ANIME",
         preferred_provider: str = "anilist",
         preferred_account: str = "default",
+        *,
+        only_provider: str | None = None,
+        only_account: str | None = None,
     ) -> list[dict]:
+        # only_provider/only_account acota a las entradas de ESE proveedor (la vista
+        # por proveedor no debe mezclar las bibliotecas de las demás cuentas). Sin
+        # ellos une todas las cuentas (vista "combined").
+        scope_sql = ""
+        scope_params: tuple = ()
+        if only_provider is not None:
+            scope_sql = " AND a.provider_id = ?"
+            scope_params = (only_provider,)
+            if only_account is not None:
+                scope_sql += " AND a.alias = ?"
+                scope_params = (only_provider, only_account)
         with self.connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT
                     m.id AS media_id,
                     rle.original_payload,
@@ -1226,7 +1757,7 @@ class Database:
                 JOIN remote_library_entries rle ON rle.media_id = m.id
                 JOIN accounts a ON a.id = rle.account_id
                 LEFT JOIN library_entries le ON le.media_id = m.id
-                WHERE m.media_type = ?
+                WHERE m.media_type = ?{scope_sql}
                 ORDER BY
                     m.id,
                     CASE
@@ -1237,7 +1768,7 @@ class Database:
                     END,
                     rle.last_synced_at DESC
                 """,
-                (media_type, preferred_provider, preferred_account, preferred_provider),
+                (media_type, *scope_params, preferred_provider, preferred_account, preferred_provider),
             ).fetchall()
             if not rows:
                 return []
@@ -1257,6 +1788,12 @@ class Database:
                 f"SELECT media_id, tag FROM media_tags WHERE media_id IN ({placeholders})",
                 media_ids,
             ).fetchall()
+            detail_rows = connection.execute(
+                f"SELECT media_id, provider_id, external_id, cover_image_local "
+                f"FROM media_details_cache WHERE media_id IN ({placeholders}) "
+                "AND cover_image_local IS NOT NULL",
+                media_ids,
+            ).fetchall()
 
         titles_by_media: dict[int, dict[str, list[str]]] = {}
         for row in title_rows:
@@ -1269,6 +1806,19 @@ class Database:
         tags_by_media: dict[int, list[str]] = {}
         for row in tag_rows:
             tags_by_media.setdefault(int(row["media_id"]), []).append(row["tag"])
+        local_covers_by_media: dict[tuple[int, str], str] = {}
+        for row in detail_rows:
+            local_covers_by_media[(int(row["media_id"]), row["provider_id"])] = row["cover_image_local"]
+
+        def payload_date(value: object) -> str | None:
+            # MediaItem espera fechas como texto YYYY-MM-DD; ediciones locales
+            # antiguas pudieron guardar el dict FuzzyDate ({year, month, day}).
+            if isinstance(value, dict):
+                year = value.get("year")
+                if not year:
+                    return None
+                return f"{year:04d}-{(value.get('month') or 1):02d}-{(value.get('day') or 1):02d}"
+            return value if isinstance(value, str) and value else None
 
         combined: list[dict] = []
         seen_media_ids: set[int] = set()
@@ -1296,9 +1846,12 @@ class Database:
                     "score": row["local_score"]
                     if row["local_score"] is not None
                     else payload.get("score"),
-                    "started_at": row["local_started_at"] or payload.get("started_at"),
-                    "completed_at": row["local_completed_at"]
-                    or payload.get("completed_at"),
+                    "started_at": payload_date(
+                        row["local_started_at"] or payload.get("started_at")
+                    ),
+                    "completed_at": payload_date(
+                        row["local_completed_at"] or payload.get("completed_at")
+                    ),
                     "canonical_id": media_id,
                     "provider": row["provider_id"],
                     "account_alias": row["account_alias"],
@@ -1310,6 +1863,9 @@ class Database:
                     or next(iter(titles.get("NATIVE", [])), None),
                     "genres": genres_by_media.get(media_id, payload.get("genres") or []),
                     "tags": tags_by_media.get(media_id, []),
+                    "cover_image": local_covers_by_media.get(
+                        (media_id, row["provider_id"]), payload.get("cover_image")
+                    ),
                     "synonyms": [
                         *(payload.get("synonyms") or []),
                         *[
@@ -1417,8 +1973,25 @@ class Database:
         status: str | None = None,
         progress: int | None = None,
         score: float | None = None,
+        extra_payload: dict | None = None,
     ) -> None:
         with self.connect() as connection:
+            # Fechas/notas viven en original_payload: fusionarlas mantiene la copia
+            # local consistente sin esperar la próxima sincronización del proveedor.
+            if extra_payload:
+                row = connection.execute(
+                    "SELECT original_payload FROM remote_library_entries "
+                    "WHERE account_id = ? AND media_id = ?",
+                    (account_id, media_id),
+                ).fetchone()
+                if row is not None:
+                    payload = json.loads(row["original_payload"]) if row["original_payload"] else {}
+                    payload.update(extra_payload)
+                    connection.execute(
+                        "UPDATE remote_library_entries SET original_payload = ? "
+                        "WHERE account_id = ? AND media_id = ?",
+                        (json.dumps(payload), account_id, media_id),
+                    )
             updates: list[str] = []
             parameters: list[object] = []
             if status is not None:
@@ -1491,6 +2064,7 @@ class Database:
         for row in genre_rows:
             genres_by_external.setdefault(row["external_id"], []).append(row["genre"])
         tags_by_external = self.enrich_tags(provider_id, items)
+        local_covers = self.persisted_cover_map(provider_id, external_ids)
         enriched: list[object] = []
         for item in items:
             data = grouped.get(str(item.id))
@@ -1531,6 +2105,7 @@ class Database:
                                 if tag not in item.tags
                             ),
                         ],
+                        "cover_image": local_covers.get(str(item.id), item.cover_image),
                         "canonical_id": data["canonical_id"],
                         "provider": provider_id,
                     }

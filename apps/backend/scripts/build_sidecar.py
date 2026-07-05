@@ -44,20 +44,15 @@ def main() -> int:
         str(backend_root / "build"),
         "--specpath",
         str(backend_root),
+        # sidecar.py carga la app por string ("nyanko_api.main:app"), así que PyInstaller
+        # no ve los imports de main.py. Recogemos todo el paquete de una vez (incluye main,
+        # proveedores, detectores/process, torrents, matcher, normalizer…) en vez de listar
+        # módulos a mano, que se desactualizaba (faltaba psutil/ProcessDetector, MAL, Kitsu…).
+        "--collect-submodules",
+        "nyanko_api",
+        # psutil (ProcessDetector) se importa de forma diferida dentro de una función.
         "--hidden-import",
-        "nyanko_api.anilist",
-        "--hidden-import",
-        "nyanko_api.config",
-        "--hidden-import",
-        "nyanko_api.database",
-        "--hidden-import",
-        "nyanko_api.detectors",
-        "--hidden-import",
-        "nyanko_api.instance",
-        "--hidden-import",
-        "nyanko_api.models",
-        "--hidden-import",
-        "nyanko_api.secrets",
+        "psutil",
         "--hidden-import",
         "keyring.backends.Windows",
         "--hidden-import",

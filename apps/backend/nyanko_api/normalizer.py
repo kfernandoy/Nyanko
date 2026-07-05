@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 
 
 # Tags and metadata commonly added by release groups.
@@ -24,6 +25,16 @@ PLAYER_PATTERNS = (
     re.compile(r"\s+[-–—]\s+(VLC media player|mpv|MPC-HC|PotPlayer)\s*$", re.IGNORECASE),
     re.compile(r"\s+[-–—]\s+(Crunchyroll|YouTube|Netflix|Google Chrome|Mozilla Firefox|Microsoft Edge)\s*$", re.IGNORECASE),
 )
+
+def airing_season_from_date(date_str: str | None) -> str | None:
+    """Temporada de emisión (WINTER/SPRING/SUMMER/FALL) a partir de YYYY-MM-DD."""
+    if not date_str or len(date_str) < 7 or not date_str[5:7].isdigit():
+        return None
+    month = int(date_str[5:7])
+    if not 1 <= month <= 12:
+        return None
+    return ("WINTER", "SPRING", "SUMMER", "FALL")[(month - 1) // 3]
+
 
 SEASON_PATTERNS = (
     re.compile(r"\bS(\d{1,2})\b", re.IGNORECASE),
@@ -151,6 +162,23 @@ def clean_filename(raw: str) -> str:
 
 # Alias used by match-correction keys to stay stable across minor title variants.
 normalize_title = clean_filename
+
+
+_FOLD_PATTERN = re.compile(r"[\W_]+", re.UNICODE)
+
+
+def fold_title(value: str) -> str:
+    """Forma de comparación insensible a símbolos: minúsculas y puntuación/underscore
+    colapsados a un espacio. Los nombres de archivo de Windows no admiten `/ \\ : * ?`,
+    así que 'Fate/stay night' y 'Fate stay night' deben compararse iguales."""
+    return _FOLD_PATTERN.sub(" ", value.casefold()).strip()
+
+
+@lru_cache(maxsize=32768)
+def folded_title(value: str) -> str:
+    """fold_title(normalize_title(...)) cacheado: los títulos de la biblioteca son
+    estables y normalizarlos con regex en cada búsqueda costaba ~1.5 s por consulta."""
+    return fold_title(clean_filename(value))
 
 
 def normalize(raw: str) -> NormalizedTitle:

@@ -11,6 +11,9 @@ from nyanko_api.database import Database
 from nyanko_api.main import (
     _build_sync_status,
     _coerce_fuzzy_date,
+    _local_asset_url,
+    _localize_media_details_assets,
+    _missing_detail_assets,
     _get_playback_preferences,
     _playback_ready_for_auto_confirm,
     _refresh_mal_if_needed,
@@ -30,6 +33,8 @@ from nyanko_api.models import (
     PlaybackConfirmRequest,
     PlaybackMatchRequest,
     PlaybackPreferences,
+    RecommendationItem,
+    RelationEdge,
     SearchFilters,
     SearchResult,
 )
@@ -76,6 +81,48 @@ def test_display_episode_clamps_movies_and_overflow():
     assert _display_episode(1500, series) == 1000  # never exceed the catalogue total
     assert _display_episode(None, series) is None
     assert _display_episode(3, None) == 3  # no match: leave as-is
+
+
+def test_local_asset_helpers_prefer_downloaded_files(monkeypatch):
+    settings = Settings()
+    details = MediaDetails(
+        id=42,
+        title="Example",
+        synonyms=[],
+        site_url="https://example.test/42",
+        cover_image="https://remote/cover.jpg",
+        banner_image="https://remote/banner.jpg",
+        genres=[],
+        studios=[],
+        score_format="POINT_10",
+        relations=[
+            RelationEdge(id=7, title="Related", format="TV", relation_type="SEQUEL", cover_image="https://remote/rel.jpg")
+        ],
+        recommendations=[
+            RecommendationItem(id=8, title="Recommended", format="TV", cover_image="https://remote/rec.jpg", rating=1)
+        ],
+    )
+
+    def fake_find(_settings, _provider, _external_id, stem):
+        if stem == "cover":
+            return "cover.jpg"
+        return "banner.png" if int(_external_id) == 42 else None
+
+    monkeypatch.setattr("nyanko_api.main._find_local_asset_filename", fake_find)
+
+    assert _local_asset_url(settings, "anilist", 42, "cover") == "http://127.0.0.1:8765/assets/anilist/42/cover.jpg"
+    localized_details = _localize_media_details_assets(settings, "anilist", details)
+
+    assert localized_details.cover_image == "http://127.0.0.1:8765/assets/anilist/42/cover.jpg"
+    assert localized_details.banner_image == "http://127.0.0.1:8765/assets/anilist/42/banner.png"
+    assert localized_details.relations[0].cover_image == "http://127.0.0.1:8765/assets/anilist/7/cover.jpg"
+    assert localized_details.recommendations[0].cover_image == "http://127.0.0.1:8765/assets/anilist/8/cover.jpg"
+
+    monkeypatch.setattr(
+        "nyanko_api.main._find_local_asset_filename",
+        lambda _settings, _provider, _external_id, stem: "cover.jpg" if stem == "cover" else None,
+    )
+    assert _missing_detail_assets(settings, "anilist", 42, details) is True
 
 
 def test_pending_local_only_lists_unwatched_episodes(database):
@@ -126,7 +173,7 @@ def test_sync_status_returns_cached_timestamps(database):
     database.set_cache("anilist:default:activity", [], 3600)
     database.set_cache("anilist:default:statistics", {"count": 0}, 3600)
     database.set_cache(
-        "anilist:default:season:WINTER:2024", [], 3600
+        "anilist:default:season:v3:WINTER:2024", [], 3600
     )
 
     status = _build_sync_status(database, "anilist", "default", "WINTER", 2024)
@@ -603,6 +650,286 @@ def test_bulk_update_rejects_media_unlinked_to_active_account(monkeypatch, datab
 
     assert response.status_code == 404
     assert "no está vinculado" in response.text
+
+
+def test_bulk_update_applies_locally_and_enqueues(client, database):
+    database.sync_provider_library("anilist", "AniList", [
+        MediaItem(id=10, title="Frieren", status="CURRENT", progress=3, episodes=28),
+    ])
+    canonical = database.canonical_media_id("anilist", 10)
+
+    resp = client.post(f"/api/library/bulk-update?media_id={canonical}", json={"progress": 4})
+    assert resp.status_code == 200
+    assert resp.json()["results"][0]["success"] is True
+
+    # Efecto local inmediato…
+    with database.connect() as connection:
+        progress = connection.execute(
+            "SELECT progress FROM remote_library_entries WHERE media_id = ?", (canonical,)
+        ).fetchone()["progress"]
+    assert progress == 4
+    # …mutación encolada y visible en el overlay…
+    pending = database.due_mutations(int(__import__("time").time()) + 1)
+    assert len(pending) == 1
+    assert pending[0]["kind"] == "edit_entry"
+    assert database.pending_mutation_overrides("anilist", "default") == {"10": {"progress": 4}}
+    # …y con evento en el historial.
+    event = database.get_playback_event(pending[0]["event_id"])
+    assert event["status"] == "pending"
+    assert event["source"] == "edit"
+
+
+def test_bulk_update_completed_fills_progress_and_dates(client, database):
+    import json as _json
+    from datetime import date as _date
+
+    database.sync_provider_library("anilist", "AniList", [
+        MediaItem(id=10, title="Frieren", status="CURRENT", progress=3, episodes=28),
+    ])
+    canonical = database.canonical_media_id("anilist", 10)
+
+    resp = client.post(
+        f"/api/library/bulk-update?media_id={canonical}", json={"status": "COMPLETED"}
+    )
+    assert resp.status_code == 200
+
+    today = _date.today()
+    fuzzy_today = {"year": today.year, "month": today.month, "day": today.day}
+    payload = _json.loads(database.due_mutations(int(time.time()) + 1)[0]["payload"])
+    assert payload["progress"] == 28          # completar rellena hasta el total
+    assert payload["completed_at"] == fuzzy_today
+    assert payload["started_at"] == fuzzy_today  # la entrada no tenía fecha de inicio
+
+    # La copia local refleja las fechas al instante (como texto, el formato del
+    # payload), sin esperar al resync.
+    today_text = today.strftime("%Y-%m-%d")
+    with database.connect() as connection:
+        local = _json.loads(connection.execute(
+            "SELECT original_payload FROM remote_library_entries WHERE media_id = ?",
+            (canonical,),
+        ).fetchone()["original_payload"])
+    assert local["completed_at"] == today_text
+    assert local["started_at"] == today_text
+
+    # Y la vista combinada sigue validando como MediaItem (una fecha en formato
+    # dict aquí rompía toda la biblioteca local).
+    combined = database.get_combined_library("ANIME", "anilist", "default")
+    item = MediaItem.model_validate(combined[0])
+    assert item.completed_at == today_text
+
+
+def test_mutation_worker_drains_and_confirms(client, database, monkeypatch):
+    import nyanko_api.main as main_module
+    from nyanko_api.config import Settings
+
+    database.sync_provider_library("anilist", "AniList", [
+        MediaItem(id=10, title="Frieren", status="CURRENT", progress=3, episodes=28),
+    ])
+    client.post("/api/library/bulk-update?media_id="
+                f"{database.canonical_media_id('anilist', 10)}", json={"progress": 4})
+    sent = []
+
+    async def fake_send(settings, row):
+        sent.append(row["kind"])
+
+    monkeypatch.setattr(main_module, "_send_mutation", fake_send)
+    worker = main_module.MutationWorker(Settings())
+    worker._drain(database)
+
+    assert sent == ["edit_entry"]
+    assert database.due_mutations(int(__import__("time").time()) + 1) == []
+    events = database.get_recent_playback_events()
+    assert events[0]["status"] == "confirmed"
+
+
+def test_mutation_worker_backoff_and_final_failure(client, database, monkeypatch):
+    import nyanko_api.main as main_module
+    from nyanko_api.config import Settings
+
+    database.sync_provider_library("anilist", "AniList", [
+        MediaItem(id=10, title="Frieren", status="CURRENT", progress=3, episodes=28),
+    ])
+    client.post("/api/library/bulk-update?media_id="
+                f"{database.canonical_media_id('anilist', 10)}", json={"progress": 4})
+
+    async def failing_send(settings, row):
+        raise RuntimeError("proveedor caído")
+
+    monkeypatch.setattr(main_module, "_send_mutation", failing_send)
+    worker = main_module.MutationWorker(Settings())
+    worker._drain(database)
+
+    # Primer fallo: backoff, sigue pendiente pero no due.
+    now = int(__import__("time").time())
+    assert database.due_mutations(now) == []
+    with database.connect() as connection:
+        row = connection.execute("SELECT * FROM pending_mutations").fetchone()
+    assert row["status"] == "pending" and row["attempts"] == 1
+
+    # Agotar los reintentos → failed + evento failed + requeue posible.
+    with database.connect() as connection:
+        connection.execute(
+            "UPDATE pending_mutations SET attempts = ?, next_attempt_at = 0",
+            (main_module.MUTATION_MAX_ATTEMPTS - 1,),
+        )
+    worker._drain(database)
+    with database.connect() as connection:
+        row = connection.execute("SELECT * FROM pending_mutations").fetchone()
+    assert row["status"] == "failed"
+    event = database.get_playback_event(row["event_id"])
+    assert event["status"] == "failed"
+    assert database.requeue_mutation_by_event(row["event_id"]) is True
+
+
+def test_auto_download_new_saves_torrent_files(monkeypatch, database, tmp_path):
+    import nyanko_api.main as main_module
+    from nyanko_api import torrents as torrents_mod
+
+    database.set_setting("torrent_on_new", "download")
+    database.set_setting("torrent_download_mode", "folder")
+    database.set_setting("torrent_watch_folder", str(tmp_path))
+
+    class FakeResponse:
+        content = b"torrent-bytes"
+        def raise_for_status(self): pass
+
+    monkeypatch.setattr(main_module.httpx, "get", lambda *a, **k: FakeResponse())
+    item = torrents_mod.FeedItem(
+        signature="sig1", raw_title="[Grp] Frieren - 28.mkv", link="https://x/f.torrent",
+        media_id=1, media_title="Frieren", episode=28, resolution="1080p",
+        group="Grp", seeders=5, is_new=True,
+    )
+    downloaded = main_module._auto_download_new(database, [item])
+
+    assert downloaded == 1
+    assert (tmp_path / "sig1.torrent").read_bytes() == b"torrent-bytes"
+    # Marcado como descargado: el próximo chequeo ya no lo tratará como nuevo.
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT downloaded FROM torrent_seen WHERE signature = 'sig1'"
+        ).fetchone()
+    assert row["downloaded"] == 1
+
+
+def test_library_watcher_rescans_only_when_files_change(monkeypatch, database, tmp_path):
+    import nyanko_api.main as main_module
+    from nyanko_api.config import Settings
+
+    (tmp_path / "Frieren - 01.mkv").write_bytes(b"x")
+    database.add_library_folder(str(tmp_path), True)
+    database.set_setting(main_module.SCAN_WATCH_KEY, "1")
+    scans = []
+    monkeypatch.setattr(main_module, "run_library_scan", lambda db: scans.append(1))
+
+    watcher = main_module.LibraryWatcher(Settings())
+    # Primera pasada: línea base, sin escaneo.
+    watcher._signature = None
+    signature = watcher._compute_signature(database)
+    watcher._signature = signature
+    assert watcher._compute_signature(database) == signature
+
+    # Aparece un archivo → la firma cambia.
+    (tmp_path / "Frieren - 02.mkv").write_bytes(b"y")
+    assert watcher._compute_signature(database) != signature
+
+
+def test_media_details_serves_local_skeleton_without_cache(client, database, monkeypatch):
+    """Primer acceso al detalle sin caché: responde al instante con datos locales
+    (portada, títulos, entrada editable) y baja el detalle completo en segundo plano."""
+    class Provider:
+        name = "anilist"
+        display_name = "AniList"
+
+        async def details(self, credential, media_id):
+            return MediaDetails(
+                id=media_id, title="Frieren", synonyms=[], site_url="https://x",
+                genres=[], studios=[], score_format="POINT_100",
+            )
+
+    monkeypatch.setattr("nyanko_api.main._get_provider", lambda settings, _p: Provider())
+    database.sync_provider_library("anilist", "AniList", [
+        MediaItem(id=10, title="Frieren", status="CURRENT", progress=3,
+                  episodes=28, cover_image="https://img/f.jpg"),
+    ])
+
+    resp = client.get("/api/media/10")
+    assert resp.status_code == 200
+    assert resp.headers["X-Cache-Status"] == "stale"
+    body = resp.json()
+    assert body["title"] == "Frieren"
+    assert body["cover_image"] == "https://img/f.jpg"
+    assert body["list_entry"]["progress"] == 3
+
+
+def test_local_library_fallback_is_scoped_to_active_provider(database):
+    """Sin caché de red, la vista por proveedor debe mostrar SOLO la biblioteca del
+    proveedor activo, no la unión de todas las cuentas (regresión: se mezclaban las 3)."""
+    from nyanko_api.config import Settings
+    from nyanko_api.main import _local_library_items
+
+    database.sync_provider_library("anilist", "AniList", [
+        MediaItem(id=1, title="Frieren (AL)", status="CURRENT", progress=1, episodes=28),
+    ])
+    database.sync_provider_library("mal", "MyAnimeList", [
+        MediaItem(id=100, title="Bleach (MAL)", status="CURRENT", progress=1, episodes=366),
+    ])
+
+    scoped = _local_library_items(database, Settings(), "anilist", "default", "ANIME", scoped=True)
+    combined = _local_library_items(database, Settings(), "anilist", "default", "ANIME", scoped=False)
+
+    assert {i.title for i in scoped} == {"Frieren (AL)"}
+    assert {i.title for i in combined} == {"Frieren (AL)", "Bleach (MAL)"}
+
+
+def test_warm_library_details_backfills_missing_via_batch(database, monkeypatch):
+    """El warmer baja en segundo plano los detalles que faltan (para que la primera
+    apertura de una card salga completa), en lote y sin re-pedir los ya persistidos."""
+    import asyncio
+
+    import nyanko_api.main as main_module
+    from nyanko_api.providers import ProviderCapabilities
+
+    batch_calls = []
+
+    def make_details(media_id):
+        return MediaDetails(
+            id=media_id, title=f"Media {media_id}", synonyms=[], site_url="https://x",
+            description="Sinopsis", genres=[], studios=["Ghibli"], score_format="POINT_100",
+        )
+
+    class Provider:
+        name = "anilist"
+        display_name = "AniList"
+        capabilities = ProviderCapabilities(batch_details=True)
+
+        async def details_batch(self, credential, media_ids):
+            batch_calls.append(list(media_ids))
+            return [make_details(mid) for mid in media_ids]
+
+    monkeypatch.setattr(main_module, "_get_provider", lambda settings, _p: Provider())
+    items = [
+        MediaItem(id=10, title="Frieren", status="CURRENT", progress=3, episodes=28),
+        MediaItem(id=11, title="Mononoke", status="COMPLETED", progress=1, episodes=1),
+    ]
+    database.sync_media_details("anilist", 11, make_details(11))  # el 11 ya está completo
+
+    async def scenario():
+        main_module._warm_library_details(
+            database, Settings(), "anilist", "default", items, "token"
+        )
+        task = main_module._library_detail_warmers.get(
+            (str(database.path), "anilist", "default", "ANIME")
+        )
+        assert task is not None
+        await task
+
+    asyncio.run(scenario())
+
+    assert batch_calls == [[10]]  # solo el faltante, en una sola llamada por lotes
+    canonical = database.canonical_media_id("anilist", 10)
+    persisted = database.get_persisted_media_details("anilist", canonical)
+    assert persisted is not None
+    assert persisted.description == "Sinopsis"
 
 
 def test_library_combined_view_uses_local_canonical_entries(database):
@@ -1221,6 +1548,163 @@ def test_local_library_endpoint(client):
     assert isinstance(resp.json(), list)
 
 
+def test_local_library_enriches_matched_series(client, database):
+    from nyanko_api.models import MediaItem
+
+    database.sync_provider_library("anilist", "AniList", [
+        MediaItem(id=7, title="Sousou no Frieren", status="CURRENT", progress=1,
+                  episodes=28, cover_image="https://img/frieren.jpg"),
+    ])
+    media_id = database.canonical_media_id("anilist", 7)
+    database.replace_local_files([
+        {"path": "/a/frieren-01.mkv", "media_id": media_id, "episode": 1, "parsed_title": "frieren"},
+        {"path": "/a/frieren-02.mkv", "media_id": media_id, "episode": 2, "parsed_title": "frieren"},
+        {"path": "/a/bocchi-01.mkv", "media_id": None, "episode": 1, "parsed_title": "bocchi"},
+    ])
+    items = {s["title"]: s for s in client.get("/api/library/local").json()}
+
+    frieren = items["Sousou no Frieren"]
+    assert frieren["external_id"] == 7
+    assert frieren["cover_image"] == "https://img/frieren.jpg"
+    assert frieren["progress"] == 1
+    assert frieren["episodes"] == 28
+    assert frieren["next_episode"] == 2  # progreso 1 → siguiente local sin ver
+    assert frieren["next_path"] == "/a/frieren-02.mkv"
+
+    bocchi = items["bocchi"]
+    assert bocchi["matched"] is False
+    assert bocchi["external_id"] is None
+    assert bocchi["next_path"] is None  # sin media_id no hay episodio reproducible
+
+
+def test_local_library_movie_without_episode_gets_play_button(client, database):
+    from nyanko_api.models import MediaItem
+
+    database.sync_provider_library("anilist", "AniList", [
+        MediaItem(id=5, title="Kimi no Na wa.", status="PLANNING", progress=0, episodes=1),
+    ])
+    media_id = database.canonical_media_id("anilist", 5)
+    # Película: el parser no extrae número de episodio.
+    database.replace_local_files([
+        {"path": "/a/kimi-no-na-wa.mkv", "media_id": media_id, "episode": None, "parsed_title": "Kimi no Na wa"},
+    ])
+    item = client.get("/api/library/local").json()[0]
+    assert item["next_episode"] == 1
+    assert item["next_path"] == "/a/kimi-no-na-wa.mkv"
+
+
+def test_local_associate_and_unlink(client, database):
+    from nyanko_api.models import MediaItem
+
+    database.sync_provider_library("anilist", "AniList", [
+        MediaItem(id=9, title="Dungeon Meshi", status="CURRENT", progress=0, episodes=24),
+    ])
+    canonical = database.canonical_media_id("anilist", 9)
+    database.replace_local_files([
+        {"path": "/a/dm-01.mkv", "media_id": None, "episode": 1, "parsed_title": "Dungeon Meshi"},
+    ])
+
+    resp = client.post("/api/library/local/associate",
+                       json={"title": "Dungeon Meshi", "external_id": 9})
+    assert resp.status_code == 204
+    item = client.get("/api/library/local").json()[0]
+    assert item["matched"] is True
+    assert item["media_id"] == canonical
+    # La corrección persiste con la clave normalizada que consulta el escaneo.
+    assert database.get_local_match_overrides() == {normalize_title("Dungeon Meshi"): canonical}
+
+    resp = client.post("/api/library/local/associate",
+                       json={"title": item["title"], "from_media_id": canonical})
+    assert resp.status_code == 204
+    item = client.get("/api/library/local").json()[0]
+    assert item["matched"] is False
+    assert database.get_local_match_overrides() == {}
+
+
+def test_local_associate_adds_to_list_when_canonical_exists_without_entry(client, database, monkeypatch):
+    """Caso Dungeon Meshi: el id canónico ya existe (p. ej. por abrir el detalle) pero
+    la obra no está en la lista. Asociar debe agregarla igualmente al proveedor."""
+    from nyanko_api.models import MediaItem
+
+    updates = []
+
+    class Provider:
+        name = "anilist"
+        display_name = "AniList"
+
+        async def update_progress(self, credential, update):
+            updates.append(update)
+            return {"id": 1}
+
+    monkeypatch.setattr("nyanko_api.main._get_provider", lambda settings, _provider: Provider())
+    # Canónico + identidad externa sin entrada de biblioteca (huérfano).
+    database.sync_provider_library("anilist", "AniList", [
+        MediaItem(id=9, title="Dungeon Meshi", status="CURRENT", progress=0, episodes=24),
+    ])
+    with database.connect() as connection:
+        connection.execute("DELETE FROM remote_library_entries")
+        connection.execute("DELETE FROM library_entries")
+    database.replace_local_files([
+        {"path": "/a/dm-01.mkv", "media_id": None, "episode": 1, "parsed_title": "Dungeon Meshi"},
+    ])
+
+    resp = client.post("/api/library/local/associate", json={
+        "title": "Dungeon Meshi",
+        "external_id": 9,
+        "status": "CURRENT",
+        "media": {"id": 9, "title": "Dungeon Meshi", "episodes": 24,
+                  "cover_image": "https://img/dm.jpg", "format": "TV",
+                  "status": "FINISHED", "average_score": 88, "popularity": 1000},
+    })
+    assert resp.status_code == 204
+    assert len(updates) == 1 and updates[0].status == "CURRENT"
+    item = client.get("/api/library/local").json()[0]
+    assert item["matched"] is True
+    assert item["cover_image"] == "https://img/dm.jpg"
+    assert item["external_id"] == 9
+
+
+def test_local_associate_adds_to_provider_when_missing(client, database, monkeypatch):
+    """Asociar una obra del catálogo que no está en la lista la agrega al proveedor
+    con el estado elegido y la registra localmente de inmediato."""
+    updates = []
+
+    class Provider:
+        name = "anilist"
+        display_name = "AniList"
+
+        async def update_progress(self, credential, update):
+            updates.append(update)
+            return {"id": 1}
+
+    monkeypatch.setattr("nyanko_api.main._get_provider", lambda settings, _provider: Provider())
+    database.replace_local_files([
+        {"path": "/a/dm-01.mkv", "media_id": None, "episode": 1, "parsed_title": "Dungeon Meshi"},
+    ])
+
+    resp = client.post("/api/library/local/associate", json={
+        "title": "Dungeon Meshi",
+        "external_id": 9,
+        "status": "CURRENT",
+        "media": {"id": 9, "title": "Dungeon Meshi", "episodes": 24,
+                  "cover_image": "https://img/dm.jpg", "format": "TV",
+                  "status": "FINISHED", "average_score": 88, "popularity": 1000},
+    })
+    assert resp.status_code == 204
+    assert len(updates) == 1
+    assert updates[0].media_id == 9
+    assert updates[0].status == "CURRENT"
+
+    canonical = database.canonical_media_id("anilist", 9)
+    assert canonical is not None
+    item = client.get("/api/library/local").json()[0]
+    assert item["matched"] is True
+    assert item["media_id"] == canonical
+    assert item["cover_image"] == "https://img/dm.jpg"
+    assert item["progress"] == 0
+    assert database.get_local_match_overrides() == {normalize_title("Dungeon Meshi"): canonical}
+
+
 def test_torrent_sources_crud(client):
     created = client.post("/api/torrents/sources",
                           json={"name": "S", "url": "https://x/rss"}).json()
@@ -1413,3 +1897,21 @@ def test_torrent_download_folder_per_series(client, monkeypatch, tmp_path):
     assert res["action"] == "saved"
     assert "Frieren" in res["path"]  # subfolder created
 
+
+
+# --- AniList OAuth: authorization code grant (AniList no soporta flujo sin secreto) ---
+
+def test_anilist_authorization_url_uses_code_grant():
+    from nyanko_api.anilist import AniListClient
+    from nyanko_api.config import Settings
+
+    url = AniListClient(Settings(anilist_client_id="cid123")).authorization_url("st8")
+    assert "response_type=code" in url
+    assert "client_id=cid123" in url
+
+
+def test_anilist_callback_rejects_bad_state(client, database):
+    database.set_setting("oauth_state", "S1")
+    database.set_setting("oauth_account_alias", "default")
+    resp = client.get("/api/auth/callback", params={"code": "c", "state": "WRONG"})
+    assert resp.status_code == 400

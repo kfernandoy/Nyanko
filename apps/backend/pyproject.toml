@@ -7,6 +7,7 @@ dependencies = [
   "fastapi>=0.116,<1",
   "httpx>=0.28,<1",
   "keyring>=25.7,<26",
+  "psutil>=7.2.2",
   "pydantic-settings>=2.10,<3",
   "uvicorn[standard]>=0.35,<1",
 ]
@@ -29,3 +30,9 @@ exclude = ["data", "dist", "build", "scripts"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint.per-file-ignores]
+# main.py y algunos tests tienen imports intercalados por crecimiento orgánico;
+# reordenarlos en un módulo de 3000 líneas arriesga imports circulares sin ganancia.
+"nyanko_api/main.py" = ["E402"]
+"tests/*" = ["E402"]

@@ -9,6 +9,7 @@ from .base import Detector, DetectorInfo, looks_finished
 class MpcHcDetector(Detector):
     name = "mpc-hc"
     priority = 25
+    trusted_evidence = True
 
     def __init__(self, host: str = "127.0.0.1", port: int = 13579):
         self.base_url = f"http://{host}:{port}"
@@ -31,7 +32,9 @@ class MpcHcDetector(Detector):
             return None
 
         state = self._extract_int(text, "state")
-        if state != 2:  # 0 = stopped, 1 = paused, 2 = playing
+        # 0/-1 = detenido; 1 = pausa (se mantiene el candidato, como en el navegador,
+        # para que pausar no vacíe el panel); 2 = reproduciendo.
+        if state not in (1, 2):
             return None
 
         raw_title = self._extract_title(text)
@@ -42,8 +45,12 @@ class MpcHcDetector(Detector):
         if normalized.anime_title is None:
             return None
 
+        # La interfaz web de MPC-HC reporta position/duration en MILISEGUNDOS;
+        # leerlos como segundos mostraba duraciones de cientos de horas.
         position = self._extract_float(text, "position")
         duration = self._extract_float(text, "duration")
+        position = position / 1000 if position is not None else None
+        duration = duration / 1000 if duration is not None else None
         return PlaybackCandidate(
             source=self.name,
             raw_title=raw_title,

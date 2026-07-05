@@ -62,6 +62,7 @@ class ScanSummary(BaseModel):
 
 class ScanSettings(BaseModel):
     scan_on_startup: bool
+    watch_folders: bool = False
 
 
 class PendingLocalItem(BaseModel):
@@ -118,8 +119,10 @@ class MediaItem(BaseModel):
     genres: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     year: int | None = None
+    season: str | None = None  # temporada de emisión (WINTER/SPRING/SUMMER/FALL)
     format: str | None = None
     media_type: str = "ANIME"
+    media_status: str | None = None  # estado de emisión (RELEASING/FINISHED/…)
     site_url: str | None = None
     updated_at: int | None = None
     canonical_id: int | None = None
@@ -127,6 +130,7 @@ class MediaItem(BaseModel):
     account_alias: str | None = None
     started_at: str | None = None
     completed_at: str | None = None
+    id_mal: int | None = None  # referencia cruzada de AniList al id de MyAnimeList
 
 
 class ProgressUpdate(BaseModel):
@@ -221,7 +225,10 @@ class SeasonMedia(BaseModel):
     popularity: int = 0
     start_date: "FuzzyDate | None" = None
     cover_image: str | None = None
+    cover_color: str | None = None
     studios: list[str] = Field(default_factory=list)
+    genres: list[str] = Field(default_factory=list)
+    description: str | None = None
     next_episode: int | None = None
     next_airing_at: int | None = None
 
@@ -643,6 +650,7 @@ class TorrentSettings(BaseModel):
     client_path: str = ""
     folder_per_series: bool = False
     append_episode: bool = False
+    use_anime_folder: bool = False  # descargar junto a los episodios locales existentes
     filters_enabled: bool = True
     global_discard_not_in_list: bool = True
     global_discard_seen: bool = True
@@ -665,10 +673,12 @@ class TorrentItem(BaseModel):
     torrent_date: str | None = None
     confidence: float
     is_new: bool
+    cover_image: str | None = None
 
 
 class TorrentActionRequest(BaseModel):
     signature: str
+    mode: str | None = None  # None = según ajustes; "magnet" | "torrent" fuerzan el modo
 
 
 class TorrentDownloadResponse(BaseModel):
@@ -678,8 +688,27 @@ class TorrentDownloadResponse(BaseModel):
     client_path: str | None = None
 
 
+class LocalAssociateRequest(BaseModel):
+    title: str                          # título del grupo (parsed o canónico)
+    from_media_id: int | None = None    # media canónico actual si el grupo ya estaba matcheado
+    external_id: int | None = None      # id en el catálogo del proveedor; None = quitar asociación
+    status: str | None = None           # estado de lista al agregar si aún no está en la biblioteca
+    media: SearchResult | None = None   # resultado elegido, para registrar la obra sin esperar un sync
+
+
 class LocalSeries(BaseModel):
     media_id: int | None = None
     title: str
+    title_romaji: str | None = None
+    title_english: str | None = None
+    title_native: str | None = None
     episode_count: int
     matched: bool
+    external_id: int | None = None
+    provider: str | None = None
+    account_alias: str | None = None
+    cover_image: str | None = None
+    episodes: int | None = None
+    progress: int | None = None
+    next_episode: int | None = None
+    next_path: str | None = None

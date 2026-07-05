@@ -32,3 +32,15 @@ def _memory_keyring():
 def _fast_rate_limit_sleep(monkeypatch):
     monkeypatch.setattr("nyanko_api.http.asyncio.sleep", _noop_sleep)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _no_background_workers(monkeypatch):
+    # TestClient(app) dispara el lifespan: los workers reales usarían la base de
+    # desarrollo (y podrían enviar mutaciones con credenciales reales).
+    import nyanko_api.main as main_module
+
+    monkeypatch.setattr(main_module.MutationWorker, "start", lambda self: None)
+    monkeypatch.setattr(main_module.TorrentChecker, "start", lambda self: None)
+    monkeypatch.setattr(main_module.LibraryWatcher, "start", lambda self: None)
+    yield

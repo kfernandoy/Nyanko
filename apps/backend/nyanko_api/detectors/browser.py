@@ -10,6 +10,7 @@ from .base import Detector, DetectorInfo
 class BrowserDetector(Detector):
     name = "browser"
     priority = 110
+    trusted_evidence = True
 
     def __init__(self, timeout_seconds: float = 15.0):
         self._timeout_seconds = timeout_seconds
@@ -36,7 +37,10 @@ class BrowserDetector(Detector):
             if time.monotonic() - self._received_at > self._timeout_seconds:
                 self._candidate = None
                 return None
-            if self._candidate.paused or self._candidate.content_kind in {
+            # La pausa NO descarta el candidato: borrarlo vaciaba el panel a los
+            # pocos segundos de pausar y obligaba a re-matchear al reanudar. El
+            # flag paused viaja en el candidato y la UI/autoguardado ya lo manejan.
+            if self._candidate.content_kind in {
                 "trailer",
                 "preview",
                 "opening",

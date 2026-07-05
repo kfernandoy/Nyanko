@@ -16,6 +16,8 @@ from .normalizer import normalize
 
 _GROUP_RE = re.compile(r"^\s*\[([^\]]+)\]")
 _RES_RE = re.compile(r"\b(480|720|1080|2160)p\b", re.IGNORECASE)
+# "12v2" no tiene frontera de palabra entre el episodio y la "v": aceptar ambas formas.
+_VERSION_RE = re.compile(r"(?:\b|(?<=\d))v(\d+)\b", re.IGNORECASE)
 
 
 @dataclass(slots=True)
@@ -33,6 +35,7 @@ class ParsedTorrent:
     description: str | None = None
     filename: str | None = None
     torrent_date: str | None = None
+    version: int = 1
 
 
 def extract_group(raw_title: str) -> str | None:
@@ -43,6 +46,12 @@ def extract_group(raw_title: str) -> str | None:
 def extract_resolution(raw_title: str) -> str | None:
     match = _RES_RE.search(raw_title)
     return f"{match.group(1)}p" if match else None
+
+
+def extract_version(raw_title: str) -> int:
+    """Versión de release (v2, v3…); 1 si no se indica."""
+    match = _VERSION_RE.search(raw_title)
+    return int(match.group(1)) if match else 1
 
 
 def signature(source_id: int, guid: str) -> str:
@@ -58,16 +67,37 @@ def _text(item: ET.Element, tag: str) -> str | None:
     return None
 
 
+@dataclass(slots=True)
+class ConditionContext:
+    """Todo lo que una condición puede consultar: el torrent parseado, la entrada
+    de biblioteca (si hubo match) y los episodios ya presentes en disco."""
+
+    parsed: ParsedTorrent
+    entry: MediaItem | None = None
+    local_episodes: frozenset[int] = frozenset()
+
+
 _ELEMENT_GETTERS = {
-    "filename": lambda p: p.filename or p.raw_title,
-    "title": lambda p: p.title or p.raw_title,
-    "group": lambda p: p.group or "",
-    "resolution": lambda p: p.resolution or "",
-    "episode": lambda p: p.episode,
-    "size": lambda p: p.size or "",
-    "seeders": lambda p: p.seeders,
+    "filename": lambda c: c.parsed.filename or c.parsed.raw_title,
+    "title": lambda c: c.parsed.title or c.parsed.raw_title,
+    "group": lambda c: c.parsed.group or "",
+    "resolution": lambda c: c.parsed.resolution or "",
+    "episode": lambda c: c.parsed.episode,
+    "size": lambda c: c.parsed.size or "",
+    "seeders": lambda c: c.parsed.seeders,
+    "version": lambda c: c.parsed.version,
+    # Estado en tu lista: CURRENT/PLANNING/… o NOT_IN_LIST si no hubo match.
+    "user_status": lambda c: c.entry.status if c.entry else "NOT_IN_LIST",
+    # Estado de emisión de la obra: RELEASING/FINISHED/NOT_YET_RELEASED.
+    "media_status": lambda c: (c.entry.media_status if c.entry else None) or "",
+    # ¿El episodio ya está en disco? ("true"/"false", como el preset de Taiga.)
+    "local_available": lambda c: (
+        "true"
+        if c.parsed.episode is not None and c.parsed.episode in c.local_episodes
+        else "false"
+    ),
 }
-_NUMERIC_ELEMENTS = {"episode", "seeders"}
+_NUMERIC_ELEMENTS = {"episode", "seeders", "version"}
 _WATCHING_STATUSES = {"CURRENT", "REPEATING"}
 
 
@@ -102,7 +132,8 @@ def _size_to_bytes(text: str) -> float | None:
 def _op(operator: str, field_value, target: str, element: str) -> bool:
     if operator in ("gt", "lt"):
         if element == "size":
-            number = _size_to_bytes(str(field_value)); bound = _size_to_bytes(target)
+            number = _size_to_bytes(str(field_value))
+            bound = _size_to_bytes(target)
         else:
             try:
                 number = float(field_value) if field_value is not None else None
@@ -134,11 +165,11 @@ def _op(operator: str, field_value, target: str, element: str) -> bool:
     return False
 
 
-def _condition_true(parsed: ParsedTorrent, cond: dict) -> bool:
+def _condition_true(ctx: ConditionContext, cond: dict) -> bool:
     getter = _ELEMENT_GETTERS.get(cond["element"])
     if getter is None:
         return False
-    return _op(cond["operator"], getter(parsed), cond["value"], cond["element"])
+    return _op(cond["operator"], getter(ctx), cond["value"], cond["element"])
 
 
 def _filter_applies(filt: dict, media_id: int | None) -> bool:
@@ -147,13 +178,13 @@ def _filter_applies(filt: dict, media_id: int | None) -> bool:
     return media_id is not None and media_id in set(filt.get("anime_ids") or [])
 
 
-def _filter_matches(parsed: ParsedTorrent, filt: dict) -> bool:
+def _filter_matches(ctx: ConditionContext, filt: dict) -> bool:
     conds = filt.get("conditions") or []
     if not conds:
         return False
     if filt.get("match", "all") == "any":
-        return any(_condition_true(parsed, c) for c in conds)
-    return all(_condition_true(parsed, c) for c in conds)
+        return any(_condition_true(ctx, c) for c in conds)
+    return all(_condition_true(ctx, c) for c in conds)
 
 
 def build_feed(
@@ -167,10 +198,12 @@ def build_feed(
     globals_: dict | None = None,
     min_confidence: float = 0.6,
     preferred_resolution: str | None = None,
+    local_episodes: dict[int, set[int]] | None = None,
 ) -> list[FeedItem]:
     g = globals_ or {}
     index = build_token_index(library)
     by_id = {item.id: item for item in library}
+    local_by_id = local_episodes or {}
     active = [f for f in filters if f.get("enabled", True)] if filters_enabled else []
     results: list[tuple[int, FeedItem]] = []
     for parsed in parsed_items:
@@ -179,7 +212,12 @@ def build_feed(
             continue
         match, score = match_from_index(parsed.title, index, min_score=min_confidence)
         media_id = match.id if match else None
-        applicable = [f for f in active if _filter_applies(f, media_id) and _filter_matches(parsed, f)]
+        ctx = ConditionContext(
+            parsed=parsed,
+            entry=by_id.get(media_id) if media_id is not None else None,
+            local_episodes=frozenset(local_by_id.get(media_id, ()) if media_id else ()),
+        )
+        applicable = [f for f in active if _filter_applies(f, media_id) and _filter_matches(ctx, f)]
         if any(f["action"] == "discard" for f in applicable):
             continue
         selected = any(f["action"] == "select" for f in applicable)
@@ -235,6 +273,7 @@ def parse_feed(xml_text: str, source_id: int) -> list[ParsedTorrent]:
                 episode=norm.episode.number if norm.episode else None,
                 group=extract_group(raw_title),
                 resolution=extract_resolution(raw_title),
+                version=extract_version(raw_title),
                 seeders=seeders,
                 size=_text(item, "size"),
                 description=_text(item, "description"),

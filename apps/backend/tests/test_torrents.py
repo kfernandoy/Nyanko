@@ -196,3 +196,68 @@ def test_build_feed_preferred_resolution_ordering():
     )
     assert feed2[0].resolution == "720p"   # user prefer wins
     assert feed2[1].resolution == "1080p"
+
+
+def test_extract_version():
+    assert torrents.extract_version("[Grp] Frieren - 12v2 (1080p).mkv") == 2
+    assert torrents.extract_version("[Grp] Frieren - 12 V3.mkv") == 3
+    assert torrents.extract_version("[Grp] Frieren - 12.mkv") == 1
+
+
+def test_engine_user_status_element():
+    # Descartar abandonados (preset de Taiga).
+    f = _filter(action="discard", conditions=[{"element": "user_status", "operator": "is", "value": "DROPPED"}])
+    lib = [_lib_entry(status="DROPPED", progress=2)]
+    out = torrents.build_feed([_parsed(episode=28)], lib, [f], set(), set(),
+                              filters_enabled=True, globals_={})
+    assert out == []
+    # NOT_IN_LIST cuando no hay match.
+    f2 = _filter(action="discard", conditions=[{"element": "user_status", "operator": "is", "value": "NOT_IN_LIST"}])
+    out = torrents.build_feed([_parsed(title="Desconocida", episode=5)], [], [f2], set(), set(),
+                              filters_enabled=True, globals_={})
+    assert out == []
+
+
+def test_engine_media_status_and_user_status_combo():
+    # "Seleccionar en emisión que planeas ver": media_status RELEASING + user_status PLANNING.
+    f = _filter(action="select", match="all", conditions=[
+        {"element": "media_status", "operator": "is", "value": "RELEASING"},
+        {"element": "user_status", "operator": "is", "value": "PLANNING"},
+    ])
+    lib = [_lib_entry(status="PLANNING", progress=0, media_status="RELEASING")]
+    # select fuerza incluir pese a discard_seen (PLANNING no es CURRENT).
+    out = torrents.build_feed([_parsed(episode=1)], lib, [f], set(), set(),
+                              filters_enabled=True, globals_=_GLOBALS)
+    assert len(out) == 1
+
+
+def test_engine_version_element():
+    f = _filter(action="prefer", conditions=[{"element": "version", "operator": "gt", "value": "1"}])
+    lib = [_lib_entry(progress=27)]
+    v1 = _parsed(guid="a", episode=28, version=1)
+    v2 = _parsed(guid="b", episode=28, version=2)
+    out = torrents.build_feed([v1, v2], lib, [f], set(), set(),
+                              filters_enabled=True, globals_=_GLOBALS)
+    assert [item.signature for item in out][0] == torrents.signature(1, "b")  # v2 primero
+
+
+def test_engine_local_available_element():
+    f = _filter(action="discard", conditions=[{"element": "local_available", "operator": "is", "value": "true"}])
+    lib = [_lib_entry(progress=27)]
+    out = torrents.build_feed([_parsed(episode=28)], lib, [f], set(), set(),
+                              filters_enabled=True, globals_=_GLOBALS,
+                              local_episodes={1: {28}})
+    assert out == []  # el episodio 28 ya está en disco
+    out = torrents.build_feed([_parsed(episode=28)], lib, [f], set(), set(),
+                              filters_enabled=True, globals_=_GLOBALS,
+                              local_episodes={1: {27}})
+    assert len(out) == 1  # el 28 no está: pasa
+
+
+def test_parse_feed_extracts_version():
+    xml = """<rss><channel><item>
+      <title>[Grp] Frieren - 28v2 (1080p).mkv</title>
+      <link>magnet:?x</link><guid>g1</guid>
+    </item></channel></rss>"""
+    parsed = torrents.parse_feed(xml, 1)
+    assert parsed[0].version == 2

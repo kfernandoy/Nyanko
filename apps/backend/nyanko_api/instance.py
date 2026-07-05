@@ -27,6 +27,24 @@ def find_free_port(host: str) -> int:
         return sock.getsockname()[1]
 
 
+def resolve_port(host: str, preferred: int) -> int:
+    """Puerto en el que escuchar el sidecar.
+
+    OAuth necesita un puerto estable: el `redirect_uri` registrado en AniList/MAL apunta
+    a un puerto fijo (p. ej. 8765), así que se intenta ese primero. Si está ocupado se cae
+    a uno libre —la app funciona, pero el login OAuth fallará hasta liberar el puerto—.
+    `preferred == 0` significa puerto dinámico explícito.
+    """
+    if preferred == 0:
+        return find_free_port(host)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind((host, preferred))
+            return preferred
+        except OSError:
+            return find_free_port(host)
+
+
 def read_port_file(path: Path) -> int | None:
     token = read_token_file(path)
     if token is None:
