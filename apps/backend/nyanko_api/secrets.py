@@ -7,7 +7,12 @@ from pathlib import Path
 import keyring
 from keyring.errors import KeyringError, PasswordDeleteError
 
-SERVICE_NAME = "app.nyanko.desktop"
+# Dev y app instalada comparten el llavero del usuario de Windows: con un solo
+# nombre de servicio, la app instalada "hereda" los tokens de desarrollo y salta
+# el login. El build congelado usa el nombre canónico; dev, su propio namespace.
+SERVICE_NAME = (
+    "app.nyanko.desktop" if getattr(sys, "frozen", False) else "app.nyanko.desktop.dev"
+)
 TOKEN_USERNAME = "anilist_access_token"
 
 # Cada lectura del keyring de Windows es una RPC de ~100-500 ms y require_token la
