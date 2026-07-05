@@ -30,9 +30,3 @@ automáticamente cuando Nyanko reaparece.
 El registro incluye un adaptador genérico basado en JSON-LD/metadatos y un adaptador
 inicial de Crunchyroll. Los eventos se clasifican para excluir trailers, previews,
 openings y endings del progreso automático.
-
-Para instalaciones que requieran CORS explícito, configura
-`NYANKO_EXTENSION_ORIGINS` con los orígenes separados por comas. El aislamiento real
-no depende de `localhost`: cada evento exige el token de la instalación emparejada.
-La evaluación de Native Messaging está en
-[`docs/EXTENSION_TRANSPORT.md`](../../docs/EXTENSION_TRANSPORT.md).

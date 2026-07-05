@@ -1,78 +1,175 @@
 # Nyanko
 
-Aplicación de escritorio para consultar AniList y detectar anime reproducido localmente.
+Idiomas: [Espanol](#espanol) | [English](#english)
 
-## Arquitectura nueva
+## Espanol
 
-- `apps/desktop`: Tauri 2 + React + TypeScript.
-- `apps/backend`: API local FastAPI, SQLite, cliente AniList y detectores.
-- `legacy/`: aplicación Django histórica, conservada temporalmente como referencia.
+Nyanko es una aplicacion de escritorio para llevar tu lista de anime y manga,
+detectar lo que estas viendo y actualizar el progreso sin depender de una web
+abierta todo el tiempo.
 
-El frontend se comunica exclusivamente con `http://127.0.0.1:8765`. El backend no
-escucha interfaces de red externas.
+### Que hace
 
-## Desarrollo
+- Conecta cuentas de AniList, MyAnimeList y Kitsu.
+- Muestra tu biblioteca de anime y manga con filtros, busqueda, estados,
+  progreso, puntuacion y detalle de cada obra.
+- Permite editar entradas: estado, progreso, puntuacion, fechas, notas,
+  privacidad, repeticiones y eliminacion de la lista.
+- Detecta reproduccion local desde reproductores como mpv, VLC, MPC-HC,
+  PotPlayer, SMTC, procesos con archivos abiertos y la ventana activa como
+  respaldo.
+- Detecta reproduccion en navegador mediante una extension para Chromium y
+  Firefox.
+- Sugiere coincidencias cuando reconoce una serie, deja corregirlas y recuerda
+  las correcciones.
+- Puede confirmar progreso automaticamente cuando la coincidencia y el avance
+  cumplen la configuracion del usuario.
+- Guarda historial local de detecciones, confirmaciones, errores, ignorados y
+  deshacer.
+- Escanea carpetas locales para encontrar episodios disponibles y reproducir el
+  siguiente episodio desde la app.
+- Consulta torrents por RSS, agrupa resultados por serie y permite abrir magnet
+  o guardar archivos `.torrent`.
 
-Requisitos: Node 20+, Rust estable y Python 3.11+.
+### Como funciona
 
-```powershell
-python -m venv apps/backend/.venv
-apps/backend/.venv/Scripts/Activate.ps1
-python -m pip install -e "apps/backend[dev]"
-Copy-Item apps/backend/.env.example apps/backend/.env
-Copy-Item apps/desktop/.env.example apps/desktop/.env
-npm install
-npm run dev
-```
+Nyanko corre como una app de escritorio con un servicio local privado. La interfaz
+habla con ese servicio en `127.0.0.1`; no abre una API publica en la red.
 
-En Windows, `build.rs` genera el recurso `.ico` dentro de `OUT_DIR`; no es necesario
-copiar iconos binarios al repositorio para ejecutar `tauri dev`.
+Al conectar un proveedor, Nyanko importa la biblioteca y guarda una copia local
+normalizada. Esa copia permite buscar, mostrar detalles, cachear datos y seguir
+usando informacion reciente cuando un proveedor responde lento o esta caido.
 
-Registra en AniList la URI de retorno
-`http://127.0.0.1:8765/api/auth/callback` y completa `apps/backend/.env`. Nunca
-incluyas el secreto OAuth en Git ni en el bundle de Tauri.
+Cuando detecta un episodio, Nyanko normaliza el titulo, busca la mejor coincidencia
+en la biblioteca o en el catalogo del proveedor activo, y muestra el resultado en
+Reproduciendo. Si la confianza es suficiente y la automatizacion esta activada,
+actualiza el progreso; si no, pide confirmacion.
 
-## Comprobaciones
+Las ediciones se aplican primero en local y luego se envian al proveedor. Si algo
+falla, quedan registradas para reintento o resolucion manual.
 
-```powershell
-python -m pytest apps/backend/tests
-npm run check
-npm run build:sidecar
-npm run build
-```
+### Proveedores
 
-## Estado del MVP
+- **AniList**: anime, manga, actividad, temporadas, estadisticas, busqueda,
+  detalle y edicion.
+- **MyAnimeList**: anime, manga, busqueda, detalle, estadisticas derivadas de la
+  biblioteca y edicion de entradas. Sus preferencias de perfil son de solo lectura
+  desde la API.
+- **Kitsu**: anime, busqueda, descubrimiento, detalle, edicion y preferencias.
+  No expone manga, actividad ni temporadas en Nyanko.
 
-- Interfaz de biblioteca y filtros.
-- OAuth y consultas de lista de AniList mediante el servicio local.
-- Actualización de progreso.
-- Detección de la ventana activa en Windows y extracción básica del episodio.
-- WebSocket local para eventos de reproducción.
+Cada proveedor mantiene sus propios IDs y datos remotos. Nyanko usa un modelo local
+para relacionar obras cuando hay una coincidencia confiable, sin mezclar IDs entre
+servicios.
 
-El backend incluye un modelo local canónico, registro de proveedores y un adaptador
-de AniList. Las rutas neutrales (`/api/providers`, `/api/library` y `/api/media`) son
-las consumidas por el frontend; las rutas antiguas de AniList se conservan
-temporalmente como compatibilidad.
+### Extension del navegador
 
-Las credenciales, cachés y sincronizaciones se aíslan por proveedor y cuenta. La base
-normalizada conserva títulos alternativos, temporadas, episodios y copias remotas;
-la cuenta principal determina el estado canónico local.
+La extension observa metadatos de la pagina y el estado del elemento `<video>`.
+No envia el video ni el contenido reproducido.
 
-El gestor de Ajustes permite conectar varias cuentas, elegir la principal y definir
-la dirección de sincronización. El cliente selecciona la credencial activa para cada
-consulta y mutación sin mezclar cachés.
+La extension se empareja automaticamente con la app cuando Nyanko esta abierto.
+El usuario activa los sitios desde las opciones de la extension; por defecto no
+rastrea sitios hasta que se habilitan adaptadores.
 
-MyAnimeList está disponible como importación de solo lectura mediante OAuth PKCE. La
-configuración y las limitaciones están documentadas en
-[`docs/MYANIMELIST.md`](docs/MYANIMELIST.md). Antes de distribuir esta integración se
-debe validar el flujo con una aplicación registrada y revisar las políticas vigentes.
-Las obras importadas se asocian de forma conservadora con AniList usando títulos
-alternativos, año, formato y episodios; las coincidencias ambiguas no se fusionan.
-La bandeja de Ajustes permite confirmar, descartar y revertir estas asociaciones.
+### Ajustes principales
 
-La WebExtension para Chromium y Firefox está en [`apps/extension`](apps/extension).
-Usa emparejamiento de un solo uso, tokens rotatorios por instalación y controles de
-privacidad por sitio. Consulta su [README](apps/extension/README.md).
+- Proveedor principal y cuenta conectada por proveedor.
+- Idioma de interfaz, tema y preferencia de idioma de titulos.
+- Formato de puntuacion y contenido adulto cuando el proveedor lo permite.
+- Deteccion automatica, umbral de confianza y momento de confirmacion.
+- Reproductores habilitados.
+- Carpetas locales, escaneo al iniciar y vigilancia de cambios.
+- Torrents, fuentes RSS, filtros y carpeta de descarga.
+- Inicio con Windows, bandeja del sistema y Discord Rich Presence.
 
-El backlog completo, prioridades y criterios de entrega están en
-[`PENDIENTE.md`](PENDIENTE.md).
+### Privacidad y datos locales
+
+Los tokens se guardan en el almacen seguro del sistema operativo. La base local
+guarda cache, historial, configuracion, biblioteca normalizada y relaciones entre
+proveedores.
+
+Desde Ajustes se pueden sincronizar datos, limpiar cache/historial y desconectar
+cuentas.
+
+## English
+
+Nyanko is a desktop app for managing your anime and manga list, detecting what
+you are watching, and updating progress without keeping a tracking website open.
+
+### What It Does
+
+- Connects AniList, MyAnimeList, and Kitsu accounts.
+- Shows your anime and manga library with filters, search, statuses, progress,
+  scores, and details for each title.
+- Lets you edit entries: status, progress, score, dates, notes, privacy,
+  rewatches, and removal from the list.
+- Detects local playback from players such as mpv, VLC, MPC-HC, PotPlayer,
+  SMTC, processes with open media files, and the active window as a fallback.
+- Detects browser playback through an extension for Chromium and Firefox.
+- Suggests matches when it recognizes a series, lets you correct them, and
+  remembers corrections.
+- Can confirm progress automatically when the match and playback progress meet
+  your settings.
+- Keeps a local history of detections, confirmations, errors, ignored events,
+  and undo actions.
+- Scans local folders to find available episodes and play the next episode from
+  the app.
+- Reads torrent RSS feeds, groups results by series, and lets you open magnet
+  links or save `.torrent` files.
+
+### How It Works
+
+Nyanko runs as a desktop app with a private local service. The interface talks to
+that service on `127.0.0.1`; it does not expose a public network API.
+
+When you connect a provider, Nyanko imports your library and stores a normalized
+local copy. That copy makes search, details, caching, and recent information
+available even when a provider is slow or temporarily unavailable.
+
+When Nyanko detects an episode, it normalizes the title, searches for the best
+match in your library or in the active provider catalog, and shows the result in
+Now Playing. If confidence is high enough and automation is enabled, it updates
+progress; otherwise, it asks for confirmation.
+
+Edits are applied locally first and then sent to the provider. If something
+fails, it is kept in history for retry or manual resolution.
+
+### Providers
+
+- **AniList**: anime, manga, activity, seasons, statistics, search, details, and
+  editing.
+- **MyAnimeList**: anime, manga, search, details, statistics derived from the
+  library, and entry editing. Profile preferences are read-only through the API.
+- **Kitsu**: anime, search, discovery, details, editing, and preferences. Manga,
+  activity, and seasons are not exposed in Nyanko.
+
+Each provider keeps its own IDs and remote data. Nyanko uses a local model to
+relate titles when there is a reliable match, without mixing IDs between
+services.
+
+### Browser Extension
+
+The extension observes page metadata and the state of the `<video>` element. It
+does not send the video or watched content.
+
+The extension pairs automatically with the app while Nyanko is open. Sites are
+enabled from the extension options; by default, it does not track sites until
+adapters are enabled.
+
+### Main Settings
+
+- Primary provider and one connected account per provider.
+- Interface language, theme, and title language preference.
+- Score format and adult content when the provider supports it.
+- Automatic detection, confidence threshold, and confirmation timing.
+- Enabled players.
+- Local folders, startup scan, and folder watching.
+- Torrents, RSS sources, filters, and download folder.
+- Start with Windows, system tray, and Discord Rich Presence.
+
+### Privacy And Local Data
+
+Tokens are stored in the operating system secure store. The local database stores
+cache, history, configuration, normalized library data, and provider relations.
+
+From Settings, you can sync data, clear cache/history, and disconnect accounts.
