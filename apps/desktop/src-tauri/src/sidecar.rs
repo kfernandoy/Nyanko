@@ -48,6 +48,14 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+// Antes de instalar un update: el installer no puede sobrescribir nyanko-api.exe ni
+// _internal mientras el sidecar corre. El frontend invoca esto justo antes de
+// downloadAndInstall (el hook NSIS es el respaldo si esto no llega a ejecutarse).
+#[tauri::command]
+pub fn stop_sidecar(app: AppHandle) {
+    stop(&app);
+}
+
 pub fn stop(app: &AppHandle) {
     if let Some(handle) = app.try_state::<SidecarHandle>() {
         if let Ok(mut child) = handle.0.lock() {

@@ -3,7 +3,7 @@ import { openUrl, openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useContextMenu, type CtxItem } from "./ContextMenu";
 import { useCompact } from "./hooks";
 import { KittenLogo } from "./KittenLogo";
-import { api, playbackSocket, setActiveAccount, type ActiveAccount } from "./api";
+import { api, playbackSocket, setActiveAccount, waitForBackend, type ActiveAccount } from "./api";
 import { useApp, mediaFormatLabel } from "./i18n";
 import { displayTitle, foldTitle } from "./title";
 import { setDiscordActivity, clearDiscordActivity } from "./discord";
@@ -223,6 +223,13 @@ export default function App() {
     if (!silent) setLoading(true);
     setError(null);
     try {
+      // Arranque en frío: esperar a que el sidecar escuche antes de disparar la carga
+      // real, en vez de fallar/encadenar timeouts contra un backend a medio arrancar.
+      if (!silent) {
+        const t0 = performance.now();
+        const ready = await waitForBackend();
+        console.info(`[nyanko] backend ready en ${Math.round(performance.now() - t0)}ms (ok=${ready})`);
+      }
       const accounts = await api.accounts();
       const selected = accounts.find((account) => account.is_primary && account.authenticated)
         ?? accounts.find((account) => account.authenticated);
@@ -1148,7 +1155,7 @@ export default function App() {
         )}
       </main>
       {contextMenu}
-      {detailLoading && <div className="modal-backdrop"><div className="modal-loading">{t("common.loadingInfo")}</div></div>}
+      {detailLoading && <div className="modal-backdrop"><div className="modal-loading"><div className="spinner" role="status" aria-label={t("common.loadingInfo")} /></div></div>}
       {details && <DetailsModal key={`${details.id}-${details.list_entry?.id ?? "preview"}-${details.score_format}`} details={details} canonicalId={detailCanonicalId} mediaType={details.media_type === "MANGA" ? "MANGA" : "ANIME"} detailAccount={detailAccount} onClose={closeDetails} onChanged={refreshDetails} onSelect={(id, type) => { closeDetails(); void openDetails(id, type); }} />}
     </div>
     </>

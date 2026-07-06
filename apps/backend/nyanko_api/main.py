@@ -2129,6 +2129,21 @@ def remove_library_tag(
     database.remove_media_tag(media_id, tag)
 
 
+def _enrich_cached_library(
+    database: Database, provider_name: str, provider: str, account: str, payload: list
+) -> tuple[list[MediaItem], str]:
+    """Validación + enrich + overlay + serialización de la biblioteca cacheada.
+
+    Se ejecuta en un hilo (asyncio.to_thread): con bibliotecas grandes son varios
+    segundos de CPU que, corriendo en el event loop, congelaban TODA la API — cualquier
+    navegación durante la carga daba "El servicio local no respondió a tiempo"."""
+    items = [MediaItem.model_validate(item) for item in payload]
+    enriched = database.enrich_provider_library(provider_name, items)
+    overlaid = _overlay_recent_edits(database, provider, account, enriched)
+    body = json.dumps([item.model_dump(mode="json") for item in overlaid])
+    return overlaid, body
+
+
 @app.get("/api/library", response_model=list[MediaItem])
 @app.get("/api/anilist/list", response_model=list[MediaItem], include_in_schema=False)
 async def media_list(
@@ -2171,27 +2186,39 @@ async def media_list(
         # hacerlos por request bloqueaba el event loop varios segundos.
         record = database.get_cache_record(cache_key)
         if record is not None:
-            items = [MediaItem.model_validate(item) for item in record.payload]
             if record.stale:
                 schedule_cache_refresh(database, cache_key, refresh)
-            response.headers["X-Cache-Status"] = (
+            status_value = (
                 CacheStatus.STALE if record.stale else CacheStatus.HIT
             ).value
-        else:
-            local_items = _local_library_items(database, settings, provider, account, "ANIME", scoped=True)
-            if local_items:
-                schedule_cache_refresh(database, cache_key, refresh)
-                response.headers["X-Cache-Status"] = CacheStatus.STALE.value
-                return _overlay_recent_edits(database, provider, account, local_items)
-            items = await media_provider.library(token)
-            database.set_cache(cache_key, [value.model_dump(mode="json") for value in items], 900)
-            database.sync_provider_library(
-                media_provider.name, media_provider.display_name, items, account_alias=account
+            # Trabajo pesado (validar ~2300 modelos + enrich + overlay + serializar)
+            # fuera del event loop, para no congelar el resto de la API mientras carga.
+            enriched, body = await asyncio.to_thread(
+                _enrich_cached_library,
+                database, media_provider.name, provider, account, record.payload,
             )
-            response.headers["X-Cache-Status"] = CacheStatus.MISS.value
-        # También en HIT: tras un reinicio de la app el backfill de carátulas y
-        # detalles debe retomar sin esperar al próximo refresh de red. Con todo
-        # ya descargado es una consulta corta que no programa nada.
+            # También en HIT: tras un reinicio el backfill de carátulas/detalles retoma
+            # sin esperar al próximo refresh de red. Con todo descargado es una consulta
+            # corta que no programa nada. (Se agenda en el loop, no en el hilo de arriba.)
+            _warm_library_assets(database, settings, provider, account, enriched)
+            _warm_library_details(database, settings, provider, account, enriched, token)
+            return Response(
+                content=body,
+                media_type="application/json",
+                headers={"X-Cache-Status": status_value},
+            )
+        # Sin caché: primer arranque en frío de este proveedor/cuenta.
+        local_items = _local_library_items(database, settings, provider, account, "ANIME", scoped=True)
+        if local_items:
+            schedule_cache_refresh(database, cache_key, refresh)
+            response.headers["X-Cache-Status"] = CacheStatus.STALE.value
+            return _overlay_recent_edits(database, provider, account, local_items)
+        items = await media_provider.library(token)
+        database.set_cache(cache_key, [value.model_dump(mode="json") for value in items], 900)
+        database.sync_provider_library(
+            media_provider.name, media_provider.display_name, items, account_alias=account
+        )
+        response.headers["X-Cache-Status"] = CacheStatus.MISS.value
         _warm_library_assets(database, settings, provider, account, items)
         _warm_library_details(database, settings, provider, account, items, token)
         # enrich ya aplica las carátulas locales persistidas (persisted_cover_map);

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { check } from "@tauri-apps/plugin-updater";
@@ -87,6 +88,9 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
         return;
       }
       setUpdateState("downloading");
+      // Cerrar el sidecar antes de instalar: si sigue vivo bloquea nyanko-api.exe y
+      // _internal y el instalador falla (el hook NSIS es el respaldo).
+      await invoke("stop_sidecar").catch(() => {});
       await update.downloadAndInstall();
       await relaunch();
     } catch (reason) {

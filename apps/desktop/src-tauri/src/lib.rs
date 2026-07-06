@@ -34,7 +34,8 @@ pub fn run() {
             window_prefs::get_window_prefs,
             window_prefs::set_window_prefs,
             discord::discord_set_activity,
-            discord::discord_clear_activity
+            discord::discord_clear_activity,
+            sidecar::stop_sidecar
         ])
         .setup(|app| {
             let prefs = window_prefs::load(app.handle());
