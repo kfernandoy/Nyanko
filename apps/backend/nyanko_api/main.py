@@ -454,7 +454,9 @@ async def _download_detail_assets(
     semaphore = asyncio.Semaphore(6)
 
     async def download_cover(item) -> None:
-        if not item.cover_image:
+        # Ya en disco: no re-descargar. Antes cada refresh de card re-bajaba TODAS las
+        # carátulas de relaciones/recomendaciones aunque ya existieran.
+        if not item.cover_image or _local_asset_url(settings, provider, item.id, "cover"):
             return
         async with semaphore:
             await _download_asset(settings, item.cover_image, provider, item.id, "cover")
@@ -2591,7 +2593,12 @@ async def media_details(
             missing = await asyncio.to_thread(
                 _missing_detail_assets, settings, provider, media_id, persisted
             )
-            if record is None or record.stale or missing:
+            # El detalle persistido por el backfill ya está completo (con list_entry
+            # local). Refrescar SOLO si faltan imágenes propias: marcar STALE en cada
+            # apertura disparaba un fetch de red + re-descarga de TODAS las carátulas de
+            # relaciones por card → el "blink" de 1-2s. El progreso/score del usuario se
+            # mantiene al día por el sync de la biblioteca, no por este refresh.
+            if missing:
                 _schedule_media_refresh(database, settings, provider, account, media_id, token)
                 response.headers["X-Cache-Status"] = CacheStatus.STALE.value
             else:
@@ -2655,7 +2662,8 @@ async def manga_details(
             missing = await asyncio.to_thread(
                 _missing_detail_assets, settings, provider, media_id, persisted
             )
-            if record is None or record.stale or missing:
+            # Ver media_details: HIT si está completo; refrescar solo si faltan imágenes.
+            if missing:
                 _schedule_media_refresh(
                     database, settings, provider, account, media_id, token, media_type="MANGA"
                 )
