@@ -1070,6 +1070,18 @@ class Database:
             )
             return cursor.rowcount == 1
 
+    def revoke_extension_clients_by_label(self, label: str) -> int:
+        # Al re-emparejar un mismo navegador (token caducado/revocado) se creaba una fila
+        # nueva cada vez y se acumulaban clientes duplicados. Revocamos los activos con esa
+        # etiqueta antes de crear el nuevo, dejando un único cliente activo por navegador.
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE extension_clients SET revoked_at = ? "
+                "WHERE label = ? AND revoked_at IS NULL",
+                (int(time.time()), label),
+            )
+            return cursor.rowcount
+
     def revoke_extension_client(self, client_id: int) -> bool:
         with self.connect() as connection:
             cursor = connection.execute(

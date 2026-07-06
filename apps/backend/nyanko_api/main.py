@@ -6,6 +6,7 @@ import logging
 import os
 import secrets
 import subprocess
+import sys
 import time
 import mimetypes
 
@@ -2770,13 +2771,16 @@ def extension_bundle(
     x_nyanko_instance: str | None = Header(default=None),
 ) -> dict[str, str | None]:
     # Where the unpacked extension lives, so the app can open the folder for a guided
-    # "Load unpacked" install. ponytail: assumes the from-source layout; a packaged
-    # build would ship dist/ as a bundled resource and resolve it differently.
+    # "Load unpacked" install. Packaged: Tauri ships dist/ as an `extension/` resource
+    # next to the sidecar exe; from source: apps/extension/dist.
     if not x_nyanko_instance or not secrets.compare_digest(
         x_nyanko_instance, request.app.state.instance_token
     ):
         raise HTTPException(status_code=403, detail="Nyanko instance token required")
-    dist = Path(__file__).resolve().parents[3] / "apps" / "extension" / "dist"
+    if getattr(sys, "frozen", False):
+        dist = Path(sys.executable).parent / "extension"
+    else:
+        dist = Path(__file__).resolve().parents[3] / "apps" / "extension" / "dist"
     return {
         name: str(dist / name) if (dist / name).is_dir() else None
         for name in ("chromium", "firefox")
@@ -2795,7 +2799,11 @@ def auto_pair_extension(
         raise HTTPException(status_code=403, detail="Extension origin required")
     token = secrets.token_urlsafe(32)
     expires_at = int(time.time()) + 30 * 24 * 60 * 60
-    database.create_extension_client(pairing.label or "Navegador", _token_hash(token), expires_at)
+    label = pairing.label or "Navegador"
+    # Un solo cliente activo por navegador: revoca los previos con la misma etiqueta para
+    # que re-emparejar (token caducado/revocado) no acumule duplicados.
+    database.revoke_extension_clients_by_label(label)
+    database.create_extension_client(label, _token_hash(token), expires_at)
     return ExtensionTokenResponse(token=token, expires_at=expires_at)
 
 

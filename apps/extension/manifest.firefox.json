@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Nyanko Playback Detector",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Detecta reproducción de anime y la comunica con Nyanko localmente.",
   "permissions": ["storage"],
   "host_permissions": ["http://127.0.0.1/*"],
   "background": { "scripts": ["background.js"], "type": "module" },
   "content_scripts": [{ "matches": ["<all_urls>"], "all_frames": true, "js": ["adapters.js", "content.js"], "run_at": "document_idle" }],
   "options_ui": { "page": "options.html", "open_in_tab": true },
-  "action": { "default_title": "Nyanko", "default_popup": "popup.html" },
+  "icons": { "32": "icons/icon-32.png", "64": "icons/icon-64.png", "128": "icons/icon-128.png" },
+  "action": { "default_title": "Nyanko", "default_popup": "popup.html", "default_icon": { "32": "icons/icon-32.png", "128": "icons/icon-128.png" } },
   "browser_specific_settings": { "gecko": { "id": "nyanko@local.app", "strict_min_version": "121.0" } }
 }

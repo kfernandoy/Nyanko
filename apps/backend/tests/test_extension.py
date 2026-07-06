@@ -88,6 +88,18 @@ def test_auto_pair_only_from_extension_origin(database):
         auto_pair_extension(ExtensionRotateRequest(label="None"), None, database)
 
 
+def test_auto_pair_dedupes_active_clients_per_label(database):
+    for _ in range(3):
+        auto_pair_extension(
+            ExtensionRotateRequest(label="Chrome"), "chrome-extension://abcdefghijklmnop", database
+        )
+    auto_pair_extension(
+        ExtensionRotateRequest(label="Firefox"), "moz-extension://abcdefghijklmnop", database
+    )
+    active = [c for c in database.get_extension_clients() if c["revoked_at"] is None]
+    assert sorted(c["label"] for c in active) == ["Chrome", "Firefox"]
+
+
 def test_extension_bundle_requires_instance_token():
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(instance_token="instance-secret"))
