@@ -1,5 +1,6 @@
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import pytest
 
 from nyanko_api.config import Settings
@@ -28,7 +29,7 @@ def mal_entry(media_id: int, status: str, progress: int) -> dict:
 
 
 def test_authorization_url_uses_pkce_and_redirect_uri():
-    settings = Settings(mal_client_id="client-id", api_port=9876)
+    settings = Settings(_env_file=None, mal_client_id="client-id", api_port=9876)
     url = MyAnimeListClient(settings).authorization_url("state-value", "verifier")
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
@@ -40,6 +41,21 @@ def test_authorization_url_uses_pkce_and_redirect_uri():
     assert query["code_challenge_method"] == ["plain"]
     assert query["redirect_uri"] == [
         "http://127.0.0.1:9876/api/auth/mal/callback"
+    ]
+
+
+def test_authorization_url_uses_redirect_override():
+    settings = Settings(
+        _env_file=None,
+        mal_client_id="client-id",
+        mal_redirect_uri_override="http://localhost:9000/api/auth/mal/callback",
+    )
+    url = MyAnimeListClient(settings).authorization_url("state-value", "verifier")
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query)
+
+    assert query["redirect_uri"] == [
+        "http://localhost:9000/api/auth/mal/callback"
     ]
 
 
@@ -262,7 +278,7 @@ async def test_edit_entry_sends_optional_fields(monkeypatch):
     assert data["num_times_rewatched"] == 2
     assert data["comments"] == "notas"
     assert data["start_date"] == "2024-01-10"
-    assert data["finish_date"] == ""  # FuzzyDate() vacío → borrar fecha
+    assert data["finish_date"] == ""
 
 
 @pytest.mark.asyncio
@@ -354,7 +370,6 @@ async def test_discover_search_mode(monkeypatch):
 
 
 def test_media_item_includes_dates():
-    from nyanko_api.myanimelist import MyAnimeListClient
     entry = {
         "node": {
             "id": 1,
@@ -380,7 +395,6 @@ def test_media_item_includes_dates():
 
 
 def test_media_item_handles_missing_dates():
-    from nyanko_api.myanimelist import MyAnimeListClient
     entry = {
         "node": {
             "id": 2,
@@ -401,3 +415,23 @@ def test_media_item_handles_missing_dates():
     item = MyAnimeListClient._media_item(entry)
     assert item.started_at is None
     assert item.completed_at is None
+
+
+@pytest.mark.asyncio
+async def test_exchange_code_surfaces_mal_error_body(monkeypatch):
+    client = MyAnimeListClient(Settings(mal_client_id="id", mal_client_secret="secret"))
+
+    request = httpx.Request("POST", "https://myanimelist.net/v1/oauth2/token")
+    response = httpx.Response(
+        400,
+        request=request,
+        json={"error": "invalid_grant", "message": "Invalid code verifier"},
+    )
+
+    async def post(_url, **_kwargs):
+        raise httpx.HTTPStatusError("bad request", request=request, response=response)
+
+    monkeypatch.setattr(client.client, "post", post)
+
+    with pytest.raises(MyAnimeListError, match="Invalid code verifier"):
+        await client.exchange_code("code", "verifier")

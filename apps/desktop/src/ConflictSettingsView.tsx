@@ -1,17 +1,19 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { useApp } from "./i18n";
 import type { ConflictInfo, ConflictResolution } from "./types";
 
-const FIELD_LABELS: Record<string, string> = {
-  status: "Estado",
-  progress: "Progreso",
-};
-
 export function ConflictSettingsView() {
+  const { t } = useApp();
   const [conflicts, setConflicts] = useState<ConflictInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [manualValues, setManualValues] = useState<Record<number, string>>({});
+
+  const fieldLabels: Record<string, string> = {
+    status: t("conf.field.status"),
+    progress: t("conf.field.progress"),
+  };
 
   const load = async () => {
     setLoading(true);
@@ -19,7 +21,7 @@ export function ConflictSettingsView() {
     try {
       setConflicts(await api.conflicts("pending"));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "No se pudieron cargar los conflictos");
+      setError(reason instanceof Error ? reason.message : t("conf.loadError"));
     } finally {
       setLoading(false);
     }
@@ -35,7 +37,7 @@ export function ConflictSettingsView() {
       await api.resolveConflict(conflict.id, resolution);
       setConflicts((current) => current.filter((item) => item.id !== conflict.id));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "No se pudo resolver el conflicto");
+      setError(reason instanceof Error ? reason.message : t("conf.resolveError"));
     }
   };
 
@@ -45,7 +47,7 @@ export function ConflictSettingsView() {
       await api.dismissConflict(conflict.id);
       setConflicts((current) => current.filter((item) => item.id !== conflict.id));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "No se pudo descartar el conflicto");
+      setError(reason instanceof Error ? reason.message : t("conf.dismissError"));
     }
   };
 
@@ -53,39 +55,39 @@ export function ConflictSettingsView() {
     <div className="profile-settings">
       <div className="profile-heading">
         <div>
-          <h2>Conflictos de sincronización</h2>
-          <span>Cuando un proveedor cambia mientras Nyanko también tenía cambios locales</span>
+          <h2>{t("conf.title")}</h2>
+          <span>{t("conf.d")}</span>
         </div>
       </div>
       {loading ? (
-        <p className="correction-empty">Cargando…</p>
+        <p className="correction-empty">{t("common.loading")}</p>
       ) : conflicts.length === 0 ? (
-        <p className="correction-empty">No hay conflictos pendientes.</p>
+        <p className="correction-empty">{t("conf.empty")}</p>
       ) : (
         <div className="conflict-list">
           {conflicts.map((conflict) => (
             <div key={conflict.id} className="conflict-card">
               <div className="conflict-header">
                 <strong>{conflict.title}</strong>
-                <small>{conflict.provider} · {conflict.alias} · {FIELD_LABELS[conflict.field] ?? conflict.field}</small>
+                <small>{conflict.provider} · {conflict.alias} · {fieldLabels[conflict.field] ?? conflict.field}</small>
               </div>
               <div className="conflict-values">
                 <div>
-                  <small>Local</small>
+                  <small>{t("conf.local")}</small>
                   <span>{conflict.local_value ?? "—"}</span>
                 </div>
                 <div>
-                  <small>Remoto</small>
+                  <small>{t("conf.remote")}</small>
                   <span>{conflict.remote_value ?? "—"}</span>
                 </div>
               </div>
               <div className="conflict-actions">
-                <button onClick={() => void resolve(conflict, { resolution: "local" })}>Usar local</button>
-                <button onClick={() => void resolve(conflict, { resolution: "remote" })}>Usar remoto</button>
+                <button onClick={() => void resolve(conflict, { resolution: "local" })}>{t("conf.useLocal")}</button>
+                <button onClick={() => void resolve(conflict, { resolution: "remote" })}>{t("conf.useRemote")}</button>
                 <div className="conflict-manual">
                   <input
                     type="text"
-                    placeholder="Valor manual"
+                    placeholder={t("conf.manualValue")}
                     value={manualValues[conflict.id] ?? ""}
                     onChange={(event) => setManualValues({ ...manualValues, [conflict.id]: event.target.value })}
                   />
@@ -98,10 +100,10 @@ export function ConflictSettingsView() {
                     }
                     disabled={!manualValues[conflict.id]}
                   >
-                    Usar manual
+                    {t("conf.useManual")}
                   </button>
                 </div>
-                <button className="danger" onClick={() => void dismiss(conflict)}>Descartar</button>
+                <button className="danger" onClick={() => void dismiss(conflict)}>{t("conf.dismiss")}</button>
               </div>
             </div>
           ))}

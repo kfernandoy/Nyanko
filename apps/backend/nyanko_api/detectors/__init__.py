@@ -4,9 +4,10 @@ from .mpc_hc import MpcHcDetector
 from .mpv import MpvDetector
 from .pause import is_detection_paused, set_detection_paused
 from .potplayer import PotPlayerDetector
+from .process import ProcessDetector
 from .smtc import SmtcDetector
 from .vlc import VlcDetector
-from .window import ActiveWindowDetector, parse_media_title
+from .window import ActiveWindowDetector, MediaPlayerWindowDetector, parse_media_title
 
 __all__ = [
     "Detector",
@@ -14,9 +15,11 @@ __all__ = [
     "DetectorManager",
     "BrowserDetector",
     "ActiveWindowDetector",
+    "MediaPlayerWindowDetector",
     "MpcHcDetector",
     "MpvDetector",
     "PotPlayerDetector",
+    "ProcessDetector",
     "SmtcDetector",
     "VlcDetector",
     "is_detection_paused",

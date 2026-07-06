@@ -42,6 +42,10 @@ class Detector(ABC):
 
     name: ClassVar[str]
     priority: ClassVar[int] = 0
+    # Evidencia directa de reproducción (archivo abierto, IPC del reproductor,
+    # extensión): no parpadea como un título de ventana, así que el manager la
+    # publica casi de inmediato en vez de aplicar el umbral anti-transiciones.
+    trusted_evidence: ClassVar[bool] = False
 
     @abstractmethod
     def info(self) -> DetectorInfo:
@@ -71,6 +75,11 @@ class DetectorManager:
         self._stop_event = Event()
         self._poll_thread: Thread | None = None
         self._stability_seconds = max(0.0, stability_seconds)
+        # Las fuentes con evidencia directa publican tras una sola confirmación (~1 s
+        # de sondeo), no tras el umbral completo: el umbral existe para títulos de
+        # ventana que parpadean, no para archivos/IPC reales.
+        self._trusted_stability_seconds = min(1.0, self._stability_seconds)
+        self._trusted_sources: set[str] = set()
         self._grace_seconds = 5.0
         self._pending_fingerprint: tuple | None = None
         self._pending_since = 0.0
@@ -79,6 +88,8 @@ class DetectorManager:
     def register(self, detector: Detector, enabled: bool = True) -> None:
         self._detectors.append(detector)
         self._enabled[detector.name] = enabled
+        if detector.trusted_evidence:
+            self._trusted_sources.add(detector.name)
         self._detectors.sort(key=lambda d: d.priority, reverse=True)
         detector.start()
 
@@ -139,14 +150,19 @@ class DetectorManager:
                 self._latest = None
                 return
             self._last_seen_at = now
+            required = (
+                self._trusted_stability_seconds
+                if candidate.source in self._trusted_sources
+                else self._stability_seconds
+            )
             if fingerprint != self._pending_fingerprint:
                 self._pending_fingerprint = fingerprint
                 self._pending_since = now
                 self._latest = None
-                if self._stability_seconds == 0:
+                if required == 0:
                     self._latest = candidate
                 return
-            if now - self._pending_since >= self._stability_seconds:
+            if now - self._pending_since >= required:
                 self._latest = candidate
 
     def latest(self) -> PlaybackCandidate | None:

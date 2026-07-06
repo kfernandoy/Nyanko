@@ -22,6 +22,48 @@ def test_maps_user_preferences():
     assert preferences.display_adult_content is False
 
 
+@pytest.mark.asyncio
+async def test_exchange_code_uses_broker_without_local_secret(monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"access_token": "broker-token"}
+
+    calls: list[tuple[str, dict]] = []
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, json=None, **kwargs):
+            calls.append((url, json))
+            return Response()
+
+    # El intercambio usa un AsyncClient dedicado (sin reintentos: code de un solo uso).
+    monkeypatch.setattr("nyanko_api.anilist.httpx.AsyncClient", lambda **kwargs: Client())
+    settings = Settings(
+        anilist_client_id="123",
+        anilist_client_secret=None,
+        anilist_token_broker_url="https://proj.supabase.co/functions/v1/anilist-token",
+    )
+
+    token = await AniListClient(settings).exchange_code("the-code")
+
+    assert token == "broker-token"
+    url, payload = calls[0]
+    assert url == "https://proj.supabase.co/functions/v1/anilist-token"
+    # El broker recibe solo código y redirect: el secreto nunca sale de la función.
+    assert payload == {
+        "code": "the-code",
+        "redirect_uri": settings.anilist_redirect_uri,
+    }
+
+
 def test_media_item_accepts_score_and_updated_at():
     item = MediaItem(
         id=1,
@@ -61,13 +103,14 @@ async def test_media_list_maps_score_and_updated_at(monkeypatch):
                 return Response({"data": {"Viewer": {"id": 1}}})
             return Response({
                 "data": {
+                    "Viewer": {"mediaListOptions": {"scoreFormat": "POINT_10_DECIMAL"}},
                     "MediaListCollection": {
                         "lists": [{
                             "entries": [{
                                 "mediaId": 42,
                                 "status": "CURRENT",
                                 "progress": 7,
-                                "score": 85,
+                                "score": 8.5,
                                 "updatedAt": 1718000000,
                                 "media": {
                                     "id": 42,
@@ -225,6 +268,8 @@ async def test_edit_entry_sends_explicit_null_to_clear_date(monkeypatch):
     captured: dict = {}
 
     async def graphql(_token, _query, variables=None):
+        if "query ScoreFormat" in _query:
+            return {"Viewer": {"mediaListOptions": {"scoreFormat": "POINT_10"}}}
         captured.update(variables or {})
         return {
             "SaveMediaListEntry": {
@@ -247,6 +292,37 @@ async def test_edit_entry_sends_explicit_null_to_clear_date(monkeypatch):
 
     assert captured["startedAt"] is None
     assert "completedAt" not in captured
+
+
+@pytest.mark.asyncio
+async def test_edit_entry_converts_canonical_score_to_provider_scale(monkeypatch):
+    captured: dict = {}
+
+    async def graphql(_token, query, variables=None):
+        if "query ScoreFormat" in query:
+            return {"Viewer": {"mediaListOptions": {"scoreFormat": "POINT_10_DECIMAL"}}}
+        captured.update(variables or {})
+        return {
+            "SaveMediaListEntry": {
+                "id": 1,
+                "status": "CURRENT",
+                "score": 8.5,
+                "progress": 7,
+                "repeat": 0,
+                "private": False,
+                "notes": None,
+                "startedAt": None,
+                "completedAt": None,
+            }
+        }
+
+    client = AniListClient(Settings())
+    monkeypatch.setattr(client, "graphql", graphql)
+
+    entry = await client.edit_entry("token", 1, MediaEntryUpdate(score=85))
+
+    assert captured["score"] == 8.5
+    assert entry.score == 85
 
 
 @pytest.mark.asyncio
@@ -341,7 +417,7 @@ async def test_discover_sort_score_uses_score_desc(monkeypatch):
 
 
 def test_media_list_includes_dates():
-    from nyanko_api.anilist import AniListClient, _fuzzy_date_to_str
+    from nyanko_api.anilist import _fuzzy_date_to_str
 
     assert _fuzzy_date_to_str({"year": 2024, "month": 1, "day": 15}) == "2024-01-15"
     assert _fuzzy_date_to_str({"year": 2024, "month": None, "day": None}) == "2024-01-01"
@@ -398,7 +474,6 @@ def test_statistics_returns_statistics_response():
 
 from nyanko_api.models import (
     CharacterEdge,
-    CharacterImage,
     CharacterName,
     CharacterNode,
     MediaDetails,

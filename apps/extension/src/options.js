@@ -1,32 +1,46 @@
 const api = globalThis.browser ?? globalThis.chrome;
 const byId = (id) => document.getElementById(id);
-const lines = (value) => value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
 
-async function load() {
-  const config = await api.storage.local.get({ apiUrl: "http://127.0.0.1:8765", label: "Navegador", allowedSites: [], blockedSites: [], token: "" });
-  byId("api-url").value = config.apiUrl;
-  byId("label").value = config.label;
-  byId("allowed").value = config.allowedSites.join("\n");
-  byId("blocked").value = config.blockedSites.join("\n");
-  byId("status").textContent = config.token ? "Extensión emparejada." : "Pendiente de emparejar.";
+// content.js reads storage.local.enabledAdapters directly, so writing it here is all
+// that's needed — no backend round-trip. The catalog comes from adapters.js (loaded in
+// this page), so adding an adapter there gives it a toggle automatically.
+async function renderAdapters() {
+  const { enabledAdapters = [] } = await api.storage.local.get({ enabledAdapters: [] });
+  const enabled = new Set(enabledAdapters);
+  const container = byId("adapters");
+  container.replaceChildren();
+  for (const { name, label } of globalThis.NyankoSiteAdapters.catalog) {
+    const row = document.createElement("label");
+    row.className = "adapter";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = enabled.has(name);
+    box.addEventListener("change", async () => {
+      if (box.checked) enabled.add(name); else enabled.delete(name);
+      await api.storage.local.set({ enabledAdapters: [...enabled] });
+    });
+    const text = document.createElement("span");
+    text.textContent = label;
+    row.append(box, text);
+    container.append(row);
+  }
 }
 
-byId("pair").addEventListener("click", async () => {
-  const apiUrl = byId("api-url").value.trim().replace(/\/$/, "");
-  const label = byId("label").value.trim() || "Navegador";
-  try {
-    const response = await fetch(`${apiUrl}/api/extension/pair`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: byId("code").value.trim(), label }) });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
-    await api.storage.local.set({ apiUrl, label, token: payload.token, tokenExpiresAt: payload.expires_at });
-    byId("status").textContent = "Emparejamiento completado.";
-    byId("code").value = "";
-  } catch (error) { byId("status").textContent = error instanceof Error ? error.message : String(error); }
-});
+async function load() {
+  const config = await api.storage.local.get({ apiUrl: "http://127.0.0.1:8765", token: "", lastError: "", lastEventAt: 0 });
+  byId("api-url").value = config.apiUrl;
+  const parts = [config.token ? "Emparejada automáticamente." : "Se emparejará al detectar reproducción."];
+  if (config.lastEventAt) parts.push(`Último evento: ${new Date(config.lastEventAt).toLocaleString("es")}.`);
+  if (config.lastError) parts.push(`Último error: ${config.lastError}`);
+  byId("status").textContent = parts.join(" ");
+  await renderAdapters();
+}
 
 byId("save").addEventListener("click", async () => {
-  await api.storage.local.set({ allowedSites: lines(byId("allowed").value), blockedSites: lines(byId("blocked").value) });
-  byId("status").textContent = "Preferencias de sitios guardadas.";
+  const apiUrl = byId("api-url").value.trim().replace(/\/$/, "");
+  // Changing the address invalidates the current token; clear it so it re-pairs.
+  await api.storage.local.set({ apiUrl, token: "", tokenExpiresAt: 0 });
+  byId("status").textContent = "Dirección guardada. Se volverá a emparejar automáticamente.";
 });
 
 void load();

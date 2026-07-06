@@ -6,7 +6,7 @@
   "permissions": ["storage"],
   "host_permissions": ["http://127.0.0.1/*"],
   "background": { "scripts": ["background.js"], "type": "module" },
-  "content_scripts": [{ "matches": ["<all_urls>"], "js": ["adapters.js", "content.js"], "run_at": "document_idle" }],
+  "content_scripts": [{ "matches": ["<all_urls>"], "all_frames": true, "js": ["adapters.js", "content.js"], "run_at": "document_idle" }],
   "options_ui": { "page": "options.html", "open_in_tab": true },
   "action": { "default_title": "Nyanko", "default_popup": "popup.html" },
   "browser_specific_settings": { "gecko": { "id": "nyanko@local.app", "strict_min_version": "121.0" } }

@@ -2,21 +2,23 @@ import { BaseDirectory, readTextFile } from "@tauri-apps/plugin-fs";
 
 import type {
   AccountInfo,
-  AssociationCandidateInfo,
   BulkUpdateResult,
   ConflictInfo,
   ConflictResolution,
   ActivityItem,
-  MediaStatistics,
   StatisticsResponse,
   CacheStatusResponse,
   CacheStatus,
   DetectorInfo,
+  ExtensionBundle,
   ExtensionClientInfo,
   GlobalSearchResponse,
+  WontWatchState,
   Health,
+  LibraryFolder,
   LibrarySearchResponse,
-  LinkedIdentityInfo,
+  PendingLocalItem,
+  ScanSummary,
   MediaDetails,
   MediaEntryUpdate,
   MediaListEntry,
@@ -27,10 +29,17 @@ import type {
   PlaybackPreferences,
   ProviderInfo,
   SearchFilters,
+  SearchResult,
   SeasonMedia,
   SyncStatusResponse,
   UserPreferences,
   UserPreferencesUpdate,
+  TorrentItem,
+  TorrentSource,
+  TorrentFilter,
+  TorrentSettings,
+  TorrentDownloadResponse,
+  LocalSeries,
 } from "./types";
 
 const DEFAULT_API_URL = "http://127.0.0.1:8765";
@@ -123,58 +132,102 @@ async function verifyInstance(apiUrl: string, expectedToken?: string | null): Pr
   }
 }
 
+// El token de instancia se lee de disco y se verifica UNA vez (single-flight) y se
+// reutiliza en memoria: hacerlo por request duplicaba la latencia de toda la app.
+let instanceTokenPromise: Promise<string | null> | null = null;
+
+function resetInstanceToken(): void {
+  instanceTokenPromise = null;
+}
+
+async function loadInstanceToken(apiUrl: string): Promise<string | null> {
+  const expected = await readAppDataFile("instance_token");
+  if (expected) {
+    if (!(await verifyInstance(apiUrl, expected))) {
+      clearApiUrlCache();
+      throw new Error("El servicio local no pertenece a esta instancia de Nyanko");
+    }
+    return expected;
+  }
+  try {
+    const response = await fetchWithTimeout(`${apiUrl}/api/instance`, {}, INSTANCE_TIMEOUT_MS);
+    if (response.ok) {
+      return ((await response.json()) as { token?: string }).token ?? null;
+    }
+  } catch {
+    // La request real de abajo reporta el fallo de conexión de forma consistente.
+  }
+  return null;
+}
+
+function getInstanceToken(apiUrl: string): Promise<string | null> {
+  instanceTokenPromise ??= loadInstanceToken(apiUrl).catch((reason) => {
+    instanceTokenPromise = null;
+    throw reason;
+  });
+  return instanceTokenPromise;
+}
+
 export interface ApiResponse<T> {
   data: T;
   cacheStatus: CacheStatus | null;
 }
 
-async function rawRequest(path: string, options?: RequestInit): Promise<Response> {
+function normalizeAssetUrls<T>(value: T, apiUrl: string): T {
+  if (typeof value === "string") {
+    return (value.startsWith("/assets/") ? `${apiUrl}${value}` : value) as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeAssetUrls(item, apiUrl)) as T;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, normalizeAssetUrls(item, apiUrl)]),
+    ) as T;
+  }
+  return value;
+}
+
+async function rawRequest(path: string, options?: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
   const apiUrl = await getApiUrl();
-  const expectedToken = await readAppDataFile("instance_token");
-  if (expectedToken && !(await verifyInstance(apiUrl, expectedToken))) {
+  const instanceToken = await getInstanceToken(apiUrl);
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(`${apiUrl}${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(instanceToken ? { "X-Nyanko-Instance": instanceToken } : {}),
+        ...options?.headers,
+      },
+    }, timeoutMs);
+  } catch (reason) {
+    // Fallo de red: puede que el sidecar se reiniciara con otro token/puerto.
+    resetInstanceToken();
     clearApiUrlCache();
-    throw new Error("El servicio local no pertenece a esta instancia de Nyanko");
+    throw reason;
   }
-  let instanceToken = expectedToken;
-  if (!instanceToken) {
-    try {
-      const instanceResponse = await fetchWithTimeout(
-        `${apiUrl}/api/instance`,
-        {},
-        INSTANCE_TIMEOUT_MS,
-      );
-      if (instanceResponse.ok) {
-        const payload = (await instanceResponse.json()) as { token?: string };
-        instanceToken = payload.token ?? null;
-      }
-    } catch {
-      // The real request below will report the connection failure consistently.
-    }
-  }
-  const response = await fetchWithTimeout(`${apiUrl}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(instanceToken ? { "X-Nyanko-Instance": instanceToken } : {}),
-      ...options?.headers,
-    },
-  });
   if (!response.ok) {
+    if (response.status === 401) resetInstanceToken();
     const payload = await response.json().catch(() => null);
-    throw new Error(payload?.detail ?? `HTTP ${response.status}`);
+    const detail = payload?.detail;
+    throw new Error(typeof detail === "string" ? detail : (detail?.message ?? `HTTP ${response.status}`));
   }
   return response;
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await rawRequest(path, options);
-  return response.status === 204 ? (undefined as T) : response.json();
+async function request<T>(path: string, options?: RequestInit, timeoutMs?: number): Promise<T> {
+  const response = await rawRequest(path, options, timeoutMs);
+  if (response.status === 204) return undefined as T;
+  return normalizeAssetUrls(await response.json(), await getApiUrl());
 }
 
 async function requestWithCache<T>(path: string, options?: RequestInit): Promise<ApiResponse<T>> {
   const response = await rawRequest(path, options);
   const cacheStatus = response.headers.get("X-Cache-Status") as CacheStatus | null;
-  const data = response.status === 204 ? (undefined as T) : await response.json();
+  const data = response.status === 204
+    ? (undefined as T)
+    : normalizeAssetUrls(await response.json(), await getApiUrl());
   return { data, cacheStatus };
 }
 
@@ -199,73 +252,75 @@ export const api = {
       provider === "mal" ? "/api/auth/mal/url" : "/api/auth/url",
       { provider, alias },
     )),
+  kitsuConnect: (username: string, password: string, account = "default") =>
+    request<{ ok: boolean }>("/api/auth/kitsu/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password, account }),
+    }),
   accounts: () => request<AccountInfo[]>("/api/accounts"),
   providers: () => request<ProviderInfo[]>("/api/providers"),
   updateAccount: (
     accountId: number,
-    update: Partial<Pick<AccountInfo, "sync_direction" | "is_primary">>,
+    update: Partial<Pick<AccountInfo, "is_primary">>,
   ) =>
     request<AccountInfo>(`/api/accounts/${accountId}`, {
       method: "PUT",
       body: JSON.stringify(update),
     }),
-  startExtensionPairing: () =>
-    request<{ code: string; expires_at: number; api_url: string }>("/api/extension/pairing", { method: "POST" }),
+  extensionBundle: () =>
+    request<ExtensionBundle>("/api/extension/bundle"),
   extensionClients: () =>
     request<ExtensionClientInfo[]>("/api/extension/clients"),
   revokeExtensionClient: (clientId: number) =>
     request<void>(`/api/extension/clients/${clientId}`, { method: "DELETE" }),
-  associationCandidates: () =>
-    request<AssociationCandidateInfo[]>("/api/associations"),
-  resolveAssociation: (candidateId: number) =>
-    request<{ media_id: number }>(`/api/associations/${candidateId}/resolve`, { method: "POST" }),
-  dismissAssociation: (candidateId: number) =>
-    request<void>(`/api/associations/${candidateId}/dismiss`, { method: "POST" }),
-  linkedIdentities: () =>
-    request<LinkedIdentityInfo[]>("/api/associations/identities"),
+  libraryFolders: () => request<LibraryFolder[]>("/api/library/folders"),
+  addLibraryFolder: (path: string, recursive: boolean) =>
+    request<LibraryFolder>("/api/library/folders", { method: "POST", body: JSON.stringify({ path, recursive }) }),
+  deleteLibraryFolder: (folderId: number) =>
+    request<void>(`/api/library/folders/${folderId}`, { method: "DELETE" }),
+  // El escaneo recorre el disco; necesita mucho más que el timeout genérico de 15s.
+  scanLibrary: () => request<ScanSummary>("/api/library/scan", { method: "POST" }, 300_000),
+  pendingLocal: () => request<PendingLocalItem[]>("/api/library/pending-local"),
+  getLocalLibrary: () => request<LocalSeries[]>("/api/library/local"),
+  associateLocal: (body: { title: string; from_media_id?: number | null; external_id?: number | null; status?: string | null; media?: SearchResult | null }) =>
+    request<void>(withAccount("/api/library/local/associate"), { method: "POST", body: JSON.stringify(body) }),
+  getScanSettings: () => request<{ scan_on_startup: boolean; watch_folders: boolean }>("/api/library/scan-settings"),
+  setScanSettings: (scanOnStartup: boolean, watchFolders: boolean) =>
+    request<{ scan_on_startup: boolean; watch_folders: boolean }>("/api/library/scan-settings", { method: "PUT", body: JSON.stringify({ scan_on_startup: scanOnStartup, watch_folders: watchFolders }) }),
   conflicts: (status = "pending") =>
     request<ConflictInfo[]>(`/api/conflicts?status=${encodeURIComponent(status)}`),
   resolveConflict: (conflictId: number, resolution: ConflictResolution) =>
     request<ConflictInfo>(`/api/conflicts/${conflictId}/resolve`, { method: "POST", body: JSON.stringify(resolution) }),
   dismissConflict: (conflictId: number) =>
     request<ConflictInfo>(`/api/conflicts/${conflictId}/dismiss`, { method: "POST" }),
-  separateIdentity: (identityId: number) =>
-    request<{ media_id: number }>(`/api/associations/identities/${identityId}/separate`, { method: "POST" }),
   logout: () => request<void>(withAccount("/api/auth/logout"), { method: "POST" }),
   logoutAccount: (provider: string, alias: string) =>
     request<void>(withAccount("/api/auth/logout", { provider, alias }), { method: "POST" }),
-  importMal: (alias: string) =>
-    request<{ imported: number }>(withAccount("/api/providers/mal/import", { provider: "mal", alias }), { method: "POST" }),
-  mediaList: () => cachedGet<MediaItem[]>(withAccount("/api/library")),
-  mediaListManga: () => cachedGet<MediaItem[]>(withAccount("/api/library/manga")),
+  mediaList: (view: "provider" | "combined" = "provider") => cachedGet<MediaItem[]>(withAccount(`/api/library?view=${view}`)),
+  mediaListManga: (view: "provider" | "combined" = "provider") => cachedGet<MediaItem[]>(withAccount(`/api/library/manga?view=${view}`)),
   activity: (page = 1) => cachedGet<ActivityItem[]>(withAccount(`/api/activity?page=${page}`)),
   season: (season: string, year: number) =>
     cachedGet<SeasonMedia[]>(withAccount(`/api/season?season=${season}&year=${year}`)),
   statistics: () => cachedGet<StatisticsResponse>(withAccount("/api/statistics")),
-  statisticsPeriod: (from: string, to: string, type: "ANIME" | "MANGA" = "ANIME") =>
-    request<MediaStatistics>(
-      withAccount(
-        `/api/statistics/period?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&type=${type}`
-      )
-    ),
   statisticsExport: async (): Promise<Blob> => {
     const response = await rawRequest(withAccount("/api/statistics/export"));
     return response.blob();
   },
-  mediaDetails: (mediaId: number) => cachedGet<MediaDetails>(withAccount(`/api/media/${mediaId}`)),
-  mangaDetails: (mediaId: number) => cachedGet<MediaDetails>(withAccount(`/api/media/${mediaId}/manga`)),
+  mediaDetails: (mediaId: number, account: ActiveAccount = activeAccount) => cachedGet<MediaDetails>(withAccount(`/api/media/${mediaId}`, account)),
+  mangaDetails: (mediaId: number, account: ActiveAccount = activeAccount) => cachedGet<MediaDetails>(withAccount(`/api/media/${mediaId}/manga`, account)),
   editEntry: (mediaId: number, update: MediaEntryUpdate) =>
     request<MediaListEntry>(withAccount(`/api/media/${mediaId}/entry`), {
       method: "PUT",
       body: JSON.stringify(update),
     }),
   bulkUpdateEntry: (mediaId: number, update: MediaEntryUpdate) =>
-    request<BulkUpdateResult>(`/api/library/bulk-update?media_id=${mediaId}`, {
+    request<BulkUpdateResult>(withAccount(`/api/library/bulk-update?media_id=${mediaId}`), {
       method: "POST",
       body: JSON.stringify(update),
     }),
-  deleteEntry: (entryId: number) =>
-    request<void>(withAccount(`/api/library/entry/${entryId}`), { method: "DELETE" }),
+  deleteEntry: (entryId: number, account: ActiveAccount = activeAccount) =>
+    request<void>(withAccount(`/api/library/entry/${entryId}`, account), { method: "DELETE" }),
   activePlayback: () => request<PlaybackCandidate | null>("/api/playback/active"),
   clearLocalData: () => request<void>("/api/data/clear", { method: "POST" }),
   cacheStatus: () => request<CacheStatusResponse>("/api/cache/status"),
@@ -277,7 +332,8 @@ export const api = {
     return request<SyncStatusResponse>(withAccount(`/api/sync/status${query}`));
   },
   forceSync: () => request<void>(withAccount("/api/sync"), { method: "POST" }),
-  preferences: () => requestWithCache<UserPreferences>(withAccount("/api/preferences")),
+  preferences: (account: ActiveAccount = activeAccount) =>
+    requestWithCache<UserPreferences>(withAccount("/api/preferences", account)),
   updatePreferences: (preferences: UserPreferencesUpdate) =>
     request<UserPreferences>(withAccount("/api/preferences"), {
       method: "PUT",
@@ -294,10 +350,10 @@ export const api = {
     }),
   matchPlayback: (candidate: PlaybackCandidate) =>
     request<PlaybackMatchResponse>(withAccount("/api/playback/match"), { method: "POST", body: JSON.stringify(candidate) }),
-  confirmPlayback: (eventId: number, mediaId: number, progress: number) =>
+  confirmPlayback: (eventId: number, mediaId: number, progress: number, siteIdentifier?: string | null, siteAdapter?: string | null) =>
     request<void>(withAccount("/api/playback/confirm"), {
       method: "POST",
-      body: JSON.stringify({ event_id: eventId, media_id: mediaId, progress }),
+      body: JSON.stringify({ event_id: eventId, media_id: mediaId, progress, site_identifier: siteIdentifier ?? null, site_adapter: siteAdapter ?? null }),
     }),
   undoPlayback: () => request<{ undone: boolean; media_id: number | null; restored_progress: number | null }>(withAccount("/api/playback/undo"), { method: "POST" }),
   retryPlayback: (eventId: number) =>
@@ -352,10 +408,24 @@ export const api = {
     if (filters.genre) params.set("genre", filters.genre);
     if (filters.format) params.set("format", filters.format);
     if (filters.year != null) params.set("year", String(filters.year));
+    if (filters.season) params.set("season", filters.season);
     if (filters.status) params.set("status", filters.status);
     if (filters.is_adult) params.set("is_adult", "true");
     return request<GlobalSearchResponse>(withAccount(`/api/search/media?${params.toString()}`));
   },
+  wontWatch: () => request<WontWatchState>(withAccount("/api/discover/wont-watch")),
+  addWontWatch: (mediaId: number, title: string | null, coverImage: string | null) =>
+    request<void>(withAccount("/api/discover/wont-watch"), {
+      method: "POST",
+      body: JSON.stringify({ media_id: mediaId, title, cover_image: coverImage }),
+    }),
+  removeWontWatch: (mediaId: number) =>
+    request<void>(withAccount(`/api/discover/wont-watch/${mediaId}`), { method: "DELETE" }),
+  setDiscoverShowMarked: (showMarked: boolean) =>
+    request<void>(withAccount("/api/discover/settings"), {
+      method: "PUT",
+      body: JSON.stringify({ show_marked: showMarked }),
+    }),
   createCorrection: (rawTitle: string, mediaId: number, animeTitle?: string | null, siteIdentifier?: string | null, siteAdapter?: string | null) =>
     request<void>("/api/playback/correction", {
       method: "POST",
@@ -369,6 +439,20 @@ export const api = {
     }),
   deleteCorrection: (rawTitle: string) =>
     request<void>(`/api/playback/correction/${encodeURIComponent(rawTitle)}`, { method: "DELETE" }),
+  torrentFeed: (refresh = false) => request<TorrentItem[]>(`/api/torrents/feed?refresh=${refresh}`),
+  torrentUnread: () => request<{ count: number }>("/api/torrents/unread-count"),
+  downloadTorrent: (signature: string, mode?: "magnet" | "torrent") => request<TorrentDownloadResponse>("/api/torrents/download", { method: "POST", body: JSON.stringify({ signature, mode: mode ?? null }) }),
+  discardTorrent: (signature: string) => request<void>("/api/torrents/discard", { method: "POST", body: JSON.stringify({ signature }) }),
+  torrentSources: () => request<TorrentSource[]>("/api/torrents/sources"),
+  addTorrentSource: (b: Omit<TorrentSource, "id">) => request<TorrentSource>("/api/torrents/sources", { method: "POST", body: JSON.stringify(b) }),
+  updateTorrentSource: (id: number, b: Omit<TorrentSource, "id">) => request<TorrentSource>(`/api/torrents/sources/${id}`, { method: "PUT", body: JSON.stringify(b) }),
+  deleteTorrentSource: (id: number) => request<void>(`/api/torrents/sources/${id}`, { method: "DELETE" }),
+  torrentFilters: () => request<TorrentFilter[]>("/api/torrents/filters"),
+  addTorrentFilter: (b: Omit<TorrentFilter, "id">) => request<TorrentFilter>("/api/torrents/filters", { method: "POST", body: JSON.stringify(b) }),
+  updateTorrentFilter: (id: number, b: Omit<TorrentFilter, "id">) => request<TorrentFilter>(`/api/torrents/filters/${id}`, { method: "PUT", body: JSON.stringify(b) }),
+  deleteTorrentFilter: (id: number) => request<void>(`/api/torrents/filters/${id}`, { method: "DELETE" }),
+  torrentSettings: () => request<TorrentSettings>("/api/torrents/settings"),
+  putTorrentSettings: (b: TorrentSettings) => request<TorrentSettings>("/api/torrents/settings", { method: "PUT", body: JSON.stringify(b) }),
 };
 
 export async function playbackSocket(): Promise<WebSocket> {

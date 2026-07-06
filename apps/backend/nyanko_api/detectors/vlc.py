@@ -8,6 +8,7 @@ from .base import Detector, DetectorInfo, looks_finished
 class VlcDetector(Detector):
     name = "vlc"
     priority = 20
+    trusted_evidence = True
 
     def __init__(self, host: str = "127.0.0.1", port: int = 8080, password: str | None = None):
         self.base_url = f"http://{host}:{port}"

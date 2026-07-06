@@ -13,13 +13,20 @@ from nyanko_api.database import Database
 from nyanko_api.detectors import BrowserDetector
 from nyanko_api.main import (
     app,
+    auto_pair_extension,
+    extension_bundle,
     extension_playback_event,
     pair_extension,
     start_extension_pairing,
     _playback_ready_for_auto_confirm,
 )
 from nyanko_api.models import PlaybackPreferences
-from nyanko_api.models import ExtensionPairRequest, ExtensionPlaybackEvent, PlaybackMatchRequest
+from nyanko_api.models import (
+    ExtensionPairRequest,
+    ExtensionPlaybackEvent,
+    ExtensionRotateRequest,
+    PlaybackMatchRequest,
+)
 
 
 @pytest.fixture
@@ -66,6 +73,30 @@ def test_pairing_requires_instance_token(database):
             database,
             Settings(),
         )
+
+
+def test_auto_pair_only_from_extension_origin(database):
+    token = auto_pair_extension(
+        ExtensionRotateRequest(label="Chrome"), "chrome-extension://abcdefghijklmnop", database
+    )
+    assert database.validate_extension_token(
+        hashlib.sha256(token.token.encode()).hexdigest()
+    )
+    with pytest.raises(HTTPException):
+        auto_pair_extension(ExtensionRotateRequest(label="Evil"), "https://evil.test", database)
+    with pytest.raises(HTTPException):
+        auto_pair_extension(ExtensionRotateRequest(label="None"), None, database)
+
+
+def test_extension_bundle_requires_instance_token():
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(instance_token="instance-secret"))
+    )
+    with pytest.raises(HTTPException):
+        extension_bundle(request, "wrong-secret")
+
+    paths = extension_bundle(request, "instance-secret")
+    assert set(paths) == {"chromium", "firefox"}
 
 
 def test_authenticated_extension_event_reaches_browser_detector():

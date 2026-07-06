@@ -20,6 +20,7 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
         .app_data_dir()
         .map_err(|err| format!("Failed to resolve app data dir: {err}"))?;
     let data_dir_str = data_dir.to_string_lossy().to_string();
+    let _ = std::fs::remove_file(data_dir.join("port"));
 
     let sidecar = app
         .shell()

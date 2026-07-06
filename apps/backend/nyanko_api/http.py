@@ -75,6 +75,24 @@ class RateLimitedClient:
         self._base_delay = base_delay
         self._max_delay = max_delay
         self._timeout = timeout
+        # Cliente perezoso POR event loop: crear un AsyncClient por request construía
+        # un contexto SSL (~100-200 ms de CPU) y un handshake TLS nuevos cada vez, y
+        # un único cliente compartido no es seguro con varios loops vivos (el
+        # MutationWorker corre asyncio.run() en otro hilo: reemplazar el cliente del
+        # loop principal podía cerrarlo con requests en vuelo). Las entradas de loops
+        # cerrados se podan en el siguiente acceso; sus conexiones mueren con el loop
+        # y el GC finaliza el resto.
+        self._clients: dict[asyncio.AbstractEventLoop, httpx.AsyncClient] = {}
+
+    def _client_for(self, loop: asyncio.AbstractEventLoop) -> httpx.AsyncClient:
+        for stale in [known for known in self._clients if known.is_closed()]:
+            del self._clients[stale]
+        client = self._clients.get(loop)
+        # getattr: los tests sustituyen AsyncClient por fakes sin is_closed.
+        if client is None or getattr(client, "is_closed", False):
+            client = httpx.AsyncClient(timeout=self._timeout)
+            self._clients[loop] = client
+        return client
 
     @retry_with_backoff(max_retries=3, base_delay=1.0, max_delay=30.0)
     async def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
@@ -83,12 +101,12 @@ class RateLimitedClient:
             if self._semaphore is not None
             else contextlib.nullcontext()
         ):
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.request(method, url, **kwargs)
-                response.raise_for_status()
-                if self._interval:
-                    await asyncio.sleep(self._interval)
-                return response
+            loop = asyncio.get_running_loop()
+            response = await self._client_for(loop).request(method, url, **kwargs)
+            response.raise_for_status()
+            if self._interval:
+                await asyncio.sleep(self._interval)
+            return response
 
     async def post(self, url: str, **kwargs: Any) -> httpx.Response:
         return await self.request("POST", url, **kwargs)

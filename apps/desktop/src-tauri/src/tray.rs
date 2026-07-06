@@ -23,7 +23,12 @@ impl Default for DetectionPaused {
 pub fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let menu = build_menu(app)?;
 
-    TrayIconBuilder::new()
+    let mut builder = TrayIconBuilder::new();
+    // Sin esto la bandeja aparece sin imagen: usar el ícono de la app.
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, event| match event.id.as_ref() {
@@ -68,6 +73,7 @@ fn build_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, Box<dyn std::error::E
 
 fn show_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }

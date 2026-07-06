@@ -52,10 +52,12 @@ _STATUS_TO_CANONICAL: dict[str, dict[str, CanonicalStatus]] = {
     },
     "mal": {
         "watching": CanonicalStatus.CURRENT,
+        "reading": CanonicalStatus.CURRENT,
         "completed": CanonicalStatus.COMPLETED,
         "on_hold": CanonicalStatus.PAUSED,
         "dropped": CanonicalStatus.DROPPED,
         "plan_to_watch": CanonicalStatus.PLANNING,
+        "plan_to_read": CanonicalStatus.PLANNING,
     },
 }
 

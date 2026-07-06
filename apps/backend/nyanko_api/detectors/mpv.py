@@ -11,6 +11,7 @@ from .base import Detector, DetectorInfo, looks_finished
 class MpvDetector(Detector):
     name = "mpv"
     priority = 30
+    trusted_evidence = True
 
     def __init__(self, socket_path: str | None = None):
         self.socket_path = socket_path or self._default_socket_path()

@@ -5,6 +5,8 @@ import httpx
 from .config import Settings
 from .http import RateLimitedClient
 from .provider_mappings import (
+    ScoreFormat,
+    convert_score,
     from_canonical_status,
     to_canonical_format,
     to_canonical_status,
@@ -49,16 +51,18 @@ AUTHORIZE_URL = "https://anilist.co/api/v2/oauth/authorize"
 TOKEN_URL = "https://anilist.co/api/v2/oauth/token"
 
 VIEWER_QUERY = "query Viewer { Viewer { id name } }"
+SCORE_FORMAT_QUERY = "query ScoreFormat { Viewer { mediaListOptions { scoreFormat } } }"
 
 LIST_QUERY = """
 query ViewerList($userId: Int!) {
+  Viewer { mediaListOptions { scoreFormat } }
   MediaListCollection(userId: $userId, type: ANIME, sort: UPDATED_TIME_DESC) {
     lists { entries {
       mediaId status progress score updatedAt
       startedAt { year month day }
       completedAt { year month day }
       media {
-        id episodes format seasonYear siteUrl synonyms genres
+        id idMal episodes format season seasonYear siteUrl synonyms genres status
         title { userPreferred romaji english native }
         coverImage { large }
       }
@@ -98,10 +102,11 @@ query Season($season: MediaSeason!, $year: Int!, $page: Int!, $perPage: Int!) {
       isAdult: false
       sort: [POPULARITY_DESC]
     ) {
-      id format status episodes averageScore popularity
+      id format status episodes averageScore popularity genres
+      description(asHtml: false)
       startDate { year month day }
       title { userPreferred }
-      coverImage { large }
+      coverImage { large color }
       studios { nodes { name } }
       nextAiringEpisode { episode airingAt }
     }
@@ -136,10 +141,9 @@ query Statistics {
 }
 """
 
-DETAIL_QUERY = """
-query MediaDetails($id: Int!) {
-  Viewer { id mediaListOptions { scoreFormat } }
-  Media(id: $id, type: ANIME) {
+# Campos del detalle de anime, compartidos por la query individual y la de lote
+# (id_in) que usa el backfill — así ambas piden exactamente lo mismo sin duplicar.
+_ANIME_DETAIL_FIELDS = """
     id siteUrl description(asHtml: false) format status source season seasonYear
     episodes duration genres countryOfOrigin averageScore synonyms bannerImage
     title { userPreferred romaji english native }
@@ -174,9 +178,25 @@ query MediaDetails($id: Int!) {
         }
       }
     }
-  }
-}
 """
+
+DETAIL_QUERY = (
+    "query MediaDetails($id: Int!) {\n"
+    "  Viewer { id mediaListOptions { scoreFormat } }\n"
+    "  Media(id: $id, type: ANIME) {" + _ANIME_DETAIL_FIELDS + "  }\n"
+    "}\n"
+)
+
+# Lote: hasta 50 detalles de anime en una sola request (probado ~3.5s / 434 KB,
+# sin rechazo por complejidad). Reduce el backfill de horas a minutos.
+BATCH_DETAIL_QUERY = (
+    "query BatchMediaDetails($ids: [Int]) {\n"
+    "  Viewer { mediaListOptions { scoreFormat } }\n"
+    "  Page(perPage: 50) {\n"
+    "    media(id_in: $ids, type: ANIME) {" + _ANIME_DETAIL_FIELDS + "    }\n"
+    "  }\n"
+    "}\n"
+)
 
 ENTRY_QUERY = """
 query MediaEntry($id: Int!, $userId: Int!) {
@@ -222,6 +242,7 @@ mutation DeleteEntry($id: Int!) {
 
 MANGA_LIST_QUERY = """
 query ViewerMangaList($userId: Int!) {
+  Viewer { mediaListOptions { scoreFormat } }
   MediaListCollection(userId: $userId, type: MANGA, sort: UPDATED_TIME_DESC) {
     lists { entries {
       mediaId status progress score updatedAt
@@ -286,8 +307,8 @@ SEARCH_QUERY = """
 query Search($query: String!, $page: Int!, $perPage: Int!, $formats: [MediaFormat]) {
   Page(page: $page, perPage: $perPage) {
     media(type: ANIME, search: $query, isAdult: false, sort: [SEARCH_MATCH], format_in: $formats) {
-      id format status episodes averageScore popularity
-      title { userPreferred }
+      id format status episodes averageScore popularity seasonYear genres synonyms
+      title { userPreferred romaji english native }
       coverImage { large }
     }
   }
@@ -299,8 +320,8 @@ query SearchPaginated($query: String!, $page: Int!, $perPage: Int!, $formats: [M
   Page(page: $page, perPage: $perPage) {
     pageInfo { hasNextPage }
     media(type: ANIME, search: $query, isAdult: false, sort: [SEARCH_MATCH], format_in: $formats) {
-      id format status episodes averageScore popularity
-      title { userPreferred }
+      id format status episodes averageScore popularity seasonYear genres synonyms
+      title { userPreferred romaji english native }
       coverImage { large }
     }
   }
@@ -311,8 +332,8 @@ SEARCH_MANGA_QUERY = """
 query SearchManga($query: String!, $page: Int!, $perPage: Int!) {
   Page(page: $page, perPage: $perPage) {
     media(type: MANGA, search: $query, isAdult: false, sort: [SEARCH_MATCH]) {
-      id format status chapters volumes averageScore popularity
-      title { userPreferred }
+      id format status chapters volumes averageScore popularity seasonYear genres synonyms
+      title { userPreferred romaji english native }
       coverImage { large }
     }
   }
@@ -324,71 +345,57 @@ query SearchMangaPaginated($query: String!, $page: Int!, $perPage: Int!) {
   Page(page: $page, perPage: $perPage) {
     pageInfo { hasNextPage }
     media(type: MANGA, search: $query, isAdult: false, sort: [SEARCH_MATCH]) {
-      id format status chapters volumes averageScore popularity
-      title { userPreferred }
+      id format status chapters volumes averageScore popularity seasonYear genres synonyms
+      title { userPreferred romaji english native }
       coverImage { large }
     }
   }
 }
 """
 
-POPULAR_QUERY = """
-query Popular(
-  $page: Int!,
-  $perPage: Int!,
-  $genre: String,
-  $format: MediaFormat,
-  $year: Int,
-  $status: MediaStatus,
-  $isAdult: Boolean,
-  $sort: [MediaSort!]
-) {
-  Page(page: $page, perPage: $perPage) {
-    pageInfo { hasNextPage }
-    media(
-      type: ANIME
-      genre: $genre
-      format: $format
-      seasonYear: $year
-      status: $status
-      isAdult: $isAdult
-      sort: $sort
-    ) {
-      id format status episodes averageScore popularity
-      title { userPreferred }
-      coverImage { large }
-    }
-  }
+_POPULAR_ANIME_FIELDS = "id format status episodes averageScore popularity seasonYear genres synonyms"
+_POPULAR_MANGA_FIELDS = "id format status chapters volumes averageScore popularity seasonYear genres synonyms"
+
+# AniList's null handling for filter args is inconsistent (e.g. `status: null` and
+# `format: null` combined return nothing), so only declare/apply the filters that are
+# actually set. type/sort are always included; `isAdult: false` is added only to exclude
+# adult content (omitting it returns both, which is how we "include adult").
+_POPULAR_FILTER_DEFS = {
+    "genre": ("$genre: String", "genre: $genre"),
+    "format": ("$format: MediaFormat", "format: $format"),
+    "year": ("$year: Int", "seasonYear: $year"),
+    "status": ("$status: MediaStatus", "status: $status"),
+    "season": ("$season: MediaSeason", "season: $season"),
 }
+
+
+def _build_popular_query(media_type: str, fields: str, active: list[str], include_adult: bool) -> str:
+    decls = ["$page: Int!", "$perPage: Int!", "$sort: [MediaSort!]"]
+    args = [f"type: {media_type}", "sort: $sort"]
+    if not include_adult:
+        args.append("isAdult: false")
+    for name in active:
+        decl, arg = _POPULAR_FILTER_DEFS[name]
+        decls.append(decl)
+        args.append(arg)
+    return f"""
+query Popular({", ".join(decls)}) {{
+  Page(page: $page, perPage: $perPage) {{
+    pageInfo {{ hasNextPage }}
+    media({" ".join(args)}) {{
+      {fields}
+      title {{ userPreferred romaji english native }}
+      coverImage {{ large }}
+    }}
+  }}
+}}
 """
 
-POPULAR_MANGA_QUERY = """
-query PopularManga(
-  $page: Int!,
-  $perPage: Int!,
-  $genre: String,
-  $format: MediaFormat,
-  $status: MediaStatus,
-  $isAdult: Boolean,
-  $sort: [MediaSort!]
-) {
-  Page(page: $page, perPage: $perPage) {
-    pageInfo { hasNextPage }
-    media(
-      type: MANGA
-      genre: $genre
-      format: $format
-      status: $status
-      isAdult: $isAdult
-      sort: $sort
-    ) {
-      id format status chapters volumes averageScore popularity
-      title { userPreferred }
-      coverImage { large }
-    }
-  }
-}
-"""
+
+def _allow_adult(query: str) -> str:
+    # search queries hard-code `isAdult: false`; drop it to include adult results
+    return query.replace("isAdult: false, ", "")
+
 
 PREFERENCES_QUERY = """
 query Preferences {
@@ -420,7 +427,9 @@ mutation UpdatePreferences(
 
 
 class AniListError(RuntimeError):
-    pass
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 _client = RateLimitedClient(requests_per_minute=90)
@@ -432,6 +441,9 @@ class AniListClient:
         self.client = _client
 
     def authorization_url(self, state: str) -> str:
+        # AniList solo soporta Authorization Code Grant (el implicit grant está deshabilitado
+        # en su servidor: devuelve unsupported_grant_type). El intercambio de código requiere
+        # client_secret, así que AniList no tiene un flujo público sin secreto.
         if not self.settings.anilist_client_id:
             raise AniListError("AniList client ID is not configured")
         query = {
@@ -443,23 +455,63 @@ class AniListClient:
         return f"{AUTHORIZE_URL}?{urlencode(query)}"
 
     async def exchange_code(self, code: str) -> str:
-        if not self.settings.anilist_client_id or not self.settings.anilist_client_secret:
+        if not self.settings.anilist_client_id:
             raise AniListError("AniList OAuth credentials are not configured")
-        payload = {
-            "grant_type": "authorization_code",
-            "client_id": self.settings.anilist_client_id,
-            "client_secret": self.settings.anilist_client_secret,
-            "redirect_uri": self.settings.anilist_redirect_uri,
-            "code": code,
-        }
-        response = await self.client.post(TOKEN_URL, json=payload)
-        return response.json()["access_token"]
+        # Con secreto local (dev): intercambio directo. Sin secreto (build distribuido):
+        # lo hace el broker (Supabase Edge Function), único que conoce el client_secret.
+        if self.settings.anilist_client_secret:
+            payload = {
+                "grant_type": "authorization_code",
+                "client_id": self.settings.anilist_client_id,
+                "client_secret": self.settings.anilist_client_secret,
+                "redirect_uri": self.settings.anilist_redirect_uri,
+                "code": code,
+            }
+            response = await self.client.post(TOKEN_URL, json=payload)
+            return response.json()["access_token"]
+        if not self.settings.anilist_token_broker_url:
+            raise AniListError("AniList OAuth credentials are not configured")
+        try:
+            # Cliente dedicado SIN reintentos: el code es de un solo uso, así que
+            # reintentar tras un timeout lo quema y AniList responde "Cannot decrypt
+            # the authorization code". 30 s cubre el arranque en frío de la función.
+            async with httpx.AsyncClient(timeout=30.0) as broker_client:
+                response = await broker_client.post(
+                    self.settings.anilist_token_broker_url,
+                    json={"code": code, "redirect_uri": self.settings.anilist_redirect_uri},
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            # El broker adjunta el motivo de AniList (error/hint) sin datos sensibles.
+            try:
+                body = exc.response.json()
+                detail = ", ".join(
+                    str(value) for key in ("anilist_error", "anilist_hint")
+                    if (value := body.get(key))
+                ) or body.get("error", "")
+            except ValueError:
+                detail = exc.response.text[:200]
+            raise AniListError(
+                f"AniList rechazó el intercambio vía broker: {detail or exc.response.status_code}",
+                status_code=exc.response.status_code,
+            ) from exc
+        token = response.json().get("access_token")
+        if not token:
+            raise AniListError("El broker de OAuth no devolvió un token de AniList")
+        return token
 
     async def graphql(self, token: str, query: str, variables: dict | None = None) -> dict:
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-        response = await self.client.post(
-            API_URL, headers=headers, json={"query": query, "variables": variables or {}}
-        )
+        try:
+            response = await self.client.post(
+                API_URL, headers=headers, json={"query": query, "variables": variables or {}}
+            )
+        except httpx.HTTPStatusError as exc:
+            body = exc.response.text[:500]
+            raise AniListError(
+                f"No se pudo completar la solicitud a AniList ({exc.response.status_code}): {body}",
+                status_code=exc.response.status_code,
+            ) from exc
         payload = response.json()
         if payload.get("errors"):
             raise AniListError(payload["errors"][0].get("message", "AniList request failed"))
@@ -468,6 +520,7 @@ class AniListClient:
     async def media_list(self, token: str) -> list[MediaItem]:
         viewer = await self.graphql(token, VIEWER_QUERY)
         data = await self.graphql(token, LIST_QUERY, {"userId": viewer["Viewer"]["id"]})
+        score_format = data["Viewer"]["mediaListOptions"]["scoreFormat"]
         entries = [
             entry
             for media_list in data["MediaListCollection"]["lists"]
@@ -479,7 +532,11 @@ class AniListClient:
                 title=entry["media"]["title"]["userPreferred"],
                 status=to_canonical_status("anilist", entry["status"]).value,
                 progress=entry["progress"],
-                score=entry.get("score") or None,
+                score=convert_score(
+                    entry.get("score"),
+                    score_format,
+                    ScoreFormat.POINT_100,
+                ),
                 episodes=entry["media"]["episodes"],
                 cover_image=entry["media"]["coverImage"]["large"],
                 title_romaji=entry["media"]["title"].get("romaji"),
@@ -488,11 +545,14 @@ class AniListClient:
                 synonyms=entry["media"].get("synonyms") or [],
                 genres=entry["media"].get("genres") or [],
                 year=entry["media"].get("seasonYear"),
+                season=entry["media"].get("season"),
                 format=to_canonical_format("anilist", entry["media"].get("format")).value,
+                media_status=entry["media"].get("status"),
                 site_url=entry["media"].get("siteUrl"),
                 updated_at=entry.get("updatedAt"),
                 started_at=_fuzzy_date_to_str(entry.get("startedAt")),
                 completed_at=_fuzzy_date_to_str(entry.get("completedAt")),
+                id_mal=entry["media"].get("idMal"),
             )
             for entry in entries
         ]
@@ -507,12 +567,18 @@ class AniListClient:
             SearchResult(
                 id=item["id"],
                 title=item["title"]["userPreferred"],
+                title_romaji=item["title"].get("romaji"),
+                title_english=item["title"].get("english"),
+                title_native=item["title"].get("native"),
+                synonyms=item.get("synonyms") or [],
                 format=to_canonical_format("anilist", item.get("format")).value,
                 status=item.get("status"),
                 episodes=item.get("episodes"),
                 average_score=item.get("averageScore"),
                 popularity=item.get("popularity") or 0,
                 cover_image=item["coverImage"]["large"],
+                year=item.get("seasonYear"),
+                genres=item.get("genres") or [],
             )
             for item in data["Page"]["media"]
         ]
@@ -527,6 +593,10 @@ class AniListClient:
             SearchResult(
                 id=item["id"],
                 title=item["title"]["userPreferred"],
+                title_romaji=item["title"].get("romaji"),
+                title_english=item["title"].get("english"),
+                title_native=item["title"].get("native"),
+                synonyms=item.get("synonyms") or [],
                 format=to_canonical_format("anilist", item.get("format")).value,
                 status=item.get("status"),
                 chapters=item.get("chapters"),
@@ -534,6 +604,8 @@ class AniListClient:
                 average_score=item.get("averageScore"),
                 popularity=item.get("popularity") or 0,
                 cover_image=item["coverImage"]["large"],
+                year=item.get("seasonYear"),
+                genres=item.get("genres") or [],
             )
             for item in data["Page"]["media"]
         ]
@@ -543,11 +615,13 @@ class AniListClient:
         per_page = max(1, min(filters.per_page, 50))
         has_query = bool(filters.query and filters.query.strip())
         anilist_sort = ["SCORE_DESC"] if filters.sort == "SCORE" else ["POPULARITY_DESC"]
+        include_adult = bool(filters.is_adult)
         if is_manga:
             if has_query:
+                query = SEARCH_MANGA_PAGINATED_QUERY
                 data = await self.graphql(
                     token,
-                    SEARCH_MANGA_PAGINATED_QUERY,
+                    _allow_adult(query) if include_adult else query,
                     {
                         "query": filters.query.strip(),
                         "page": filters.page,
@@ -555,24 +629,23 @@ class AniListClient:
                     },
                 )
             else:
+                applied = {"genre": filters.genre, "format": filters.format, "status": filters.status}
+                active = [name for name, value in applied.items() if value]
+                variables = {
+                    "page": filters.page,
+                    "perPage": per_page,
+                    "sort": anilist_sort,
+                    **{name: applied[name] for name in active},
+                }
                 data = await self.graphql(
-                    token,
-                    POPULAR_MANGA_QUERY,
-                    {
-                        "page": filters.page,
-                        "perPage": per_page,
-                        "genre": filters.genre,
-                        "format": filters.format,
-                        "status": filters.status,
-                        "isAdult": filters.is_adult,
-                        "sort": anilist_sort,
-                    },
+                    token, _build_popular_query("MANGA", _POPULAR_MANGA_FIELDS, active, include_adult), variables
                 )
         else:
             if has_query:
+                query = SEARCH_PAGINATED_QUERY
                 data = await self.graphql(
                     token,
-                    SEARCH_PAGINATED_QUERY,
+                    _allow_adult(query) if include_adult else query,
                     {
                         "query": filters.query.strip(),
                         "page": filters.page,
@@ -581,19 +654,22 @@ class AniListClient:
                     },
                 )
             else:
+                applied = {
+                    "genre": filters.genre,
+                    "format": filters.format,
+                    "year": filters.year,
+                    "status": filters.status,
+                    "season": filters.season,
+                }
+                active = [name for name, value in applied.items() if value]
+                variables = {
+                    "page": filters.page,
+                    "perPage": per_page,
+                    "sort": anilist_sort,
+                    **{name: applied[name] for name in active},
+                }
                 data = await self.graphql(
-                    token,
-                    POPULAR_QUERY,
-                    {
-                        "page": filters.page,
-                        "perPage": per_page,
-                        "genre": filters.genre,
-                        "format": filters.format,
-                        "year": filters.year,
-                        "status": filters.status,
-                        "isAdult": filters.is_adult,
-                        "sort": anilist_sort,
-                    },
+                    token, _build_popular_query("ANIME", _POPULAR_ANIME_FIELDS, active, include_adult), variables
                 )
         page = data["Page"]
         return GlobalSearchResponse(
@@ -601,6 +677,10 @@ class AniListClient:
                 SearchResult(
                     id=item["id"],
                     title=item["title"]["userPreferred"],
+                    title_romaji=item["title"].get("romaji"),
+                    title_english=item["title"].get("english"),
+                    title_native=item["title"].get("native"),
+                    synonyms=item.get("synonyms") or [],
                     format=to_canonical_format("anilist", item.get("format")).value,
                     status=item.get("status"),
                     episodes=None if is_manga else item.get("episodes"),
@@ -609,6 +689,8 @@ class AniListClient:
                     average_score=item.get("averageScore"),
                     popularity=item.get("popularity") or 0,
                     cover_image=item["coverImage"]["large"],
+                    year=item.get("seasonYear"),
+                    genres=item.get("genres") or [],
                 )
                 for item in page["media"]
             ],
@@ -669,7 +751,10 @@ class AniListClient:
                 popularity=item.get("popularity") or 0,
                 start_date=FuzzyDate(**(item.get("startDate") or {})),
                 cover_image=item["coverImage"]["large"],
+                cover_color=item["coverImage"].get("color"),
                 studios=[studio["name"] for studio in (item.get("studios") or {}).get("nodes", [])],
+                genres=item.get("genres") or [],
+                description=item.get("description"),
                 next_episode=(item.get("nextAiringEpisode") or {}).get("episode"),
                 next_airing_at=(item.get("nextAiringEpisode") or {}).get("airingAt"),
             )
@@ -716,20 +801,9 @@ class AniListClient:
         data = await self.graphql(token, STATISTICS_QUERY)
         return self._build_statistics_response(data)
 
-    async def media_details(self, token: str, media_id: int) -> MediaDetails:
-        data = await self.graphql(token, DETAIL_QUERY, {"id": media_id})
-        media = data["Media"]
-        try:
-            entry_data = await self.graphql(
-                token,
-                ENTRY_QUERY,
-                {"id": media_id, "userId": data["Viewer"]["id"]},
-            )
-            entry = entry_data.get("MediaList")
-        except httpx.HTTPStatusError as error:
-            if error.response.status_code != 404:
-                raise
-            entry = None
+    def _parse_anime_details(
+        self, media: dict, score_format: str, entry: dict | None = None
+    ) -> MediaDetails:
         next_airing = media.get("nextAiringEpisode") or {}
         return MediaDetails(
             id=media["id"],
@@ -756,8 +830,8 @@ class AniListClient:
             average_score=media.get("averageScore"),
             next_episode=next_airing.get("episode"),
             next_airing_at=next_airing.get("airingAt"),
-            score_format=data["Viewer"]["mediaListOptions"]["scoreFormat"],
-            list_entry=self._list_entry(entry) if entry else None,
+            score_format=score_format,
+            list_entry=self._list_entry(entry, score_format) if entry else None,
             trailer=(
                 TrailerInfo(id=media["trailer"]["id"], site=media["trailer"].get("site") or "")
                 if media.get("trailer") and media["trailer"].get("id")
@@ -769,11 +843,44 @@ class AniListClient:
             recommendations=AniListClient._parse_recommendations(media),
         )
 
+    async def media_details(self, token: str, media_id: int) -> MediaDetails:
+        data = await self.graphql(token, DETAIL_QUERY, {"id": media_id})
+        media = data["Media"]
+        score_format = data["Viewer"]["mediaListOptions"]["scoreFormat"]
+        try:
+            entry_data = await self.graphql(
+                token,
+                ENTRY_QUERY,
+                {"id": media_id, "userId": data["Viewer"]["id"]},
+            )
+            entry = entry_data.get("MediaList")
+        except AniListError as error:
+            if error.status_code != 404:
+                raise
+            entry = None
+        return self._parse_anime_details(media, score_format, entry)
+
+    async def media_details_batch(
+        self, token: str, media_ids: list[int]
+    ) -> list[MediaDetails]:
+        # Sin la MediaList por item: el detalle persistido reconstruye la entrada del
+        # usuario desde la biblioteca local al servirse. Aquí solo interesa el detalle.
+        if not media_ids:
+            return []
+        data = await self.graphql(token, BATCH_DETAIL_QUERY, {"ids": list(media_ids)})
+        score_format = data["Viewer"]["mediaListOptions"]["scoreFormat"]
+        return [
+            self._parse_anime_details(media, score_format)
+            for media in data["Page"]["media"]
+        ]
+
     async def edit_entry(
         self, token: str, media_id: int, update: MediaEntryUpdate
     ) -> MediaListEntry:
         values = update.model_dump(exclude_unset=True)
         variables = {"mediaId": media_id}
+        viewer = await self.graphql(token, SCORE_FORMAT_QUERY)
+        score_format = viewer["Viewer"]["mediaListOptions"]["scoreFormat"]
         graphql_names = {
             "started_at": "startedAt",
             "completed_at": "completedAt",
@@ -781,9 +888,15 @@ class AniListClient:
         for key, value in values.items():
             if key == "status" and value is not None:
                 value = from_canonical_status("anilist", value)
+            if key == "score":
+                converted = convert_score(value, ScoreFormat.POINT_100, score_format) if value else None
+                variables["score"] = converted if converted is not None else 0
+                continue
+            if key in ("started_at", "completed_at") and isinstance(value, dict) and not any(v is not None for v in value.values()):
+                value = None
             variables[graphql_names.get(key, key)] = value
         data = await self.graphql(token, EDIT_ENTRY_MUTATION, variables)
-        return self._list_entry(data["SaveMediaListEntry"])
+        return self._list_entry(data["SaveMediaListEntry"], score_format)
 
     async def delete_entry(self, token: str, entry_id: int) -> bool:
         data = await self.graphql(token, DELETE_ENTRY_MUTATION, {"id": entry_id})
@@ -794,6 +907,7 @@ class AniListClient:
         data = await self.graphql(
             token, MANGA_LIST_QUERY, {"userId": viewer["Viewer"]["id"]}
         )
+        score_format = data["Viewer"]["mediaListOptions"]["scoreFormat"]
         entries = [
             entry
             for media_list in data["MediaListCollection"]["lists"]
@@ -805,7 +919,11 @@ class AniListClient:
                 title=entry["media"]["title"]["userPreferred"],
                 status=to_canonical_status("anilist", entry["status"]).value,
                 progress=entry["progress"],
-                score=entry.get("score") or None,
+                score=convert_score(
+                    entry.get("score"),
+                    score_format,
+                    ScoreFormat.POINT_100,
+                ),
                 chapters=entry["media"].get("chapters"),
                 volumes=entry["media"].get("volumes"),
                 cover_image=entry["media"]["coverImage"]["large"],
@@ -827,6 +945,7 @@ class AniListClient:
     async def manga_details(self, token: str, media_id: int) -> MediaDetails:
         data = await self.graphql(token, MANGA_DETAIL_QUERY, {"id": media_id})
         media = data["Media"]
+        score_format = data["Viewer"]["mediaListOptions"]["scoreFormat"]
         try:
             entry_data = await self.graphql(
                 token,
@@ -834,8 +953,8 @@ class AniListClient:
                 {"id": media_id, "userId": data["Viewer"]["id"]},
             )
             entry = entry_data.get("MediaList")
-        except httpx.HTTPStatusError as error:
-            if error.response.status_code != 404:
+        except AniListError as error:
+            if error.status_code != 404:
                 raise
             entry = None
         return MediaDetails(
@@ -860,8 +979,8 @@ class AniListClient:
             studios=[studio["name"] for studio in media["studios"]["nodes"]],
             country=media.get("countryOfOrigin"),
             average_score=media.get("averageScore"),
-            score_format=data["Viewer"]["mediaListOptions"]["scoreFormat"],
-            list_entry=self._list_entry(entry) if entry else None,
+            score_format=score_format,
+            list_entry=self._list_entry(entry, score_format) if entry else None,
             staff=AniListClient._parse_staff(media),
             relations=AniListClient._parse_relations(media),
             recommendations=AniListClient._parse_recommendations(media),
@@ -964,14 +1083,18 @@ class AniListClient:
         ]
 
     @staticmethod
-    def _list_entry(entry: dict) -> MediaListEntry:
+    def _list_entry(entry: dict, score_format: str = ScoreFormat.POINT_100) -> MediaListEntry:
         def fuzzy_date(value: dict | None) -> FuzzyDate:
             return FuzzyDate(**(value or {}))
 
         return MediaListEntry(
             id=entry["id"],
             status=to_canonical_status("anilist", entry["status"]).value,
-            score=entry.get("score") or 0,
+            score=convert_score(
+                entry.get("score"),
+                score_format,
+                ScoreFormat.POINT_100,
+            ) or 0,
             progress=entry.get("progress") or 0,
             repeat=entry.get("repeat") or 0,
             private=bool(entry.get("private")),

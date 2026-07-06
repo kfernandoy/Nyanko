@@ -41,6 +41,28 @@ def test_detection_paused_returns_none(monkeypatch):
     assert manager.detect() is not None
 
 
+def test_active_window_ignores_browser_titles(monkeypatch):
+    # A browser tab title with an episode number must NOT be scraped — the extension
+    # owns browser playback; the window title is browser chrome.
+    monkeypatch.setattr(
+        detectors.window,
+        "get_active_window_title",
+        lambda: "One Piece Episodio 1000 - AnimeFLV — Mozilla Firefox",
+    )
+    assert detectors.ActiveWindowDetector().detect() is None
+
+
+def test_active_window_still_detects_desktop_players(monkeypatch):
+    monkeypatch.setattr(
+        detectors.window,
+        "get_active_window_title",
+        lambda: "Frieren - Episode 12 - VLC media player",
+    )
+    candidate = detectors.ActiveWindowDetector().detect()
+    assert candidate is not None
+    assert candidate.episode == 12
+
+
 def test_mpc_hc_extracts_title_from_variables_html():
     html = """
     <html><body>
@@ -140,7 +162,7 @@ def test_candidate_is_published_only_after_stability_threshold(monkeypatch):
     assert manager.latest() is None
 
 
-def test_browser_detector_expires_and_ignores_paused_events(monkeypatch):
+def test_browser_detector_expires_and_keeps_paused_events(monkeypatch):
     now = 100.0
     monkeypatch.setattr("nyanko_api.detectors.browser.time.monotonic", lambda: now)
     detector = BrowserDetector(timeout_seconds=10)
@@ -150,13 +172,39 @@ def test_browser_detector_expires_and_ignores_paused_events(monkeypatch):
 
     detector.push(candidate)
     assert detector.detect() == candidate
-    detector.push(candidate.model_copy(update={"paused": True}))
-    assert detector.detect() is None
+    # Pausar no borra el candidato (el panel no debe vaciarse al pausar).
+    paused = candidate.model_copy(update={"paused": True})
+    detector.push(paused)
+    assert detector.detect() == paused
     detector.push(candidate.model_copy(update={"content_kind": "trailer"}))
     assert detector.detect() is None
     detector.push(candidate)
     now = 111.0
     assert detector.detect() is None
+
+
+def test_media_window_detector_prefers_episode_titles():
+    from nyanko_api.detectors.window import _candidate_from_player_windows
+
+    windows = [
+        ("mpv.exe", "A Silent Voice [1080p]"),
+        ("vlc.exe", "[Group] Frieren - 06 [1080p].mkv - VLC media player"),
+    ]
+    candidate = _candidate_from_player_windows(windows, "media-window")
+
+    assert candidate is not None
+    assert candidate.episode == 6
+    assert candidate.anime_title and "frieren" in candidate.anime_title.lower()
+
+
+def test_media_window_detector_falls_back_to_movie_titles():
+    from nyanko_api.detectors.window import _candidate_from_player_windows
+
+    candidate = _candidate_from_player_windows([("mpv.exe", "A Silent Voice [1080p]")], "media-window")
+
+    assert candidate is not None
+    assert candidate.episode is None
+    assert candidate.anime_title
 
 
 def test_mpc_hc_extracts_position_duration_and_paused_state():
@@ -274,3 +322,125 @@ def test_looks_finished_heuristic():
     assert looks_finished(100, 100) is True
     assert looks_finished(40, 100) is True
     assert looks_finished(30, 100) is False
+
+
+def test_process_detector_reads_video_from_cmdline(monkeypatch):
+    from nyanko_api.detectors.process import ProcessDetector
+
+    class FakeProc:
+        pid = 4242
+        info = {"name": "mpc-hc64.exe"}
+
+        def cmdline(self):
+            return ["C:/Program Files/MPC-HC/mpc-hc64.exe",
+                    "D:/anime/[SubsPlease] Sousou no Frieren - 12 (1080p).mkv"]
+
+    class FakePsutil:
+        @staticmethod
+        def process_iter(attrs):
+            return [FakeProc()]
+
+    detector = ProcessDetector()
+    monkeypatch.setattr(ProcessDetector, "_psutil", staticmethod(lambda: FakePsutil))
+    candidate = detector.detect()
+    assert candidate is not None
+    assert candidate.source == "process"
+    assert candidate.anime_title == "Sousou no Frieren"
+    assert candidate.episode == 12
+
+
+def test_process_detector_falls_back_to_open_files(monkeypatch):
+    from nyanko_api.detectors.process import ProcessDetector
+
+    class Handle:
+        path = "D:/anime/Dungeon Meshi - 05.mkv"
+
+    class FakeProc:
+        pid = 999
+        info = {"name": "vlc.exe"}
+
+        def cmdline(self):
+            return ["vlc.exe"]  # abierto sin archivo; se cargó desde la UI
+
+        def open_files(self):
+            return [Handle()]
+
+    class FakePsutil:
+        @staticmethod
+        def process_iter(attrs):
+            return [FakeProc()]
+
+    detector = ProcessDetector()
+    monkeypatch.setattr(ProcessDetector, "_psutil", staticmethod(lambda: FakePsutil))
+    candidate = detector.detect()
+    assert candidate is not None
+    assert candidate.anime_title == "Dungeon Meshi"
+    assert candidate.episode == 5
+
+
+def test_process_detector_ignores_unknown_processes(monkeypatch):
+    from nyanko_api.detectors.process import ProcessDetector
+
+    class FakeProc:
+        pid = 1
+        info = {"name": "notepad.exe"}
+
+    class FakePsutil:
+        @staticmethod
+        def process_iter(attrs):
+            return [FakeProc()]
+
+    detector = ProcessDetector()
+    monkeypatch.setattr(ProcessDetector, "_psutil", staticmethod(lambda: FakePsutil))
+    assert detector.detect() is None
+
+
+def test_trusted_sources_publish_faster_than_window_titles(monkeypatch):
+    from nyanko_api.detectors import base as base_mod
+
+    class FakeDetector(Detector):
+        name = "fake-ipc"
+        priority = 50
+        trusted_evidence = True
+
+        def info(self):
+            return DetectorInfo(name=self.name, available=True, priority=self.priority)
+
+        def detect(self):
+            return _candidate("fake-ipc")
+
+    class FakeWindow(FakeDetector):
+        name = "fake-window"
+        trusted_evidence = False
+
+        def detect(self):
+            return _candidate("fake-window")
+
+    def _candidate(source):
+        return PlaybackCandidate(
+            source=source, raw_title="Frieren - 12.mkv", anime_title="Frieren",
+            episode=12, confidence=0.9,
+        )
+
+    clock = {"now": 100.0}
+    monkeypatch.setattr(base_mod.time, "monotonic", lambda: clock["now"])
+
+    manager = detectors.DetectorManager(stability_seconds=3.0)
+    manager.register(FakeDetector())
+    # Evidencia directa: publicada tras ~1s, no tras 3s.
+    manager._publish(_candidate("fake-ipc"))
+    assert manager.latest() is None
+    clock["now"] += 1.1
+    manager._publish(_candidate("fake-ipc"))
+    assert manager.latest() is not None
+
+    manager = detectors.DetectorManager(stability_seconds=3.0)
+    manager.register(FakeWindow())
+    # Título de ventana: conserva el umbral anti-transiciones completo.
+    manager._publish(_candidate("fake-window"))
+    clock["now"] += 1.1
+    manager._publish(_candidate("fake-window"))
+    assert manager.latest() is None
+    clock["now"] += 2.5
+    manager._publish(_candidate("fake-window"))
+    assert manager.latest() is not None

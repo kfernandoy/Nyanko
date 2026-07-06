@@ -9,6 +9,7 @@ from .base import Detector, DetectorInfo
 class PotPlayerDetector(Detector):
     name = "potplayer"
     priority = 24
+    trusted_evidence = True
 
     def __init__(self, host: str = "127.0.0.1", port: int = 8208):
         self.base_url = f"http://{host}:{port}"

@@ -22,11 +22,13 @@ export interface MediaItem {
   genres?: string[];
   tags?: string[];
   year?: number | null;
+  season?: string | null;
   format?: string | null;
   site_url?: string | null;
   updated_at?: number | null;
   canonical_id?: number | null;
   provider?: string | null;
+  account_alias?: string | null;
 }
 
 export interface PlaybackCandidate {
@@ -69,7 +71,10 @@ export interface SeasonMedia {
   popularity: number;
   start_date: FuzzyDate | null;
   cover_image: string | null;
+  cover_color: string | null;
   studios: string[];
+  genres: string[];
+  description: string | null;
   next_episode: number | null;
   next_airing_at: number | null;
 }
@@ -188,6 +193,7 @@ export interface MediaDetails {
   next_episode: number | null;
   next_airing_at: number | null;
   score_format: string;
+  canonical_id?: number | null;
   list_entry: MediaListEntry | null;
   characters?: CharacterEdge[];
   staff?: StaffEdge[];
@@ -225,6 +231,7 @@ export interface PlaybackMatchResponse {
   candidate: PlaybackCandidate;
   match: MediaItem | null;
   match_score: number;
+  suggestions: MediaItem[];
 }
 
 export interface PlaybackEvent {
@@ -274,31 +281,51 @@ export interface AccountInfo {
   provider: string;
   alias: string;
   authenticated: boolean;
-  sync_direction: "import" | "bidirectional" | "export";
   is_primary: boolean;
   last_synced_at: string | null;
+  /** false = la fila existe pero nunca hubo login (la crean rutas de lectura). */
+  has_credential_ref: boolean;
 }
 
-export interface AssociationCandidateInfo {
+export interface LibraryFolder {
   id: number;
-  source_identity_id: number;
-  source_provider: string;
-  source_external_id: string;
-  source_title: string;
-  candidate_media_id: number;
-  candidate_title: string;
-  confidence: number;
-  status: string;
+  path: string;
+  recursive: boolean;
 }
 
-export interface LinkedIdentityInfo {
-  identity_id: number;
-  media_id: number;
-  provider: string;
-  external_id: string;
+export interface ScanSummary {
+  total: number;
+  matched: number;
+  unmatched: number;
+}
+
+export interface LocalSeries {
+  media_id: number | null;
   title: string;
-  confidence: number;
-  identity_count: number;
+  title_romaji?: string | null;
+  title_english?: string | null;
+  title_native?: string | null;
+  episode_count: number;
+  matched: boolean;
+  external_id: number | null;
+  provider: string | null;
+  account_alias: string | null;
+  cover_image: string | null;
+  episodes: number | null;
+  progress: number | null;
+  next_episode: number | null;
+  next_path: string | null;
+}
+
+export interface PendingLocalItem {
+  media_id: number;
+  external_id: number;
+  title: string;
+  cover_image: string | null;
+  progress: number;
+  next_episode: number;
+  next_path: string;
+  available_count: number;
 }
 
 export interface ConflictInfo {
@@ -328,6 +355,11 @@ export interface ExtensionClientInfo {
   expires_at: number;
   last_seen_at: number | null;
   revoked_at: number | null;
+}
+
+export interface ExtensionBundle {
+  chromium: string | null;
+  firefox: string | null;
 }
 
 export interface CacheStatusResponse {
@@ -368,6 +400,10 @@ export interface LibrarySearchResponse {
 export interface SearchResult {
   id: number;
   title: string;
+  title_romaji?: string | null;
+  title_english?: string | null;
+  title_native?: string | null;
+  synonyms?: string[];
   format: string | null;
   status: string | null;
   episodes: number | null;
@@ -376,11 +412,24 @@ export interface SearchResult {
   average_score: number | null;
   popularity: number;
   cover_image: string | null;
+  year?: number | null;
+  genres?: string[];
 }
 
 export interface GlobalSearchResponse {
   results: SearchResult[];
   has_next_page: boolean;
+}
+
+export interface WontWatchItem {
+  external_id: string;
+  title: string | null;
+  cover_image: string | null;
+}
+
+export interface WontWatchState {
+  items: WontWatchItem[];
+  show_marked: boolean;
 }
 
 export interface SearchFilters {
@@ -390,6 +439,7 @@ export interface SearchFilters {
   genre: string | null;
   format: string | null;
   year: number | null;
+  season: string | null;
   status: string | null;
   is_adult: boolean;
   media_type: "ANIME" | "MANGA";
@@ -405,6 +455,8 @@ export interface ProviderCapabilities {
   statistics: boolean;
   seasons: boolean;
   manga: boolean;
+  preferences: boolean;
+  preferences_editable: boolean;
 }
 
 export interface ProviderInfo {
@@ -413,3 +465,47 @@ export interface ProviderInfo {
   authenticated: boolean;
   capabilities: ProviderCapabilities;
 }
+
+export interface TorrentItem {
+  signature: string;
+  raw_title: string;
+  link: string;
+  media_id: number | null;
+  media_title: string | null;
+  episode: number | null;
+  resolution: string | null;
+  group: string | null;
+  seeders: number | null;
+  confidence: number;
+  is_new: boolean;
+  cover_image?: string | null;
+}
+export interface TorrentSource { id: number; name: string; url: string; enabled: boolean; kind?: string; }
+export interface TorrentCondition { element: string; operator: string; value: string; }
+export interface TorrentFilter {
+  id: number;
+  name: string;
+  action: string;              // select | discard | prefer
+  match: string;               // all | any
+  scope: string;               // all | limited
+  enabled: boolean;
+  conditions: TorrentCondition[];
+  anime_ids: number[];
+}
+export interface TorrentSettings {
+  auto_check: boolean;
+  interval_min: number;
+  download_mode: string;       // magnet | folder
+  watch_folder: string;
+  preferred_resolution: string;
+  on_new: string;              // notify | download
+  client_path: string;
+  folder_per_series: boolean;
+  append_episode: boolean;
+  use_anime_folder: boolean;
+  filters_enabled: boolean;
+  global_discard_not_in_list: boolean;
+  global_discard_seen: boolean;
+  global_prefer_resolution: boolean;
+}
+export interface TorrentDownloadResponse { action: string; link: string | null; path: string | null; }
