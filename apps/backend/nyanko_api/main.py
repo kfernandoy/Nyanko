@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import mimetypes
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 from dataclasses import asdict
@@ -705,6 +706,10 @@ def _warm_library_details(
                     # enorme lo acaparaba y abrir una card daba timeout ("no respondió a
                     # tiempo"). Da una ventana a las peticiones interactivas.
                     await asyncio.sleep(0.4)
+                # El texto (lo que hace que la card muestre info) ya está: ocultar la barra
+                # aunque las imágenes sigan bajándose en segundo plano.
+                if progress := _backfill_progress.get(warm_key):
+                    progress["active"] = False
                 if downloads:
                     await asyncio.gather(*downloads)
             else:
@@ -1292,6 +1297,11 @@ class TorrentChecker:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # El backfill hace mucho trabajo en hilos (asyncio.to_thread: persistir, escribir
+    # imágenes). El executor por defecto es pequeño (min(32, cpu+4)) y el backfill lo
+    # saturaba, dejando sin hilo al card-open (que también usa to_thread) → cards lentas
+    # de 1-10s. Con más holgura, lo interactivo no espera detrás del backfill.
+    asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(max_workers=32))
     settings = get_settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     init_credentials_dir(settings.data_dir)
@@ -2318,32 +2328,40 @@ async def media_list_manga(
 
         record = database.get_cache_record(cache_key)
         if record is not None:
-            items = [MediaItem.model_validate(item) for item in record.payload]
             if record.stale:
                 schedule_cache_refresh(database, cache_key, refresh)
-            response.headers["X-Cache-Status"] = (
+            status_value = (
                 CacheStatus.STALE if record.stale else CacheStatus.HIT
             ).value
-        else:
-            local_items = _local_library_items(database, settings, provider, account, "MANGA", scoped=True)
-            if local_items:
-                schedule_cache_refresh(database, cache_key, refresh)
-                response.headers["X-Cache-Status"] = CacheStatus.STALE.value
-                return _overlay_recent_edits(database, provider, account, local_items)
-            items = await media_provider.library_manga(token)
-            database.set_cache(cache_key, [value.model_dump(mode="json") for value in items], 900)
-            database.sync_provider_library(
-                media_provider.name,
-                media_provider.display_name,
-                items,
-                account_alias=account,
-                media_type="MANGA",
+            # Igual que en anime: validar/enrich/overlay/serializar fuera del event loop.
+            enriched, body = await asyncio.to_thread(
+                _enrich_cached_library,
+                database, media_provider.name, provider, account, record.payload,
             )
-            response.headers["X-Cache-Status"] = CacheStatus.MISS.value
+            _warm_library_assets(database, settings, provider, account, enriched, media_type="MANGA")
+            _warm_library_details(database, settings, provider, account, enriched, token, media_type="MANGA")
+            return Response(
+                content=body,
+                media_type="application/json",
+                headers={"X-Cache-Status": status_value},
+            )
+        local_items = _local_library_items(database, settings, provider, account, "MANGA", scoped=True)
+        if local_items:
+            schedule_cache_refresh(database, cache_key, refresh)
+            response.headers["X-Cache-Status"] = CacheStatus.STALE.value
+            return _overlay_recent_edits(database, provider, account, local_items)
+        items = await media_provider.library_manga(token)
+        database.set_cache(cache_key, [value.model_dump(mode="json") for value in items], 900)
+        database.sync_provider_library(
+            media_provider.name,
+            media_provider.display_name,
+            items,
+            account_alias=account,
+            media_type="MANGA",
+        )
+        response.headers["X-Cache-Status"] = CacheStatus.MISS.value
         _warm_library_assets(database, settings, provider, account, items, media_type="MANGA")
         _warm_library_details(database, settings, provider, account, items, token, media_type="MANGA")
-        # enrich ya aplica las carátulas locales persistidas (persisted_cover_map);
-        # globear el disco por item aquí costaba >10s con bibliotecas grandes.
         enriched = database.enrich_provider_library(media_provider.name, items)
         return _overlay_recent_edits(database, provider, account, enriched)
     except Exception as error:
