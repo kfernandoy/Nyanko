@@ -314,6 +314,7 @@ export const api = {
   // El escaneo recorre el disco; necesita mucho más que el timeout genérico de 15s.
   scanLibrary: () => request<ScanSummary>("/api/library/scan", { method: "POST" }, 300_000),
   pendingLocal: () => request<PendingLocalItem[]>("/api/library/pending-local"),
+  backfillStatus: () => request<{ active: boolean; done: number; total: number }>("/api/library/backfill"),
   getLocalLibrary: () => request<LocalSeries[]>("/api/library/local"),
   associateLocal: (body: { title: string; from_media_id?: number | null; external_id?: number | null; status?: string | null; media?: SearchResult | null }) =>
     request<void>(withAccount("/api/library/local/associate"), { method: "POST", body: JSON.stringify(body) }),

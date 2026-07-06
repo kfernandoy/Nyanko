@@ -148,6 +148,8 @@ _cache_refreshes: dict[tuple[str, str], asyncio.Task] = {}
 _media_refreshes: dict[tuple[str, str, str, str, int], asyncio.Task] = {}
 _library_asset_warmers: dict[tuple[str, str, str, str], asyncio.Task] = {}
 _library_detail_warmers: dict[tuple[str, str, str, str], asyncio.Task] = {}
+# Progreso del backfill de detalles, para la barra de la UI. Una entrada por warm_key.
+_backfill_progress: dict[tuple[str, str, str, str], dict] = {}
 DEFAULT_ACCOUNT_ALIAS = "default"
 
 # Caché signature -> link (poblada al construir el feed; el frontend solo manda la signature).
@@ -645,8 +647,10 @@ def _warm_library_details(
     have = database.persisted_details_ids(provider, [str(item.id) for item in items])
     pending = [item.id for item in items if str(item.id) not in have]
     if not pending:
+        _backfill_progress.pop(warm_key, None)
         return
 
+    _backfill_progress[warm_key] = {"done": 0, "total": len(pending), "active": True}
     media_provider = _get_provider(settings, provider)
     # include_related=False: las carátulas de relaciones/recomendaciones se bajan al
     # abrir la card; el backfill solo persiste el texto y las imágenes propias.
@@ -691,6 +695,12 @@ def _warm_library_details(
                     downloads.extend(
                         asyncio.create_task(_download_one(d)) for d in details_list
                     )
+                    if progress := _backfill_progress.get(warm_key):
+                        progress["done"] += len(chunk)
+                    # Ceder el loop entre lotes: sin esto el backfill de una biblioteca
+                    # enorme lo acaparaba y abrir una card daba timeout ("no respondió a
+                    # tiempo"). Da una ventana a las peticiones interactivas.
+                    await asyncio.sleep(0.4)
                 if downloads:
                     await asyncio.gather(*downloads)
             else:
@@ -702,7 +712,13 @@ def _warm_library_details(
                         )
                     except Exception:
                         continue  # ponytail: item fallido se reintenta en el próximo warm
+                    finally:
+                        if progress := _backfill_progress.get(warm_key):
+                            progress["done"] += 1
+                        await asyncio.sleep(0.1)
         finally:
+            if progress := _backfill_progress.get(warm_key):
+                progress["active"] = False
             _library_detail_warmers.pop(warm_key, None)
 
     _library_detail_warmers[warm_key] = asyncio.create_task(run())
@@ -1911,6 +1927,20 @@ def pending_local_episodes(
     return pending
 
 
+@app.get("/api/library/backfill")
+def backfill_status() -> dict:
+    """Progreso del backfill de detalles (para la barra de la UI). Agrega las entradas
+    activas; done/total en items de la biblioteca cuyo detalle se está persistiendo."""
+    active = [p for p in _backfill_progress.values() if p.get("active")]
+    if not active:
+        return {"active": False, "done": 0, "total": 0}
+    return {
+        "active": True,
+        "done": sum(p["done"] for p in active),
+        "total": sum(p["total"] for p in active),
+    }
+
+
 @app.get("/api/library/scan-settings", response_model=ScanSettings)
 def get_scan_settings(database: Database = Depends(get_database)) -> ScanSettings:
     return ScanSettings(
@@ -2522,17 +2552,31 @@ async def media_details(
         record = database.get_cache_record(key)
         if record is not None and not record.stale:
             details = MediaDetails.model_validate(record.payload)
-            details.canonical_id = database.sync_media_details(provider, media_id, details)
+            # sync_media_details ESCRIBE en la DB y _localize hace globs de disco; en el
+            # event loop, mientras corre el backfill, bloqueaban el card-open ("El servicio
+            # local no respondió a tiempo"). Fuera del loop.
+            def _finish_hit() -> MediaDetails:
+                details.canonical_id = database.sync_media_details(provider, media_id, details)
+                return _localize_media_details_assets(settings, provider, details)
+
+            result = await asyncio.to_thread(_finish_hit)
             response.headers["X-Cache-Status"] = CacheStatus.HIT.value
-            return _localize_media_details_assets(settings, provider, details)
-        persisted = _local_media_details(database, provider, account, media_id)
+            return result
+        persisted = await asyncio.to_thread(
+            _local_media_details, database, provider, account, media_id
+        )
         if persisted is not None:
-            if record is None or record.stale or _missing_detail_assets(settings, provider, media_id, persisted):
+            missing = await asyncio.to_thread(
+                _missing_detail_assets, settings, provider, media_id, persisted
+            )
+            if record is None or record.stale or missing:
                 _schedule_media_refresh(database, settings, provider, account, media_id, token)
                 response.headers["X-Cache-Status"] = CacheStatus.STALE.value
             else:
                 response.headers["X-Cache-Status"] = CacheStatus.HIT.value
-            return _localize_media_details_assets(settings, provider, persisted)
+            return await asyncio.to_thread(
+                _localize_media_details_assets, settings, provider, persisted
+            )
         media_provider = _get_provider(settings, provider)
         details, status = await cached_value(
             database,

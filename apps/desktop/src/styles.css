@@ -585,6 +585,11 @@ button.media-row-score:hover { background: #232a3d; color: #ffd76a; }
 .modal-loading { display: grid; place-items: center; padding: 26px; border: 1px solid #30374a; border-radius: 12px; background: #131722; }
 .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #ffffff26; border-top-color: var(--accent, #8b7bff); animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.backfill-toast { position: fixed; top: 52px; right: 18px; z-index: 90; width: 216px; padding: 10px 12px; border: 1px solid #34305a; border-radius: 10px; background: #171528ee; backdrop-filter: blur(6px); box-shadow: 0 10px 30px #0008; }
+.backfill-toast-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 7px; font-size: 12px; color: var(--text-2, #cdd3e6); }
+.backfill-toast-count { font: 600 12px ui-monospace, monospace; color: var(--text-dim, #8f97aa); }
+.backfill-bar { height: 5px; border-radius: 3px; background: #ffffff1a; overflow: hidden; }
+.backfill-bar-fill { height: 100%; border-radius: 3px; background: var(--accent, #8b7bff); transition: width .4s ease; }
 .details-modal { position: relative; width: min(900px, 100%); max-height: calc(100vh - 52px); overflow: auto; border: 1px solid #2a3040; border-radius: 17px; background: var(--surface); box-shadow: 0 28px 90px #000b; }
 .modal-close { position: absolute; top: 13px; right: 14px; z-index: 2; width: 34px; height: 34px; border: 1px solid #ffffff30; border-radius: 50%; color: white; font-size: 23px; background: rgba(10, 13, 22, .55); }
 .detail-banner { height: 210px; background: linear-gradient(135deg, #262c41, var(--surface)); background-position: center; background-size: cover; }

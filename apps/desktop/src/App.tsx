@@ -1154,11 +1154,48 @@ export default function App() {
           <StatisticsView statistics={statistics} onExport={() => void handleStatisticsExport()} />
         )}
       </main>
+      <BackfillProgress />
       {contextMenu}
       {detailLoading && <div className="modal-backdrop"><div className="modal-loading"><div className="spinner" role="status" aria-label={t("common.loadingInfo")} /></div></div>}
       {details && <DetailsModal key={`${details.id}-${details.list_entry?.id ?? "preview"}-${details.score_format}`} details={details} canonicalId={detailCanonicalId} mediaType={details.media_type === "MANGA" ? "MANGA" : "ANIME"} detailAccount={detailAccount} onClose={closeDetails} onChanged={refreshDetails} onSelect={(id, type) => { closeDetails(); void openDetails(id, type); }} />}
     </div>
     </>
+  );
+}
+
+// Barra flotante (arriba-derecha) del backfill de la biblioteca: sondea el progreso y
+// solo se muestra mientras hay detalles bajándose en segundo plano.
+function BackfillProgress() {
+  const { t } = useApp();
+  const [state, setState] = useState<{ active: boolean; done: number; total: number } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let timer = 0;
+    const poll = async () => {
+      let active = false;
+      try {
+        const s = await api.backfillStatus();
+        if (cancelled) return;
+        setState(s);
+        active = s.active;
+      } catch {
+        // backend aún no listo; se reintenta abajo
+      }
+      if (!cancelled) timer = window.setTimeout(poll, active ? 1000 : 5000);
+    };
+    void poll();
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, []);
+  if (!state?.active || state.total === 0) return null;
+  const pct = Math.min(100, Math.round((state.done / state.total) * 100));
+  return (
+    <div className="backfill-toast" role="status" aria-live="polite">
+      <div className="backfill-toast-row">
+        <span>{t("backfill.label")}</span>
+        <span className="backfill-toast-count">{state.done}/{state.total}</span>
+      </div>
+      <div className="backfill-bar"><div className="backfill-bar-fill" style={{ width: `${pct}%` }} /></div>
+    </div>
   );
 }
 
