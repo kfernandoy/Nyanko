@@ -15,7 +15,7 @@ pub struct WindowPrefs {
 impl Default for WindowPrefs {
     fn default() -> Self {
         Self {
-            close_to_tray: true,
+            close_to_tray: false,
             minimize_to_tray: false,
             start_minimized: false,
         }

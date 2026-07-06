@@ -7,7 +7,7 @@ export type WindowPrefs = {
 };
 
 const DEFAULTS: WindowPrefs = {
-  close_to_tray: true,
+  close_to_tray: false,
   minimize_to_tray: false,
   start_minimized: false,
 };

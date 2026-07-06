@@ -38,6 +38,9 @@
     "active": true,
     "targets": ["nsis"],
     "externalBin": ["binaries/nyanko-api"],
+    "resources": {
+      "binaries/_internal": "_internal"
+    },
     "createUpdaterArtifacts": true,
     "licenseFile": "EULA.txt",
     "windows": {
