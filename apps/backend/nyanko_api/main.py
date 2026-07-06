@@ -369,12 +369,18 @@ async def _download_asset(
         return None
     extension = _guess_asset_extension(url, response.headers.get("content-type"))
     target = directory / f"{stem}{extension}"
-    tmp = directory / f"{stem}{extension}.tmp"
-    tmp.write_bytes(response.content)
-    tmp.replace(target)
-    for stale in directory.glob(f"{stem}.*"):
-        if stale != target and stale.is_file():
-            stale.unlink(missing_ok=True)
+
+    # El backfill de la biblioteca baja miles de imágenes; escribir a disco en el event
+    # loop lo bloqueaba y congelaba toda la app "al principio". Va a un hilo.
+    def _write_file() -> None:
+        tmp = directory / f"{stem}{extension}.tmp"
+        tmp.write_bytes(response.content)
+        tmp.replace(target)
+        for stale in directory.glob(f"{stem}.*"):
+            if stale != target and stale.is_file():
+                stale.unlink(missing_ok=True)
+
+    await asyncio.to_thread(_write_file)
     return _asset_url(settings, provider, external_id, target.name)
 
 
@@ -432,7 +438,8 @@ async def _download_detail_assets(
         banner_local = _local_asset_url(settings, provider, external_id, "banner") or await _download_asset(
             settings, details.banner_image, provider, external_id, "banner"
         )
-    database.set_media_asset_paths(
+    await asyncio.to_thread(
+        database.set_media_asset_paths,
         provider,
         external_id,
         cover_image_local=cover_local,
@@ -605,8 +612,9 @@ def _warm_library_assets(
                     settings, item.cover_image, provider, item.id, "cover"
                 )
                 if cover_local:
-                    database.set_media_asset_paths(
-                        provider, item.id, cover_image_local=cover_local
+                    await asyncio.to_thread(
+                        database.set_media_asset_paths,
+                        provider, item.id, cover_image_local=cover_local,
                     )
 
         try:
