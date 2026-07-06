@@ -654,9 +654,13 @@ def _warm_library_details(
     media_provider = _get_provider(settings, provider)
     # include_related=False: las carátulas de relaciones/recomendaciones se bajan al
     # abrir la card; el backfill solo persiste el texto y las imágenes propias.
-    use_batch = media_type == "ANIME" and getattr(
-        media_provider.capabilities, "batch_details", False
-    )
+    if media_type == "MANGA":
+        use_batch = getattr(media_provider.capabilities, "batch_manga_details", False)
+        batch_fetch = getattr(media_provider, "manga_details_batch", None)
+    else:
+        use_batch = getattr(media_provider.capabilities, "batch_details", False)
+        batch_fetch = getattr(media_provider, "details_batch", None)
+    use_batch = use_batch and batch_fetch is not None
 
     async def run() -> None:
         try:
@@ -680,7 +684,7 @@ def _warm_library_details(
                 for start in range(0, len(pending), 50):
                     chunk = pending[start:start + 50]
                     try:
-                        details_list = await media_provider.details_batch(token, chunk)
+                        details_list = await batch_fetch(token, chunk)
                     except Exception:
                         continue  # el lote se reintenta en el próximo warm
                     # Todo el lote en UNA transacción, en un hilo: no bloquea el event
@@ -2615,19 +2619,34 @@ async def manga_details(
         )
         if record is not None and not record.stale:
             details = MediaDetails.model_validate(record.payload)
-            details.canonical_id = database.sync_media_details(provider, media_id, details, media_type="MANGA")
+            # Escritura + globs fuera del event loop (ver media_details): durante el
+            # backfill bloqueaban el card-open.
+            def _finish_hit() -> MediaDetails:
+                details.canonical_id = database.sync_media_details(
+                    provider, media_id, details, media_type="MANGA"
+                )
+                return _localize_media_details_assets(settings, provider, details)
+
+            result = await asyncio.to_thread(_finish_hit)
             response.headers["X-Cache-Status"] = CacheStatus.HIT.value
-            return _localize_media_details_assets(settings, provider, details)
-        persisted = _local_media_details(database, provider, account, media_id)
+            return result
+        persisted = await asyncio.to_thread(
+            _local_media_details, database, provider, account, media_id
+        )
         if persisted is not None and persisted.media_type == "MANGA":
-            if record is None or record.stale or _missing_detail_assets(settings, provider, media_id, persisted):
+            missing = await asyncio.to_thread(
+                _missing_detail_assets, settings, provider, media_id, persisted
+            )
+            if record is None or record.stale or missing:
                 _schedule_media_refresh(
                     database, settings, provider, account, media_id, token, media_type="MANGA"
                 )
                 response.headers["X-Cache-Status"] = CacheStatus.STALE.value
             else:
                 response.headers["X-Cache-Status"] = CacheStatus.HIT.value
-            return _localize_media_details_assets(settings, provider, persisted)
+            return await asyncio.to_thread(
+                _localize_media_details_assets, settings, provider, persisted
+            )
         media_provider = _get_provider(settings, provider)
         if not media_provider.capabilities.manga:
             raise HTTPException(
