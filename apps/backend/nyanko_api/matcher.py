@@ -24,7 +24,10 @@ _SEQUEL_MARKER = re.compile(
 _EPISODE_JUNK = re.compile(r"^(?:(?:episode|episodio|ep|cap|capitulo)\s*)?\d{1,4}$")
 
 
-@lru_cache(maxsize=8192)
+# maxsize amplio a propósito: una biblioteca enriquecida grande tiene ~35k formas de
+# título (2300+ obras × sinónimos). Con 8192 la caché hacía thrashing y re-normalizaba
+# (anitomy/fold) cientos de miles de veces → el feed de torrents tardaba ~22s.
+@lru_cache(maxsize=131072)
 def _search_forms(value: str, is_query: bool = False) -> tuple[str, ...]:
     # fold_title: los títulos con símbolos ("Fate/stay night") deben igualar a su
     # versión de nombre de archivo Windows ("Fate stay night").
@@ -156,7 +159,7 @@ def rank_matches(
     return [(score, item) for score, item in scored[:limit] if score >= floor]
 
 
-@lru_cache(maxsize=8192)
+@lru_cache(maxsize=131072)
 def _tokens(value: str) -> frozenset[str]:
     return frozenset(t for t in _TOKEN.findall(normalize_title(value).casefold()) if len(t) >= 2)
 
@@ -236,7 +239,11 @@ def find_best_match(
                         return item, 1.0
                 break
 
-    search_titles = [value for value in [anime_title, raw_title, *(search_hints or [])] if value]
+    # Dedup: match_from_index llama con anime_title == raw_title, así que sin esto cada
+    # candidato se comparaba DOS veces (duplicaba el coste del feed de torrents/escaneo).
+    search_titles = list(dict.fromkeys(
+        value for value in [anime_title, raw_title, *(search_hints or [])] if value
+    ))
     if not search_titles:
         return None, 0.0
 

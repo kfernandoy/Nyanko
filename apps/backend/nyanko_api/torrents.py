@@ -210,7 +210,10 @@ def build_feed(
         sig = signature(parsed.source_id, parsed.guid)
         if sig in discarded:
             continue
-        match, score = match_from_index(parsed.title, index, min_score=min_confidence)
+        # bucket_cap=80 (vs 200 por defecto): con una biblioteca enriquecida grande el
+        # cap alto arrastraba ~130 candidatos por torrent y el feed tardaba ~20s. 80
+        # mantiene los mismos matches a ~1/6 del coste.
+        match, score = match_from_index(parsed.title, index, min_score=min_confidence, bucket_cap=80)
         media_id = match.id if match else None
         ctx = ConditionContext(
             parsed=parsed,

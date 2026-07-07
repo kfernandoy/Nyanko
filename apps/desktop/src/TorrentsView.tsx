@@ -15,7 +15,9 @@ export function TorrentsView() {
 
   const load = async (refresh: boolean) => {
     setLoading(true);
+    setError(null);
     try { setItems(await api.torrentFeed(refresh)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : t("torrents.downloadError")); }
     finally { setLoading(false); }
   };
   // ponytail: load is stable (no captured state), deps array left empty intentionally
