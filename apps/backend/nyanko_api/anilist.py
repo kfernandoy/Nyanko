@@ -258,10 +258,7 @@ query ViewerMangaList($userId: Int!) {
 }
 """
 
-MANGA_DETAIL_QUERY = """
-query MangaDetails($id: Int!) {
-  Viewer { id mediaListOptions { scoreFormat } }
-  Media(id: $id, type: MANGA) {
+_MANGA_DETAIL_FIELDS = """
     id siteUrl description(asHtml: false) format status source
     chapters volumes genres countryOfOrigin averageScore synonyms bannerImage
     title { userPreferred romaji english native }
@@ -287,9 +284,25 @@ query MangaDetails($id: Int!) {
         }
       }
     }
-  }
-}
 """
+
+MANGA_DETAIL_QUERY = (
+    "query MangaDetails($id: Int!) {\n"
+    "  Viewer { id mediaListOptions { scoreFormat } }\n"
+    "  Media(id: $id, type: MANGA) {" + _MANGA_DETAIL_FIELDS + "  }\n"
+    "}\n"
+)
+
+# Igual que BATCH_DETAIL_QUERY (anime) pero para manga: sin la MediaList por item (la
+# entrada del usuario se reconstruye desde la biblioteca local al servir el detalle).
+MANGA_BATCH_DETAIL_QUERY = (
+    "query BatchMangaDetails($ids: [Int]) {\n"
+    "  Viewer { mediaListOptions { scoreFormat } }\n"
+    "  Page(perPage: 50) {\n"
+    "    media(id_in: $ids, type: MANGA) {" + _MANGA_DETAIL_FIELDS + "    }\n"
+    "  }\n"
+    "}\n"
+)
 
 MANGA_ENTRY_QUERY = """
 query MangaEntry($id: Int!, $userId: Int!) {
@@ -942,21 +955,9 @@ class AniListClient:
             for entry in entries
         ]
 
-    async def manga_details(self, token: str, media_id: int) -> MediaDetails:
-        data = await self.graphql(token, MANGA_DETAIL_QUERY, {"id": media_id})
-        media = data["Media"]
-        score_format = data["Viewer"]["mediaListOptions"]["scoreFormat"]
-        try:
-            entry_data = await self.graphql(
-                token,
-                MANGA_ENTRY_QUERY,
-                {"id": media_id, "userId": data["Viewer"]["id"]},
-            )
-            entry = entry_data.get("MediaList")
-        except AniListError as error:
-            if error.status_code != 404:
-                raise
-            entry = None
+    def _parse_manga_details(
+        self, media: dict, score_format: str, entry: dict | None = None
+    ) -> MediaDetails:
         return MediaDetails(
             id=media["id"],
             title=media["title"]["userPreferred"],
@@ -985,6 +986,35 @@ class AniListClient:
             relations=AniListClient._parse_relations(media),
             recommendations=AniListClient._parse_recommendations(media),
         )
+
+    async def manga_details(self, token: str, media_id: int) -> MediaDetails:
+        data = await self.graphql(token, MANGA_DETAIL_QUERY, {"id": media_id})
+        media = data["Media"]
+        score_format = data["Viewer"]["mediaListOptions"]["scoreFormat"]
+        try:
+            entry_data = await self.graphql(
+                token,
+                MANGA_ENTRY_QUERY,
+                {"id": media_id, "userId": data["Viewer"]["id"]},
+            )
+            entry = entry_data.get("MediaList")
+        except AniListError as error:
+            if error.status_code != 404:
+                raise
+            entry = None
+        return self._parse_manga_details(media, score_format, entry)
+
+    async def manga_details_batch(
+        self, token: str, media_ids: list[int]
+    ) -> list[MediaDetails]:
+        if not media_ids:
+            return []
+        data = await self.graphql(token, MANGA_BATCH_DETAIL_QUERY, {"ids": list(media_ids)})
+        score_format = data["Viewer"]["mediaListOptions"]["scoreFormat"]
+        return [
+            self._parse_manga_details(media, score_format)
+            for media in data["Page"]["media"]
+        ]
 
     async def preferences(self, token: str) -> UserPreferences:
         data = await self.graphql(token, PREFERENCES_QUERY)

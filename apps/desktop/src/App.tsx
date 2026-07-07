@@ -3,7 +3,7 @@ import { openUrl, openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useContextMenu, type CtxItem } from "./ContextMenu";
 import { useCompact } from "./hooks";
 import { KittenLogo } from "./KittenLogo";
-import { api, playbackSocket, setActiveAccount, type ActiveAccount } from "./api";
+import { api, playbackSocket, setActiveAccount, waitForBackend, type ActiveAccount } from "./api";
 import { useApp, mediaFormatLabel } from "./i18n";
 import { displayTitle, foldTitle } from "./title";
 import { setDiscordActivity, clearDiscordActivity } from "./discord";
@@ -223,6 +223,13 @@ export default function App() {
     if (!silent) setLoading(true);
     setError(null);
     try {
+      // Arranque en frío: esperar a que el sidecar escuche antes de disparar la carga
+      // real, en vez de fallar/encadenar timeouts contra un backend a medio arrancar.
+      if (!silent) {
+        const t0 = performance.now();
+        const ready = await waitForBackend();
+        console.info(`[nyanko] backend ready en ${Math.round(performance.now() - t0)}ms (ok=${ready})`);
+      }
       const accounts = await api.accounts();
       const selected = accounts.find((account) => account.is_primary && account.authenticated)
         ?? accounts.find((account) => account.authenticated);
@@ -404,18 +411,30 @@ export default function App() {
       socket = await playbackSocket();
       socket.onmessage = (event) => {
         const next = JSON.parse(event.data) as PlaybackCandidate | null;
-        setCandidate(next);
         if (!next) {
+          setCandidate(null);
           matchSeq += 1; // invalida cualquier match en vuelo
           setMatch(null);
           return;
         }
-        if (!healthRef.current?.authenticated) return;
         const signature = `${next.raw_title}|${next.episode ?? ""}`;
         if (detectedSignatureRef.current !== signature) {
+          // Nueva detección: adoptar el candidato crudo (el match ajustará el episodio).
           detectedSignatureRef.current = signature;
-          setView("now-playing");
+          setCandidate(next);
+          if (healthRef.current?.authenticated) setView("now-playing");
+        } else {
+          // Mismo episodio (tick de posición): actualizar solo tiempo/estado y CONSERVAR
+          // el episodio ya ajustado por el match, para no parpadear crudo↔absoluto (76↔1157).
+          setCandidate((current) => current ? {
+            ...current,
+            position_seconds: next.position_seconds,
+            duration_seconds: next.duration_seconds,
+            paused: next.paused,
+            finished: next.finished,
+          } : next);
         }
+        if (!healthRef.current?.authenticated) return;
         // Already auto-confirmed this episode: keep showing it, but don't re-match every
         // position tick (no churn, no flicker).
         if (confirmedSignatureRef.current === signature) return;
@@ -604,7 +623,7 @@ export default function App() {
     }
   };
 
-  const confirmMatch = async (m: PlaybackMatchResponse) => {
+  const confirmMatch = async (m: PlaybackMatchResponse, episodeOverride?: number) => {
     if (!m.match) return;
     setError(null);
     if (m.event_status === "confirmed") {
@@ -613,7 +632,9 @@ export default function App() {
       return;
     }
     try {
-      const episode = m.candidate.episode ?? 1;
+      // episodeOverride: el usuario corrigió el número (p.ej. Crunchyroll 76 → 1152
+      // absoluto). Confirmar con ese valor hace que el backend aprenda el offset.
+      const episode = episodeOverride ?? m.candidate.episode ?? 1;
       const progress = m.match.episodes != null ? Math.min(episode, m.match.episodes) : episode;
       await api.confirmPlayback(m.event_id, m.match.id, progress, m.candidate.site_identifier, m.candidate.site_adapter);
       setMatch((current) => (current ? { ...current, match: { ...current.match!, progress } } : current));
@@ -1116,7 +1137,7 @@ export default function App() {
         ) : view === "manga" ? (
           <MangaLibraryView items={manga} loading={sectionLoading && !mangaLoaded} onContext={(event, item) => openMenu(event, libraryItemMenu(item, "MANGA"))} onScore={(event, item) => openMenu(event, scoreMenuItems(item, "MANGA"))} onSelect={(item) => void openDetails(item.id, "MANGA", item.provider && item.account_alias ? { provider: item.provider, alias: item.account_alias } : activeAccount, item.canonical_id, item)} onProgress={quickProgressManga} />
         ) : view === "now-playing" ? (
-          <NowPlayingView candidate={candidate} match={match} prefs={playbackPrefs} onIgnore={() => void ignorePlayback()} onUndo={() => void undoPlayback()} onSelect={openDetails} onCorrected={async (next) => { setMatch(next); if (next.match) { await confirmMatch(next); } }} onSeeMore={() => setView("local-library")} />
+          <NowPlayingView candidate={candidate} match={match} prefs={playbackPrefs} onIgnore={() => void ignorePlayback()} onUndo={() => void undoPlayback()} onSelect={openDetails} onCorrected={async (next) => { setMatch(next); if (next.match) { await confirmMatch(next); } }} onConfirmEpisode={(m, ep) => confirmMatch(m, ep)} onSeeMore={() => setView("local-library")} />
         ) : view === "history" ? (
           <PlaybackHistoryView refreshKey={historyVersion} onSelect={openDetails} onRefresh={() => setHistoryVersion((v) => v + 1)} />
         ) : view === "discovery" ? (
@@ -1147,11 +1168,48 @@ export default function App() {
           <StatisticsView statistics={statistics} onExport={() => void handleStatisticsExport()} />
         )}
       </main>
+      <BackfillProgress />
       {contextMenu}
-      {detailLoading && <div className="modal-backdrop"><div className="modal-loading">{t("common.loadingInfo")}</div></div>}
+      {detailLoading && <div className="modal-backdrop"><div className="modal-loading"><div className="spinner" role="status" aria-label={t("common.loadingInfo")} /></div></div>}
       {details && <DetailsModal key={`${details.id}-${details.list_entry?.id ?? "preview"}-${details.score_format}`} details={details} canonicalId={detailCanonicalId} mediaType={details.media_type === "MANGA" ? "MANGA" : "ANIME"} detailAccount={detailAccount} onClose={closeDetails} onChanged={refreshDetails} onSelect={(id, type) => { closeDetails(); void openDetails(id, type); }} />}
     </div>
     </>
+  );
+}
+
+// Barra flotante (arriba-derecha) del backfill de la biblioteca: sondea el progreso y
+// solo se muestra mientras hay detalles bajándose en segundo plano.
+function BackfillProgress() {
+  const { t } = useApp();
+  const [state, setState] = useState<{ active: boolean; done: number; total: number } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let timer = 0;
+    const poll = async () => {
+      let active = false;
+      try {
+        const s = await api.backfillStatus();
+        if (cancelled) return;
+        setState(s);
+        active = s.active;
+      } catch {
+        // backend aún no listo; se reintenta abajo
+      }
+      if (!cancelled) timer = window.setTimeout(poll, active ? 1000 : 5000);
+    };
+    void poll();
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, []);
+  if (!state?.active || state.total === 0) return null;
+  const pct = Math.min(100, Math.round((state.done / state.total) * 100));
+  return (
+    <div className="backfill-toast" role="status" aria-live="polite">
+      <div className="backfill-toast-row">
+        <span>{t("backfill.label")}</span>
+        <span className="backfill-toast-count">{state.done}/{state.total}</span>
+      </div>
+      <div className="backfill-bar"><div className="backfill-bar-fill" style={{ width: `${pct}%` }} /></div>
+    </div>
   );
 }
 
@@ -1165,7 +1223,7 @@ type CombinedResult =
   | { source: "library"; item: MediaItem }
   | { source: "global"; item: SearchResult };
 
-function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, onCorrected, onSeeMore }: {
+function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, onCorrected, onConfirmEpisode, onSeeMore }: {
   candidate: PlaybackCandidate | null;
   match: PlaybackMatchResponse | null;
   prefs: PlaybackPreferences | null;
@@ -1173,10 +1231,12 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
   onUndo: () => void;
   onSelect: (id: number) => void;
   onCorrected: (match: PlaybackMatchResponse) => Promise<void> | void;
+  onConfirmEpisode: (match: PlaybackMatchResponse, episode: number) => Promise<void> | void;
   onSeeMore?: () => void;
 }) {
   const { t } = useApp();
   const [correcting, setCorrecting] = useState(false);
+  const [epEdit, setEpEdit] = useState<string>("");
   const [dismissed, setDismissed] = useState(false);
   const [query, setQuery] = useState("");
   const [combinedResults, setCombinedResults] = useState<CombinedResult[]>([]);
@@ -1200,7 +1260,8 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
     setJustConfirmed(false);
     setSearchError(null);
     setActionError(null);
-  }, [candidate?.raw_title, defaultQuery]);
+    setEpEdit(candidate?.episode != null ? String(candidate.episode) : "");
+  }, [candidate?.raw_title, candidate?.episode, defaultQuery]);
 
   // No suggested match → open the search automatically (the search effect below runs it),
   // unless the user explicitly cancelled it for this candidate.
@@ -1462,6 +1523,25 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
               <span>{match.match.progress} / {match.match.episodes ?? "?"} {t("np.episodes")}</span>
             </div>
           </article>
+          {!alreadyTracked && !isCompleted && !isMovie && (
+            // Corregir el número de episodio (Crunchyroll numera por temporada: "76" puede
+            // ser el 1152 absoluto). Guardar con el número correcto enseña el offset y los
+            // siguientes episodios de esa temporada se auto-mapean.
+            <div className="np-episode-edit">
+              <label>{t("np.episodeLabel")}</label>
+              <input
+                type="number" min={1} value={epEdit}
+                onChange={(event) => setEpEdit(event.target.value)}
+              />
+              <button
+                disabled={!(Number(epEdit) > 0)}
+                onClick={async () => {
+                  await onConfirmEpisode(match, Number(epEdit));
+                  setJustConfirmed(true);
+                }}
+              >{t("np.saveEpisode")}</button>
+            </div>
+          )}
           <div className="match-actions">
             {alreadyTracked ? (
               <span className="np-tracked">✓ {t("np.tracked")}</span>

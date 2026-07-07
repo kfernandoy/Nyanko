@@ -1,12 +1,26 @@
 const api = globalThis.browser ?? globalThis.chrome;
 
+// Dirección fija: el sidecar siempre escucha en localhost:8765. No es configurable —
+// el usuario no debe (ni tiene por qué) tocarla.
+const API_URL = "http://127.0.0.1:8765";
+
+// Nombra la asociación según el navegador donde corre, para que el usuario reconozca
+// cada cliente y no se acumulen filas genéricas "Navegador". ponytail: UA-sniffing simple;
+// Brave se enmascara como Chrome salvo por navigator.brave.
+function browserLabel() {
+  const ua = navigator.userAgent;
+  if (globalThis.browser || /Firefox\//.test(ua)) return "Firefox";
+  if (/Edg\//.test(ua)) return "Edge";
+  if (/OPR\//.test(ua)) return "Opera";
+  if (globalThis.navigator.brave) return "Brave";
+  if (/Vivaldi/.test(ua)) return "Vivaldi";
+  if (/Chrome\//.test(ua)) return "Chrome";
+  return "Navegador";
+}
+
 async function settings() {
-  return api.storage.local.get({
-    apiUrl: "http://127.0.0.1:8765",
-    token: "",
-    tokenExpiresAt: 0,
-    label: "Navegador",
-  });
+  const stored = await api.storage.local.get({ token: "", tokenExpiresAt: 0 });
+  return { ...stored, apiUrl: API_URL, label: browserLabel() };
 }
 
 async function updateBadge(text, color) {

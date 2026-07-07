@@ -65,9 +65,17 @@ function withAccount(path: string, account: ActiveAccount = activeAccount): stri
 }
 
 async function readAppDataFile(name: string): Promise<string | null> {
+  // Con VITE_API_URL (dev) hablamos con un backend fijo que NO es nuestro sidecar y no
+  // escribe port/instance_token en AppData; leer los del último build de prod daría un
+  // token que no corresponde y rompería la verificación de instancia en dev.
+  if (import.meta.env.VITE_API_URL) return null;
   if (!("__TAURI_INTERNALS__" in window)) return null;
   try {
-    return (await readTextFile(`nyanko/${name}`, { baseDir: BaseDirectory.AppData })).trim();
+    // El sidecar escribe port/instance_token en NYANKO_DATA_DIR = app_data_dir()
+    // (%APPDATA%\<identifier>), que es exactamente BaseDirectory.AppData. El prefijo
+    // "nyanko/" apuntaba a una subcarpeta inexistente, así que el frontend nunca
+    // encontraba el puerto real ni el token y dependía del 8765 hardcodeado.
+    return (await readTextFile(name, { baseDir: BaseDirectory.AppData })).trim();
   } catch {
     return null;
   }
@@ -89,6 +97,30 @@ async function getApiUrl(): Promise<string> {
 
 export function clearApiUrlCache(): void {
   cachedApiUrl = null;
+}
+
+// En producción el sidecar se lanza en frío y aún no escucha cuando el webview monta.
+// Sin esto, las primeras requests de arranque chocaban con un backend a medio arrancar
+// (o con el puerto equivocado) y encadenaban timeouts de 15s → "Cargando biblioteca…"
+// durante casi un minuto. Sondear un endpoint barato con timeout corto, re-resolviendo
+// el puerto en cada intento, convierte eso en "espera hasta que esté listo y carga ya".
+export async function waitForBackend(timeoutMs = 40_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    clearApiUrlCache(); // re-lee el port file por si el sidecar cayó a otro puerto
+    const url = await resolveApiUrl();
+    try {
+      const response = await fetchWithTimeout(`${url}/`, {}, 1_000);
+      if (response.ok) {
+        cachedApiUrl = url;
+        return true;
+      }
+    } catch {
+      // aún no responde; reintentar
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  return false;
 }
 
 async function fetchWithTimeout(
@@ -282,6 +314,7 @@ export const api = {
   // El escaneo recorre el disco; necesita mucho más que el timeout genérico de 15s.
   scanLibrary: () => request<ScanSummary>("/api/library/scan", { method: "POST" }, 300_000),
   pendingLocal: () => request<PendingLocalItem[]>("/api/library/pending-local"),
+  backfillStatus: () => request<{ active: boolean; done: number; total: number }>("/api/library/backfill"),
   getLocalLibrary: () => request<LocalSeries[]>("/api/library/local"),
   associateLocal: (body: { title: string; from_media_id?: number | null; external_id?: number | null; status?: string | null; media?: SearchResult | null }) =>
     request<void>(withAccount("/api/library/local/associate"), { method: "POST", body: JSON.stringify(body) }),

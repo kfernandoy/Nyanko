@@ -27,20 +27,12 @@ async function renderAdapters() {
 }
 
 async function load() {
-  const config = await api.storage.local.get({ apiUrl: "http://127.0.0.1:8765", token: "", lastError: "", lastEventAt: 0 });
-  byId("api-url").value = config.apiUrl;
+  const config = await api.storage.local.get({ token: "", lastError: "", lastEventAt: 0 });
   const parts = [config.token ? "Emparejada automáticamente." : "Se emparejará al detectar reproducción."];
   if (config.lastEventAt) parts.push(`Último evento: ${new Date(config.lastEventAt).toLocaleString("es")}.`);
   if (config.lastError) parts.push(`Último error: ${config.lastError}`);
   byId("status").textContent = parts.join(" ");
   await renderAdapters();
 }
-
-byId("save").addEventListener("click", async () => {
-  const apiUrl = byId("api-url").value.trim().replace(/\/$/, "");
-  // Changing the address invalidates the current token; clear it so it re-pairs.
-  await api.storage.local.set({ apiUrl, token: "", tokenExpiresAt: 0 });
-  byId("status").textContent = "Dirección guardada. Se volverá a emparejar automáticamente.";
-});
 
 void load();

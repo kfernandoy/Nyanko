@@ -31,6 +31,7 @@ class ProviderCapabilities:
     search: bool = True
     details: bool = True
     batch_details: bool = False
+    batch_manga_details: bool = False
     mutations: bool = True
     activity: bool = False
     statistics: bool = False
@@ -96,6 +97,10 @@ class MediaProvider(Protocol):
 
     async def manga_details(self, credential: str, external_id: int) -> MediaDetails: ...
 
+    async def manga_details_batch(
+        self, credential: str, external_ids: list[int]
+    ) -> list[MediaDetails]: ...
+
 
 class AniListProvider:
     name = "anilist"
@@ -108,6 +113,7 @@ class AniListProvider:
         preferences=True,
         preferences_editable=True,
         batch_details=True,
+        batch_manga_details=True,
     )
 
     def __init__(self, settings: Settings):
@@ -183,6 +189,11 @@ class AniListProvider:
 
     async def manga_details(self, credential: str, external_id: int) -> MediaDetails:
         return await self.client.manga_details(credential, external_id)
+
+    async def manga_details_batch(
+        self, credential: str, external_ids: list[int]
+    ) -> list[MediaDetails]:
+        return await self.client.manga_details_batch(credential, external_ids)
 
 
 class MyAnimeListProvider:

@@ -374,6 +374,48 @@ async def test_confirming_an_episode_remembers_the_series(database, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_confirming_learns_seasonal_episode_offset(database, monkeypatch):
+    """Crunchyroll numera por temporada (Season 22 ep 76) pero AniList es absoluto (1152).
+    Al confirmar el episodio absoluto, se aprende el offset ligado a la temporada."""
+    class Provider:
+        name = "anilist"
+        display_name = "AniList"
+
+        async def details(self, credential, media_id):
+            return MediaDetails(
+                id=media_id, title="One Piece", synonyms=[],
+                site_url="https://anilist.co/anime/21", status="RELEASING",
+                episodes=None, genres=[], studios=[], score_format="POINT_100",
+            )
+
+        updates = []
+
+        async def update_progress(self, credential, update):
+            self.updates.append(update)
+            return None
+
+    provider = Provider()
+    monkeypatch.setattr("nyanko_api.main._get_provider", lambda settings, _provider: provider)
+    account_id = database.ensure_account("anilist", "default")
+    event_id = database.insert_playback_event(
+        source="browser", raw_title="One Piece Season 22 Episode 76",
+        anime_title="One Piece Season 22", episode=76, status="pending",
+        provider_id="anilist", account_id=account_id,
+    )
+
+    await confirm_playback(
+        PlaybackConfirmRequest(
+            event_id=event_id, media_id=21, progress=1152,
+            site_identifier="series:one-piece:s22", site_adapter="crunchyroll",
+        ),
+        token="token", settings=Settings(), database=database,
+    )
+
+    # offset = 1152 (absoluto confirmado) - 76 (detectado) = 1076, ligado a la temporada.
+    assert database.get_media_mapping("crunchyroll", "series:one-piece:s22") == (21, 1076)
+
+
+@pytest.mark.asyncio
 async def test_playback_match_resolves_series_by_title_search(database, monkeypatch):
     from nyanko_api.models import GlobalSearchResponse
 
