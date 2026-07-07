@@ -611,7 +611,7 @@ export default function App() {
     }
   };
 
-  const confirmMatch = async (m: PlaybackMatchResponse) => {
+  const confirmMatch = async (m: PlaybackMatchResponse, episodeOverride?: number) => {
     if (!m.match) return;
     setError(null);
     if (m.event_status === "confirmed") {
@@ -620,7 +620,9 @@ export default function App() {
       return;
     }
     try {
-      const episode = m.candidate.episode ?? 1;
+      // episodeOverride: el usuario corrigió el número (p.ej. Crunchyroll 76 → 1152
+      // absoluto). Confirmar con ese valor hace que el backend aprenda el offset.
+      const episode = episodeOverride ?? m.candidate.episode ?? 1;
       const progress = m.match.episodes != null ? Math.min(episode, m.match.episodes) : episode;
       await api.confirmPlayback(m.event_id, m.match.id, progress, m.candidate.site_identifier, m.candidate.site_adapter);
       setMatch((current) => (current ? { ...current, match: { ...current.match!, progress } } : current));
@@ -1123,7 +1125,7 @@ export default function App() {
         ) : view === "manga" ? (
           <MangaLibraryView items={manga} loading={sectionLoading && !mangaLoaded} onContext={(event, item) => openMenu(event, libraryItemMenu(item, "MANGA"))} onScore={(event, item) => openMenu(event, scoreMenuItems(item, "MANGA"))} onSelect={(item) => void openDetails(item.id, "MANGA", item.provider && item.account_alias ? { provider: item.provider, alias: item.account_alias } : activeAccount, item.canonical_id, item)} onProgress={quickProgressManga} />
         ) : view === "now-playing" ? (
-          <NowPlayingView candidate={candidate} match={match} prefs={playbackPrefs} onIgnore={() => void ignorePlayback()} onUndo={() => void undoPlayback()} onSelect={openDetails} onCorrected={async (next) => { setMatch(next); if (next.match) { await confirmMatch(next); } }} onSeeMore={() => setView("local-library")} />
+          <NowPlayingView candidate={candidate} match={match} prefs={playbackPrefs} onIgnore={() => void ignorePlayback()} onUndo={() => void undoPlayback()} onSelect={openDetails} onCorrected={async (next) => { setMatch(next); if (next.match) { await confirmMatch(next); } }} onConfirmEpisode={(m, ep) => confirmMatch(m, ep)} onSeeMore={() => setView("local-library")} />
         ) : view === "history" ? (
           <PlaybackHistoryView refreshKey={historyVersion} onSelect={openDetails} onRefresh={() => setHistoryVersion((v) => v + 1)} />
         ) : view === "discovery" ? (
@@ -1209,7 +1211,7 @@ type CombinedResult =
   | { source: "library"; item: MediaItem }
   | { source: "global"; item: SearchResult };
 
-function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, onCorrected, onSeeMore }: {
+function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, onCorrected, onConfirmEpisode, onSeeMore }: {
   candidate: PlaybackCandidate | null;
   match: PlaybackMatchResponse | null;
   prefs: PlaybackPreferences | null;
@@ -1217,10 +1219,12 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
   onUndo: () => void;
   onSelect: (id: number) => void;
   onCorrected: (match: PlaybackMatchResponse) => Promise<void> | void;
+  onConfirmEpisode: (match: PlaybackMatchResponse, episode: number) => Promise<void> | void;
   onSeeMore?: () => void;
 }) {
   const { t } = useApp();
   const [correcting, setCorrecting] = useState(false);
+  const [epEdit, setEpEdit] = useState<string>("");
   const [dismissed, setDismissed] = useState(false);
   const [query, setQuery] = useState("");
   const [combinedResults, setCombinedResults] = useState<CombinedResult[]>([]);
@@ -1244,7 +1248,8 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
     setJustConfirmed(false);
     setSearchError(null);
     setActionError(null);
-  }, [candidate?.raw_title, defaultQuery]);
+    setEpEdit(candidate?.episode != null ? String(candidate.episode) : "");
+  }, [candidate?.raw_title, candidate?.episode, defaultQuery]);
 
   // No suggested match → open the search automatically (the search effect below runs it),
   // unless the user explicitly cancelled it for this candidate.
@@ -1506,6 +1511,25 @@ function NowPlayingView({ candidate, match, prefs, onIgnore, onUndo, onSelect, o
               <span>{match.match.progress} / {match.match.episodes ?? "?"} {t("np.episodes")}</span>
             </div>
           </article>
+          {!alreadyTracked && !isCompleted && !isMovie && (
+            // Corregir el número de episodio (Crunchyroll numera por temporada: "76" puede
+            // ser el 1152 absoluto). Guardar con el número correcto enseña el offset y los
+            // siguientes episodios de esa temporada se auto-mapean.
+            <div className="np-episode-edit">
+              <label>{t("np.episodeLabel")}</label>
+              <input
+                type="number" min={1} value={epEdit}
+                onChange={(event) => setEpEdit(event.target.value)}
+              />
+              <button
+                disabled={!(Number(epEdit) > 0)}
+                onClick={async () => {
+                  await onConfirmEpisode(match, Number(epEdit));
+                  setJustConfirmed(true);
+                }}
+              >{t("np.saveEpisode")}</button>
+            </div>
+          )}
           <div className="match-actions">
             {alreadyTracked ? (
               <span className="np-tracked">✓ {t("np.tracked")}</span>

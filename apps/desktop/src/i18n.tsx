@@ -255,6 +255,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "np.savingIn": "Se guardará en", "np.saving": "Guardando…",
     "np.manuallyCorrected": "corregida manualmente", "np.correct": "Corregir",
     "np.ignore": "Ignorar", "np.undoLast": "Deshacer última", "np.episodes": "episodios",
+    "np.episodeLabel": "Episodio:", "np.saveEpisode": "Guardar episodio",
     "np.noMatch": "Sin coincidencia en tu biblioteca", "np.noMatch.desc": "No se encontró un anime que coincida con este título.",
     "np.otherOptions": "¿Era otra serie?",
 
@@ -536,6 +537,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "np.savingIn": "Saving in", "np.saving": "Saving…",
     "np.manuallyCorrected": "manually corrected", "np.correct": "Correct",
     "np.ignore": "Ignore", "np.undoLast": "Undo last", "np.episodes": "episodes",
+    "np.episodeLabel": "Episode:", "np.saveEpisode": "Save episode",
     "np.noMatch": "No match in your library", "np.noMatch.desc": "No anime matching this title was found.",
     "np.otherOptions": "Was it another series?",
 

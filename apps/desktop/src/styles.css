@@ -590,6 +590,9 @@ button.media-row-score:hover { background: #232a3d; color: #ffd76a; }
 .backfill-toast-count { font: 600 12px ui-monospace, monospace; color: var(--text-dim, #8f97aa); }
 .backfill-bar { height: 5px; border-radius: 3px; background: #ffffff1a; overflow: hidden; }
 .backfill-bar-fill { height: 100%; border-radius: 3px; background: var(--accent, #8b7bff); transition: width .4s ease; }
+.np-episode-edit { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; font-size: 13px; color: var(--text-2, #cdd3e6); }
+.np-episode-edit input { width: 90px; padding: 5px 8px; border: 1px solid #34305a; border-radius: 7px; background: var(--surface-2, #1a1830); color: inherit; font: inherit; }
+.np-episode-edit button { padding: 5px 10px; }
 .details-modal { position: relative; width: min(900px, 100%); max-height: calc(100vh - 52px); overflow: auto; border: 1px solid #2a3040; border-radius: 17px; background: var(--surface); box-shadow: 0 28px 90px #000b; }
 .modal-close { position: absolute; top: 13px; right: 14px; z-index: 2; width: 34px; height: 34px; border: 1px solid #ffffff30; border-radius: 50%; color: white; font-size: 23px; background: rgba(10, 13, 22, .55); }
 .detail-banner { height: 210px; background: linear-gradient(135deg, #262c41, var(--surface)); background-position: center; background-size: cover; }
