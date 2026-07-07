@@ -3148,8 +3148,10 @@ async def match_playback(
             search_hints=search_hints,
         )
         if request.site_identifier and match is not None and score >= 0.85:
+            # Preservar el offset aprendido: sin pasarlo, el default 0 lo borraba en cada
+            # re-match fuerte.
             database.set_media_mapping(
-                site_mapping_provider, request.site_identifier, match.id
+                site_mapping_provider, request.site_identifier, match.id, episode_offset
             )
         # Search the provider catalogue (like Discover) whenever the library match isn't
         # strong — don't assume a weak local hit is what's playing. AniList/MAL/Kitsu index
@@ -3332,7 +3334,12 @@ async def match_playback(
         raw_title=request.raw_title,
         anime_title=request.anime_title,
         season=request.season,
-        episode=_display_episode(request.episode, match),
+        # Mostrar el episodio con el offset aplicado (Crunchyroll ep 76 → 1152) para que
+        # la tarjeta y la confirmación usen el número absoluto correcto.
+        episode=_display_episode(
+            request.episode + episode_offset if request.episode is not None else None,
+            match,
+        ),
         episode_type=request.episode_type,
         confidence=request.confidence,
         position_seconds=request.position_seconds,
@@ -3465,8 +3472,15 @@ async def confirm_playback(
     if confirm.site_identifier:
         # Key the mapping the same way match reads it (`site_adapter or source`), so the
         # next episode finds it. event["source"] is "browser" for extension playback.
+        # Aprender el offset estacional→absoluto: si el usuario confirmó un episodio
+        # distinto al detectado (Crunchyroll "Season 22 ep 76" → 1152), guardarlo con el
+        # identificador de la temporada para que los próximos episodios se auto-mapeen.
+        # El evento guarda el episodio crudo detectado, así que el offset es consistente.
+        detected = event["episode"]
+        offset = confirm.progress - int(detected) if detected is not None else 0
         database.set_media_mapping(
-            confirm.site_adapter or event["source"], confirm.site_identifier, confirm.media_id
+            confirm.site_adapter or event["source"], confirm.site_identifier,
+            confirm.media_id, offset,
         )
     if event["anime_title"]:
         database.set_match_correction(normalize_title(event["anime_title"]), confirm.media_id)

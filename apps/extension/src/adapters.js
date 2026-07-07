@@ -115,13 +115,21 @@
       meta('meta[name="twitter:title"]') || document.title.trim();
     const animeTitle = seriesName && Number(season) > 1 ? `${seriesName} Season ${Number(season)}` : seriesName;
 
+    // Identificador ESTABLE por serie/temporada (no por episodio): sin esto, el mapeo
+    // aprendido (media + offset de episodio) cambiaba de clave en cada episodio y nunca
+    // se reutilizaba. Con series+temporada, "One Piece Season 22" mantiene un solo mapeo.
+    const stableId = seriesName
+      ? `series:${(season != null && Number(season) > 1 ? `${seriesName}:s${season}` : seriesName)
+          .toLowerCase().replace(/\s+/g, "-")}`
+      : genericSiteIdentifier();
+
     return {
       rawTitle,
       animeTitle,
       season: season !== null ? Number(season) : null,
       episode: episode !== null ? parseFloat(episode) : null,
       contentKind: episode != null ? "episode" : classifyContent(rawTitle, video?.duration, episode),
-      siteIdentifier: genericSiteIdentifier(),
+      siteIdentifier: stableId,
       searchHints: [],
       nextEpisodeUrl: findNextEpisodeUrl(),
     };
