@@ -411,18 +411,30 @@ export default function App() {
       socket = await playbackSocket();
       socket.onmessage = (event) => {
         const next = JSON.parse(event.data) as PlaybackCandidate | null;
-        setCandidate(next);
         if (!next) {
+          setCandidate(null);
           matchSeq += 1; // invalida cualquier match en vuelo
           setMatch(null);
           return;
         }
-        if (!healthRef.current?.authenticated) return;
         const signature = `${next.raw_title}|${next.episode ?? ""}`;
         if (detectedSignatureRef.current !== signature) {
+          // Nueva detección: adoptar el candidato crudo (el match ajustará el episodio).
           detectedSignatureRef.current = signature;
-          setView("now-playing");
+          setCandidate(next);
+          if (healthRef.current?.authenticated) setView("now-playing");
+        } else {
+          // Mismo episodio (tick de posición): actualizar solo tiempo/estado y CONSERVAR
+          // el episodio ya ajustado por el match, para no parpadear crudo↔absoluto (76↔1157).
+          setCandidate((current) => current ? {
+            ...current,
+            position_seconds: next.position_seconds,
+            duration_seconds: next.duration_seconds,
+            paused: next.paused,
+            finished: next.finished,
+          } : next);
         }
+        if (!healthRef.current?.authenticated) return;
         // Already auto-confirmed this episode: keep showing it, but don't re-match every
         // position tick (no churn, no flicker).
         if (confirmedSignatureRef.current === signature) return;

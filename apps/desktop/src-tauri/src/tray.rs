@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager};
 
 const SHOW_LABEL: &str = "Mostrar";
@@ -30,7 +30,14 @@ pub fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     }
     builder
         .menu(&menu)
-        .show_menu_on_left_click(true)
+        // Convención de Windows: menú con click derecho, doble click (izq) abre la app.
+        // Con el menú en click izquierdo, el doble click chocaba con el despliegue del menú.
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } = event {
+                show_window(tray.app_handle());
+            }
+        })
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "show" => show_window(app),
             "hide" => hide_window(app),
