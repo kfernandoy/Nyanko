@@ -472,7 +472,9 @@ export const api = {
     }),
   deleteCorrection: (rawTitle: string) =>
     request<void>(`/api/playback/correction/${encodeURIComponent(rawTitle)}`, { method: "DELETE" }),
-  torrentFeed: (refresh = false) => request<TorrentItem[]>(`/api/torrents/feed?refresh=${refresh}`),
+  // El feed baja RSS + matchea contra toda la biblioteca; con refresh además re-baja la
+  // lista del proveedor. Timeout amplio para no cortar en bibliotecas grandes.
+  torrentFeed: (refresh = false) => request<TorrentItem[]>(`/api/torrents/feed?refresh=${refresh}`, undefined, 60_000),
   torrentUnread: () => request<{ count: number }>("/api/torrents/unread-count"),
   downloadTorrent: (signature: string, mode?: "magnet" | "torrent") => request<TorrentDownloadResponse>("/api/torrents/download", { method: "POST", body: JSON.stringify({ signature, mode: mode ?? null }) }),
   discardTorrent: (signature: string) => request<void>("/api/torrents/discard", { method: "POST", body: JSON.stringify({ signature }) }),

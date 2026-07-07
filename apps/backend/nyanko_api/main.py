@@ -1095,7 +1095,10 @@ async def _compute_torrent_feed(
         episodes = local_by_canonical.get(item.canonical_id)
         if episodes:
             local_episodes[item.id] = set(episodes)
-    feed = torrents_mod.build_feed(
+    # build_feed es CPU puro (fuzzy-match de cada torrent vs la biblioteca); en el event
+    # loop congelaba toda la app varios segundos. Fuera del loop.
+    feed = await asyncio.to_thread(
+        torrents_mod.build_feed,
         parsed, library, filters, seen, discarded,
         filters_enabled=settings_t.filters_enabled,
         globals_={
