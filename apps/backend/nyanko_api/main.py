@@ -647,8 +647,23 @@ def _warm_library_details(
         if not task.done():
             return
 
-    have = database.persisted_details_ids(provider, [str(item.id) for item in items])
-    pending = [item.id for item in items if str(item.id) not in have]
+    # Refresco por CAMBIO (no por TTL): re-baja el detalle si no está persistido, o si el
+    # updatedAt del proveedor (fresco, viene en la lista) supera al guardado — señal de que
+    # la metadata (sinopsis/episodios/relaciones) cambió. prev is None = detalle cacheado
+    # antes de esta feature: se re-baja una vez para poblar el updatedAt.
+    stored = database.persisted_details_updated_at(provider, [str(item.id) for item in items])
+
+    def _needs_refresh(item: MediaItem) -> bool:
+        key = str(item.id)
+        if key not in stored:
+            return True  # aún no persistido
+        if item.media_updated_at is None:
+            return False  # el proveedor no da updatedAt (MAL/Kitsu): nada que comparar
+        prev = stored[key]
+        # prev None = cacheado antes de esta feature → re-bajar una vez para poblar el dato.
+        return prev is None or item.media_updated_at > prev
+
+    pending = [item.id for item in items if _needs_refresh(item)]
     if not pending:
         _backfill_progress.pop(warm_key, None)
         return

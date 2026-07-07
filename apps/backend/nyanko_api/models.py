@@ -126,7 +126,8 @@ class MediaItem(BaseModel):
     media_type: str = "ANIME"
     media_status: str | None = None  # estado de emisión (RELEASING/FINISHED/…)
     site_url: str | None = None
-    updated_at: int | None = None
+    updated_at: int | None = None  # cuándo cambió la ENTRADA del usuario (progreso/score)
+    media_updated_at: int | None = None  # cuándo cambió la METADATA de la obra en el proveedor
     canonical_id: int | None = None
     provider: str | None = None
     account_alias: str | None = None
@@ -333,6 +334,9 @@ class TrailerInfo(BaseModel):
 
 class MediaDetails(BaseModel):
     id: int
+    # updatedAt del proveedor: si el valor fresco de la lista supera al guardado, la
+    # metadata cambió y hay que re-bajar el detalle (refresco por cambio, no por TTL).
+    updated_at: int | None = None
     title: str
     title_romaji: str | None = None
     title_english: str | None = None

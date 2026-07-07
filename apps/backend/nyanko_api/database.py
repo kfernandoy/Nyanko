@@ -211,6 +211,7 @@ CREATE TABLE IF NOT EXISTS media_details_cache (
     relations_json TEXT NOT NULL DEFAULT '[]',
     recommendations_json TEXT NOT NULL DEFAULT '[]',
     fetched_at INTEGER NOT NULL DEFAULT 0,
+    provider_updated_at INTEGER,
     payload_hash TEXT,
     PRIMARY KEY (media_id, provider_id)
 );
@@ -328,6 +329,7 @@ class Database:
             self._add_column(connection, "match_corrections", "canonical_media_id", "INTEGER")
             self._add_column(connection, "media_details_cache", "banner_image_local", "TEXT")
             self._add_column(connection, "media_details_cache", "cover_image_local", "TEXT")
+            self._add_column(connection, "media_details_cache", "provider_updated_at", "INTEGER")
             self._add_column(connection, "media", "release_year", "INTEGER")
             self._add_column(connection, "media", "chapter_count", "INTEGER")
             self._add_column(connection, "media", "volume_count", "INTEGER")
@@ -1555,6 +1557,13 @@ class Database:
                     str(hash(serialized_payload)),
                 ),
             )
+            # provider_updated_at (updatedAt del proveedor) por separado, para no re-contar
+            # los 39 placeholders del INSERT posicional de arriba.
+            connection.execute(
+                "UPDATE media_details_cache SET provider_updated_at = ? "
+                "WHERE media_id = ? AND provider_id = ?",
+                (payload.get("updated_at"), media_id, provider_id),
+            )
             return media_id
 
     def persist_details_batch(
@@ -1587,6 +1596,7 @@ class Database:
                 return None
             payload = {
                 "id": int(row["external_id"]),
+                "updated_at": row["provider_updated_at"],
                 "title": row["title"],
                 "title_romaji": row["title_romaji"],
                 "title_english": row["title_english"],
@@ -1668,6 +1678,23 @@ class Database:
                 (provider_id, *external_ids),
             ).fetchall()
         return {row["external_id"] for row in rows}
+
+    def persisted_details_updated_at(
+        self, provider_id: str, external_ids: list[str]
+    ) -> dict[str, int | None]:
+        """external_id -> provider_updated_at guardado, para detectar detalles obsoletos
+        comparándolo con el updatedAt fresco de la lista (refresco por cambio, no por TTL).
+        Un id ausente = detalle no persistido todavía."""
+        if not external_ids:
+            return {}
+        placeholders = ",".join("?" for _ in external_ids)
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT external_id, provider_updated_at FROM media_details_cache "
+                f"WHERE provider_id = ? AND external_id IN ({placeholders})",
+                (provider_id, *external_ids),
+            ).fetchall()
+        return {row["external_id"]: row["provider_updated_at"] for row in rows}
 
     def persisted_cover_map(
         self, provider_id: str, external_ids: list[str]

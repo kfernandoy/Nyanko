@@ -974,6 +974,52 @@ def test_warm_library_details_backfills_missing_via_batch(database, monkeypatch)
     assert persisted.description == "Sinopsis"
 
 
+@pytest.mark.asyncio
+async def test_warm_library_details_refreshes_only_changed_metadata(database, monkeypatch):
+    """Refresco por updatedAt: re-baja el detalle solo si el updatedAt del proveedor
+    (fresco, de la lista) supera al guardado; si es igual, no lo toca."""
+    import nyanko_api.main as main_module
+    from nyanko_api.providers import ProviderCapabilities
+
+    batch_calls = []
+
+    def make_details(mid, updated):
+        return MediaDetails(
+            id=mid, updated_at=updated, title=f"M{mid}", synonyms=[], site_url="x",
+            genres=[], studios=[], score_format="POINT_100",
+        )
+
+    class Provider:
+        name = "anilist"
+        display_name = "AniList"
+        capabilities = ProviderCapabilities(batch_details=True)
+
+        async def details_batch(self, credential, media_ids):
+            batch_calls.append(list(media_ids))
+            return [make_details(m, 999) for m in media_ids]
+
+    monkeypatch.setattr(main_module, "_get_provider", lambda s, _p: Provider())
+    database.sync_media_details("anilist", 10, make_details(10, 100))  # guardado: updatedAt=100
+    database.sync_media_details("anilist", 11, make_details(11, 100))
+    items = [
+        MediaItem(id=10, title="A", status="CURRENT", progress=0, media_updated_at=200),  # cambió
+        MediaItem(id=11, title="B", status="CURRENT", progress=0, media_updated_at=100),  # igual
+    ]
+
+    async def scenario():
+        main_module._warm_library_details(
+            database, Settings(), "anilist", "default", items, "token"
+        )
+        task = main_module._library_detail_warmers.get(
+            (str(database.path), "anilist", "default", "ANIME")
+        )
+        assert task is not None
+        await task
+
+    await scenario()
+    assert batch_calls == [[10]]  # solo el que cambió (200 > 100)
+
+
 def test_library_combined_view_uses_local_canonical_entries(database):
     from fastapi.testclient import TestClient
 

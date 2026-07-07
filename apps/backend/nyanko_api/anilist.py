@@ -62,7 +62,7 @@ query ViewerList($userId: Int!) {
       startedAt { year month day }
       completedAt { year month day }
       media {
-        id idMal episodes format season seasonYear siteUrl synonyms genres status
+        id idMal episodes format season seasonYear siteUrl synonyms genres status updatedAt
         title { userPreferred romaji english native }
         coverImage { large }
       }
@@ -144,7 +144,7 @@ query Statistics {
 # Campos del detalle de anime, compartidos por la query individual y la de lote
 # (id_in) que usa el backfill — así ambas piden exactamente lo mismo sin duplicar.
 _ANIME_DETAIL_FIELDS = """
-    id siteUrl description(asHtml: false) format status source season seasonYear
+    id updatedAt siteUrl description(asHtml: false) format status source season seasonYear
     episodes duration genres countryOfOrigin averageScore synonyms bannerImage
     title { userPreferred romaji english native }
     coverImage { extraLarge color }
@@ -249,7 +249,7 @@ query ViewerMangaList($userId: Int!) {
       startedAt { year month day }
       completedAt { year month day }
       media {
-        id chapters volumes format status siteUrl synonyms genres
+        id chapters volumes format status siteUrl synonyms genres updatedAt
         title { userPreferred romaji english native }
         coverImage { large }
       }
@@ -259,7 +259,7 @@ query ViewerMangaList($userId: Int!) {
 """
 
 _MANGA_DETAIL_FIELDS = """
-    id siteUrl description(asHtml: false) format status source
+    id updatedAt siteUrl description(asHtml: false) format status source
     chapters volumes genres countryOfOrigin averageScore synonyms bannerImage
     title { userPreferred romaji english native }
     coverImage { extraLarge color }
@@ -563,6 +563,7 @@ class AniListClient:
                 media_status=entry["media"].get("status"),
                 site_url=entry["media"].get("siteUrl"),
                 updated_at=entry.get("updatedAt"),
+                media_updated_at=entry["media"].get("updatedAt"),
                 started_at=_fuzzy_date_to_str(entry.get("startedAt")),
                 completed_at=_fuzzy_date_to_str(entry.get("completedAt")),
                 id_mal=entry["media"].get("idMal"),
@@ -820,6 +821,7 @@ class AniListClient:
         next_airing = media.get("nextAiringEpisode") or {}
         return MediaDetails(
             id=media["id"],
+            updated_at=media.get("updatedAt"),
             title=media["title"]["userPreferred"],
             title_romaji=media["title"].get("romaji"),
             title_english=media["title"].get("english"),
@@ -949,6 +951,7 @@ class AniListClient:
                 site_url=entry["media"].get("siteUrl"),
                 media_type="MANGA",
                 updated_at=entry.get("updatedAt"),
+                media_updated_at=entry["media"].get("updatedAt"),
                 started_at=_fuzzy_date_to_str(entry.get("startedAt")),
                 completed_at=_fuzzy_date_to_str(entry.get("completedAt")),
             )
@@ -960,6 +963,7 @@ class AniListClient:
     ) -> MediaDetails:
         return MediaDetails(
             id=media["id"],
+            updated_at=media.get("updatedAt"),
             title=media["title"]["userPreferred"],
             title_romaji=media["title"].get("romaji"),
             title_english=media["title"].get("english"),
