@@ -38,9 +38,9 @@ decisions:
   - showSplashError toggles the error panel via webContents.executeJavaScript rather than adding an IPC listener the hardened preload doesn't expose.
 metrics:
   completed: 2026-07-10
-  tasks: 4  # 3 auto (done) + 1 human-verify (pending)
-  files: 7
-status: awaiting-human-verify
+  tasks: 4  # 3 auto + 1 human-verify (all passed)
+  files: 8
+status: complete
 ---
 
 # Phase 02 Plan 02: Startup gate + logs action Summary
@@ -70,10 +70,24 @@ Orchestrated the wave-1 modules (`sidecar.ts`, `logging.ts`) into the live Elect
 1. **registerIpc once, not per runStartup call.** The plan listed `registerIpc` as step 2 inside `runStartup`; since Retry calls `runStartup` again, that would re-register `ipcMain.handle('openLogsFolder')` and throw "second handler". Moved the single `registerIpc({ onRetry: () => void runStartup() })` into the `whenReady` handler before the first `runStartup()`.
 2. **before-quit awaits the kill.** The plan said `app.on("before-quit", killSidecar)`. Registering the async `killSidecar` raw lets the process exit before `taskkill /T /F` runs → orphan `nyanko-api.exe` (violates criterion #2). Implemented `preventDefault` + `void killSidecar().finally(() => app.quit())` with a `quitting` guard.
 
-## Pending — Task 4: Human-verify (BLOCKING)
+## Gap fixes found during human-verify (both committed)
 
-Automated gates pass; the live behavioral proof (prod cold-start gate, both log files, logs button, no orphans, dev short-circuit, failure path) requires the user to run the app. See `02-02-PLAN.md` Task 4 `how-to-verify`. Plan status stays `awaiting-human-verify` and the phase is NOT marked complete until approved.
+Live testing surfaced two gaps the planner + checker missed; both fixed and re-verified:
 
-## Self-Check: PASSED (code) / PENDING (human-verify)
+1. **Renderer couldn't discover the sidecar's dynamic port in Electron** (`12a9310`). `api.ts` `readAppDataFile` was gated on `__TAURI_INTERNALS__`, so in Electron prod it fell back to the hardcoded `8765` while the sidecar bound a dynamic free port → "Failed to fetch". Fix: a **whitelisted** `nyanko.readAppDataFile(port|instance_token)` IPC (reads `userData`, rejects any other name) + an Electron branch in `api.ts`. This is the minimal slice of Phase 3's `native.ts` that criterion 1 requires. Files: `ipc.ts`, `preload/index.ts`, `api.ts`, `vite-env.d.ts`.
+2. **`electron-vite preview` runs unpackaged → `app.isPackaged=false`** (`0dd4d99`), so the dev branch skipped the sidecar and `NYANKO_SIDECAR_EXE` did nothing under preview. Fix: treat `NYANKO_SIDECAR_EXE` as a force-prod signal so preview can exercise the real gate before packaging (Phase 5). Real `npm run dev` (no override) still short-circuits per D-10.
 
-All 7 artifacts exist on disk; 3 task commits (a33f0c8, b7590cf, d9a8bb9) exist in git. Automated verification passes. The blocking human-verify checkpoint is outstanding.
+## Human-verify: PASSED (live UAT, 2026-07-10)
+
+All 5 ROADMAP success criteria confirmed live by the user, once the clean-room contention (a stray `dev.py` + the old 0.1.15 app holding 8765 + a divergent `apps/backend/data` instance token) was cleared:
+1. Prod cold-start (splash → `/api/health` gate → library loads cold, no "Cargando ~1min") — ✅ via `NYANKO_SIDECAR_EXE` + `electron-vite preview`.
+2. No orphans — ✅ graceful close, `before-quit → killSidecar`, zero `nyanko-api.exe` after quit.
+3. Logs button opens the real logs dir — ✅.
+4. `main.log` (electron-log) + `sidecar.log` (piped uvicorn) under `app.getPath('logs')` — ✅ (verified on disk with content).
+5. Dev omits the sidecar (manual backend) — ✅ no `nyanko-api.exe` spawned under `npm run dev`.
+
+Note: window has no titlebar/close controls yet (frameless; controls are Phase 4 / NATIVE-04) — closed via right-click taskbar → Cerrar. Expected deferral, not a defect.
+
+## Self-Check: PASSED
+
+All 8 artifacts exist on disk; 5 commits (a33f0c8, b7590cf, d9a8bb9, 12a9310, 0dd4d99) exist in git. Automated gates (tsc, build, test:sidecar, test:datadir) and live human UAT of all 5 criteria pass.
