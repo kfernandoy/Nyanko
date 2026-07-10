@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 01
-current_phase_name: electron-shell-scaffold-data-dir-lock
+current_phase: 2
+current_phase_name: main-core-sidecar-lifecycle-logging
 status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-07-10T14:13:25.988Z"
+stopped_at: Phase 2 wave 1 (02-01) complete; wave 2 (02-02) next
+last_updated: "2026-07-10T19:04:00.502Z"
 last_activity: 2026-07-10
-last_activity_desc: Phase 01 execution started
+last_activity_desc: Phase 2 execution started
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
   percent: 20
 ---
 
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-10)
 
 **Core value:** El tracking sigue funcionando idéntico tras cambiar el motor — misma biblioteca, mismos datos, misma detección; solo cambia el shell de Tauri a Electron.
-**Current focus:** Phase 01 — electron-shell-scaffold-data-dir-lock
+**Current focus:** Phase 2 — main-core-sidecar-lifecycle-logging
 
 ## Current Position
 
-Phase: 01 (electron-shell-scaffold-data-dir-lock) — EXECUTING
+Phase: 2 (main-core-sidecar-lifecycle-logging) — EXECUTING
 Plan: 1 of 2
-Status: Executing Phase 01
-Last activity: 2026-07-10 — Phase 01 execution started
+Status: Executing Phase 2
+Last activity: 2026-07-10 — Phase 2 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -86,6 +86,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-10T14:13:25.979Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-main-core-sidecar-lifecycle-logging/02-CONTEXT.md
+Last session: 2026-07-10T19:04:00.491Z
+Stopped at: Phase 2 wave 1 (02-01) complete; wave 2 (02-02) next
+Resume file: .planning/phases/02-main-core-sidecar-lifecycle-logging/02-02-PLAN.md
