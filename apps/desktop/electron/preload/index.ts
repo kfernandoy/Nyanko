@@ -9,4 +9,5 @@ contextBridge.exposeInMainWorld("nyanko", {
   openLogsFolder: () => ipcRenderer.invoke("openLogsFolder"),
   retryStartup: () => ipcRenderer.invoke("startup:retry"),
   quit: () => ipcRenderer.send("startup:quit"),
+  readAppDataFile: (name: string) => ipcRenderer.invoke("readAppDataFile", name),
 });

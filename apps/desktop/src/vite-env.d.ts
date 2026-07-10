@@ -8,5 +8,6 @@ interface Window {
     openLogsFolder: () => Promise<string>;
     retryStartup: () => Promise<void>;
     quit: () => void;
+    readAppDataFile: (name: string) => Promise<string | null>;
   };
 }

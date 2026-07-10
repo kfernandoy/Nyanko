@@ -69,6 +69,12 @@ async function readAppDataFile(name: string): Promise<string | null> {
   // escribe port/instance_token en AppData; leer los del último build de prod daría un
   // token que no corresponde y rompería la verificación de instancia en dev.
   if (import.meta.env.VITE_API_URL) return null;
+  // Electron: port/instance_token viven en userData; el bridge nyanko los lee
+  // (analog del native.readAppDataFile que Fase 3 formaliza). Sin esto el renderer
+  // caía al 8765 hardcodeado y no encontraba el puerto dinámico del sidecar.
+  if (window.nyanko?.readAppDataFile) {
+    return await window.nyanko.readAppDataFile(name);
+  }
   if (!("__TAURI_INTERNALS__" in window)) return null;
   try {
     // El sidecar escribe port/instance_token en NYANKO_DATA_DIR = app_data_dir()
