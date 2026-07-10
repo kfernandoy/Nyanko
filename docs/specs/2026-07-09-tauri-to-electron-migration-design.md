@@ -22,6 +22,21 @@ Distribución: prácticamente un solo usuario (el autor). Por lo tanto **no** se
 necesita puente de auto-update Tauri→Electron ni compatibilidad hacia atrás con
 usuarios externos.
 
+## Regla de alcance por versión (dura)
+
+La 0.2 es un **engine swap**, no una plataforma nueva. Regla no negociable:
+
+- **0.2.0** = misma app, mismo backend, mismo tracking, mismo data dir, mismo
+  flujo de extensión. Solo cambia el shell (Tauri → Electron). Objetivo:
+  Electron replica Tauri al ~95%. Aburrida y estable.
+- **0.2.x** = fixes de migración.
+- **0.3.0+** = features nuevas: adapters comunitarios (API versionada), rediseño
+  de la pantalla de extensión, firma pública / página "Verify", navegador
+  embebido, etc.
+
+Nada de la columna 0.3 se implementa en 0.2, aunque el diseño lo tenga en el
+horizonte.
+
 ## Alcance
 
 **No cambia:**
@@ -82,9 +97,19 @@ extender. `api.ts` (que hoy usa `readTextFile` de `plugin-fs`) pasa a usar
 
 Un archivo por responsabilidad, espejando el Rust actual:
 
-- `index.ts` — bootstrap: `requestSingleInstanceLock` (single-instance), fija
-  `app.setPath('userData', %APPDATA%\app.nyanko.desktop)` **antes** de usar
-  cualquier path, crea ventana, arranca sidecar, tray.
+- `compat-paths.ts` — fuente única de verdad de rutas heredadas. Exporta
+  `LEGACY_APP_ID = "app.nyanko.desktop"` y `USER_DATA_DIR = join(appData,
+  LEGACY_APP_ID)`. Cualquier acceso a paths pasa por acá; ningún path hardcodeado
+  suelto por el main.
+- `index.ts` — bootstrap: fija `app.setPath('userData', USER_DATA_DIR)` **antes**
+  de cualquier acceso a paths; luego, assert duro de arranque:
+  `if (!app.getPath("userData").endsWith(LEGACY_APP_ID)) throw` (crash temprano,
+  no "tener cuidado"). Después: `requestSingleInstanceLock`, ventana, sidecar,
+  tray.
+- `logging.ts` — `electron-log` con archivos en `app.getPath('logs')`
+  (`main.log`, `sidecar.log` con el stdout/stderr del sidecar pipeado). Expone
+  `openLogsFolder()` (`shell.openPath`) para el botón de Ajustes. Sin pantalla de
+  diagnóstico elaborada en 0.2 — solo el botón.
 - `sidecar.ts` — en producción spawnea `nyanko-api.exe` (desde `resources`) con
   `NYANKO_DATA_DIR = userData`; borra el `port` file previo; espera a que el
   sidecar lo escriba (timeout 30 s); lo mata en quit / antes de update. En dev
@@ -112,6 +137,25 @@ Un archivo por responsabilidad, espejando el Rust actual:
 `contextBridge.exposeInMainWorld('nyanko', { ... })` con `contextIsolation`
 activo. Expone solo lo que necesita `native.ts` (IPC invoke + on/emit), nada de
 Node crudo al renderer.
+
+### Seguridad (explícita desde el día 1)
+
+Ventana principal, `webPreferences` fijas:
+
+```
+webPreferences: {
+  preload,
+  contextIsolation: true,
+  nodeIntegration: false,
+  sandbox: true,       // compatible: el preload solo usa contextBridge + ipcRenderer
+  webSecurity: true
+}
+```
+
+Principios para **ventanas futuras** (tipo navegador / adapters, 0.3+ — no se
+construyen en 0.2, solo se documenta la regla): nunca `nodeIntegration`, nunca
+preload con APIs sensibles, `partition` separada, sin cookies compartidas con la
+app principal.
 
 ### Data dir (⚠️ compatibilidad)
 
@@ -143,10 +187,33 @@ Se mantiene semver estricto (updater lo exige) y notas de release + commits en
 inglés (código en español), igual que el flujo actual. El canal de update pasa
 de `latest.json` firmado (minisign) al mecanismo de electron-updater.
 
+Integridad: electron-updater **ya verifica el SHA512** del artefacto declarado en
+`latest.yml` antes de instalar, así que en el caso de un solo usuario no se
+pierde garantía criptográfica al soltar minisign. La firma pública externa
+(minisign/cosign) + página "Verify" es una capa de **confianza comunitaria** que
+se agrega en 0.3, cuando la distribución deje de ser de un solo usuario.
+
+## Explícitamente fuera de alcance de 0.2
+
+Diferido a 0.3+ para mantener la 0.2 como migración pura:
+
+- **Firma pública externa + página "Verify"** (hashes/minisign/cosign visibles).
+  Integridad ya cubierta por el SHA512 de electron-updater mientras tanto.
+- **Rediseño de la pantalla de extensión** (descargas por navegador, guía,
+  estado de conexión visible). 0.2 preserva el flujo de extensión actual tal cual
+  (bundles en `extraResources` + UI existente).
+- **Adapters comunitarios** con API versionada.
+- **Navegador embebido** / ventanas tipo webview para sitios externos.
+- **Code-signing** del instalador Windows.
+
 ## Verificación
 
 - Self-check del boundary `native.ts` (assert-based) que falle si falta mapear
   alguna operación nativa.
+- Test del path de datos: assert de que `USER_DATA_DIR` termina en
+  `app.nyanko.desktop` y que el arranque crashea si `userData` cae en otro lado
+  (p.ej. `%APPDATA%\Nyanko`). Convierte el riesgo de biblioteca huérfana en un
+  crash temprano y testeable, no en "tener cuidado".
 - Correr la app real antes de cerrar cada fase:
   - `electron-vite dev` con backend Python manual → la biblioteca carga, tray y
     controles de ventana responden.
