@@ -2,6 +2,10 @@ import { app, BrowserWindow } from "electron";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { assertUserDataDir, userDataDir } from "./compat-paths";
+import { setupLogging } from "./logging";
+import { isDevMode, startSidecar, killSidecar } from "./sidecar";
+import { createSplash, showSplashError } from "./splash";
+import { registerIpc } from "./ipc";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -11,7 +15,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 app.setPath("userData", userDataDir(app.getPath("appData")));
 assertUserDataDir(app.getPath("userData"));
 
-function createWindow(): void {
+// OBS-01: logging temprano (justo tras el lock, antes de whenReady) para que
+// main.log capture el arranque completo.
+setupLogging();
+
+// Resuelve en ready-to-show para que el gate cierre el splash solo cuando la
+// ventana principal ya tiene contenido (D-02: nada de "Cargando biblioteca").
+function createWindow(): Promise<BrowserWindow> {
   const win = new BrowserWindow({
     width: 1180,
     height: 760,
@@ -28,19 +38,75 @@ function createWindow(): void {
     },
   });
 
-  win.on("ready-to-show", () => win.show());
+  const shown = new Promise<BrowserWindow>((resolve) => {
+    win.once("ready-to-show", () => {
+      win.show();
+      resolve(win);
+    });
+  });
 
   // Dual-path estándar de electron-vite: dev sirve desde el vite server, prod
   // carga el index.html construido.
   const devUrl = process.env["ELECTRON_RENDERER_URL"];
   if (devUrl) {
-    win.loadURL(devUrl);
+    void win.loadURL(devUrl);
   } else {
-    win.loadFile(join(__dirname, "../renderer/index.html"));
+    void win.loadFile(join(__dirname, "../renderer/index.html"));
+  }
+  return shown;
+}
+
+let splashWin: BrowserWindow | null = null;
+
+// D-01/D-02/D-06/D-10: gate de arranque orquestado. Reejecutable vía Retry del
+// splash (onRetry = runStartup), por eso reutiliza un splash vivo en vez de
+// duplicarlo.
+async function runStartup(): Promise<void> {
+  if (!splashWin || splashWin.isDestroyed()) {
+    splashWin = createSplash();
+  } else {
+    // Retry desde estado de error → volver a "loading".
+    splashWin.webContents
+      .executeJavaScript('document.body.removeAttribute("data-state")')
+      .catch(() => {});
+  }
+
+  try {
+    if (isDevMode(app.isPackaged)) {
+      // D-10: dev omite el sidecar; la app usa el backend Python arrancado a mano.
+    } else {
+      // D-01: prod → spawn + espera de readiness ANTES de abrir la ventana.
+      // dataDir ABSOLUTO = el mismo userData lockeado arriba (config.py ancla un
+      // NYANKO_DATA_DIR relativo a apps/backend → bug de las 6 DBs divergentes).
+      await startSidecar({ dataDir: userDataDir(app.getPath("appData")) });
+    }
+    await createWindow();
+    if (splashWin && !splashWin.isDestroyed()) splashWin.close();
+    splashWin = null;
+  } catch {
+    // D-06: fallo del sidecar → panel de error del splash (Reintentar/Abrir logs/Salir).
+    if (splashWin && !splashWin.isDestroyed()) showSplashError(splashWin);
   }
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // registerIpc UNA sola vez: ipcMain.handle rechaza handlers duplicados, y el
+  // Retry re-corre el gate sin re-registrar.
+  registerIpc({ onRetry: () => void runStartup() });
+  void runStartup();
+});
+
+// D-08: matar el sidecar en cada salida antes de cerrar. Se difiere el quit hasta
+// que killSidecar (graceful → taskkill /T /F del árbol) termine — si no, el loop
+// muere antes del taskkill y queda un nyanko-api.exe huérfano. El updater de
+// Phase 5 llama esta MISMA killSidecar antes de quitAndInstall.
+let quitting = false;
+app.on("before-quit", (e) => {
+  if (quitting) return;
+  e.preventDefault();
+  quitting = true;
+  void killSidecar().finally(() => app.quit());
+});
 
 app.on("window-all-closed", () => {
   // Windows es el target primario: salir al cerrar todas las ventanas.
