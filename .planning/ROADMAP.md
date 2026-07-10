@@ -21,7 +21,7 @@ paridad con 0.1.15, cero features nuevas.
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Electron shell scaffold + data-dir lock** - electron-vite arranca el renderer actual con `userData` fijado a `app.nyanko.desktop` (completed 2026-07-10)
-- [ ] **Phase 2: Main core — sidecar lifecycle + logging** - el main lanza/mata el sidecar Python con gate de readiness y escribe logs con electron-log
+- [ ] **Phase 2: Main core — sidecar lifecycle + logging** - el main lanza/mata el sidecar Python con gate de readiness y escribe logs con electron-log (2 plans)
 - [ ] **Phase 3: Native boundary + Tauri removal** - `src/native.ts` + preload contextBridge reemplazan todos los `@tauri-apps/*` y se borran las deps/`src-tauri`
 - [ ] **Phase 4: Native feature parity** - tray, window prefs/titlebar, Discord RPC, single-instance, autostart, notif, dialog y opener replican Tauri
 - [ ] **Phase 5: Packaging + auto-update** - electron-builder NSIS con sidecar+extensión como recursos y electron-updater desde GitHub Releases
@@ -58,7 +58,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. `main.log` y `sidecar.log` (stdout/stderr pipeado) se escriben en el directorio de logs de la app.
   5. Existe una acción "abrir carpeta de logs" accesible desde la UI que abre el directorio real.
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+- [ ] 02-01-PLAN.md — sidecar lifecycle + logging foundation: sidecar.ts (spawn/readiness gate/kill) + logging.ts (electron-log main.log/sidecar.log + openLogsFolder) + pure-helper self-check (NATIVE-02, OBS-01)
+- [ ] 02-02-PLAN.md — startup gate orchestration + logs action UI: splash.ts, index.ts gate (dev short-circuit + before-quit kill), ipc.ts + preload bridge, "open logs folder" button (NATIVE-02, OBS-01)
 
 ### Phase 3: Native boundary + Tauri removal
 
@@ -109,7 +112,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Electron shell scaffold + data-dir lock | 2/2 | Complete   | 2026-07-10 |
-| 2. Main core — sidecar lifecycle + logging | 0/TBD | Not started | - |
+| 2. Main core — sidecar lifecycle + logging | 0/2 | Not started | - |
 | 3. Native boundary + Tauri removal | 0/TBD | Not started | - |
 | 4. Native feature parity | 0/TBD | Not started | - |
 | 5. Packaging + auto-update | 0/TBD | Not started | - |
