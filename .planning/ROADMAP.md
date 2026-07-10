@@ -36,7 +36,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. La ventana frameless abre con `contextIsolation:true`, `nodeIntegration:false`, `sandbox:true`, `webSecurity:true`.
   3. `app.getPath('userData')` resuelve a `%APPDATA%\app.nyanko.desktop` y la biblioteca de producción existente carga sin migración.
   4. El arranque crashea de inmediato si `userData` cae en otra ruta (p.ej. `%APPDATA%\Nyanko`), verificable con un self-check.
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 01-01-PLAN.md — electron-vite scaffold + secure frameless window + data-dir lock (SHELL-01, DATA-01)
+- [ ] 01-02-PLAN.md — data-dir crash-guard self-check + interactive shell verification (DATA-01)
 
 ### Phase 2: Main core — sidecar lifecycle + logging
 **Goal**: El main process gestiona el ciclo de vida del sidecar Python en producción y deja rastro diagnóstico desde la primera versión Electron.
@@ -89,7 +91,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Electron shell scaffold + data-dir lock | 0/TBD | Not started | - |
+| 1. Electron shell scaffold + data-dir lock | 0/2 | Not started | - |
 | 2. Main core — sidecar lifecycle + logging | 0/TBD | Not started | - |
 | 3. Native boundary + Tauri removal | 0/TBD | Not started | - |
 | 4. Native feature parity | 0/TBD | Not started | - |
