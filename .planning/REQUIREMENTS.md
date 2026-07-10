@@ -77,4 +77,17 @@ que Tauri hacía", verificable contra el comportamiento 0.1.15.
 
 ## Traceability
 
-<!-- Rellenado por el roadmapper: REQ-ID → Phase. -->
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| SHELL-01 | Phase 1 | Pending |
+| DATA-01 | Phase 1 | Pending |
+| NATIVE-02 | Phase 2 | Pending |
+| OBS-01 | Phase 2 | Pending |
+| NATIVE-01 | Phase 3 | Pending |
+| SHELL-02 | Phase 3 | Pending |
+| NATIVE-03 | Phase 4 | Pending |
+| NATIVE-04 | Phase 4 | Pending |
+| NATIVE-05 | Phase 4 | Pending |
+| NATIVE-06 | Phase 4 | Pending |
+| PKG-01 | Phase 5 | Pending |
+| PKG-02 | Phase 5 | Pending |
