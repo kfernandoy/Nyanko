@@ -1,7 +1,6 @@
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { pipeSidecarOutput } from "./logging";
 
 // NATIVE-02: ciclo de vida del sidecar Python (nyanko-api.exe) en prod.
 // Mismo split que compat-paths.ts: helpers PUROS (Electron-free) como exports
@@ -81,6 +80,10 @@ async function spawnAndWait(dataDir: string): Promise<number> {
     windowsHide: true,
     env: { ...process.env, NYANKO_DATA_DIR: dataDir },
   });
+  // Import diferido: logging.ts carga electron/electron-log, que no existen bajo
+  // Node plano. Diferirlo mantiene los helpers puros importables por el self-check
+  // (sidecar.test.ts) sin bootear Electron; solo el spawn real (prod) lo necesita.
+  const { pipeSidecarOutput } = await import("./logging");
   pipeSidecarOutput(child); // OBS-01: sidecar.log
 
   // D-04 fail-fast: capturar exit temprano en vez de esperar los 30s.
