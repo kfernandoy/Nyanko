@@ -72,8 +72,13 @@ async function runStartup(): Promise<void> {
   }
 
   try {
-    if (isDevMode(app.isPackaged)) {
-      // D-10: dev omite el sidecar; la app usa el backend Python arrancado a mano.
+    // D-10: en dev se omite el sidecar (backend Python a mano). PERO
+    // NYANKO_SIDECAR_EXE es el hook explícito para probar el camino de PROD antes
+    // de empaquetar (Fase 5): `electron-vite preview` corre SIN empaquetar, así que
+    // app.isPackaged es false ahí — el override fuerza el spawn para verificar el gate.
+    const forceSidecar = Boolean(process.env.NYANKO_SIDECAR_EXE);
+    if (isDevMode(app.isPackaged) && !forceSidecar) {
+      // dev: la app usa el backend Python arrancado a mano.
     } else {
       // D-01: prod → spawn + espera de readiness ANTES de abrir la ventana.
       // dataDir ABSOLUTO = el mismo userData lockeado arriba (config.py ancla un
