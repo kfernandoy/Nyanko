@@ -6,8 +6,15 @@ import { setupLogging } from "./logging";
 import { isDevMode, startSidecar, killSidecar } from "./sidecar";
 import { createSplash, showSplashError } from "./splash";
 import { registerIpc } from "./ipc";
+import { seedWindowPrefs, currentWindowPrefs } from "./window-prefs";
+import { setupTray } from "./tray";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Ventana principal (la usa la bandeja para mostrar/ocultar) y bandera de salida
+// real vs ocultar-a-bandeja: el listener 'close' solo oculta cuando NO salimos.
+let mainWindow: BrowserWindow | null = null;
+let isQuitting = false;
 
 // ── DATA-01: lock del data dir ANTES de cualquier acceso a paths ──
 // Orden crítico: sin esto Electron usaría %APPDATA%\Nyanko (productName) y la
@@ -41,9 +48,28 @@ function createWindow(): Promise<BrowserWindow> {
     },
   });
 
+  mainWindow = win;
+
+  // NATIVE-04 (paridad lib.rs): cerrar → ocultar a bandeja si close_to_tray y no
+  // estamos saliendo de verdad; si no, cierre normal (dispara window-all-closed).
+  win.on("close", (e) => {
+    if (currentWindowPrefs().close_to_tray && !isQuitting) {
+      e.preventDefault();
+      win.hide();
+    }
+  });
+  // NATIVE-04 (paridad Resized+is_minimized): minimizar → ocultar a bandeja.
+  win.on("minimize", () => {
+    if (currentWindowPrefs().minimize_to_tray) win.hide();
+  });
+
   const shown = new Promise<BrowserWindow>((resolve) => {
     win.once("ready-to-show", () => {
-      win.show();
+      // start_minimized (ajuste o flag --minimized de autostart): paridad lib.rs —
+      // la ventana queda oculta (arranca en bandeja) en vez de mostrarse.
+      const startMinimized =
+        currentWindowPrefs().start_minimized || process.argv.includes("--minimized");
+      if (!startMinimized) win.show();
       resolve(win);
     });
   });
@@ -88,7 +114,11 @@ async function runStartup(): Promise<void> {
       // NYANKO_DATA_DIR relativo a apps/backend → bug de las 6 DBs divergentes).
       await startSidecar({ dataDir: userDataDir(app.getPath("appData")) });
     }
+    // NATIVE-04: sembrar prefs ANTES de crear la ventana (ready-to-show las lee
+    // para decidir start_minimized). Bandeja tras la ventana (mainWindow ya existe).
+    seedWindowPrefs(app.getPath("userData"));
     await createWindow();
+    setupTray(() => mainWindow);
     if (splashWin && !splashWin.isDestroyed()) splashWin.close();
     splashWin = null;
   } catch {
@@ -108,11 +138,15 @@ app.whenReady().then(() => {
 // que killSidecar (graceful → taskkill /T /F del árbol) termine — si no, el loop
 // muere antes del taskkill y queda un nyanko-api.exe huérfano. El updater de
 // Phase 5 llama esta MISMA killSidecar antes de quitAndInstall.
-let quitting = false;
+let sidecarKilled = false;
 app.on("before-quit", (e) => {
-  if (quitting) return;
+  // before-quit se emite ANTES de cerrar las ventanas: marcar isQuitting aquí basta
+  // para que el listener 'close' permita el cierre (Salir de la bandeja, cierre de
+  // SO). Reutiliza el MISMO killSidecar — no se duplica.
+  isQuitting = true;
+  if (sidecarKilled) return;
   e.preventDefault();
-  quitting = true;
+  sidecarKilled = true;
   void killSidecar().finally(() => app.quit());
 });
 
