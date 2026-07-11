@@ -26,7 +26,7 @@ que Tauri hacía", verificable contra el comportamiento 0.1.15.
       con `NYANKO_DATA_DIR`, espera el `port` file (timeout 30s) y se mata al
       salir y antes de instalar un update. En dev se omite (backend manual).
 
-- [ ] **NATIVE-03**: La bandeja replica el menú actual (Mostrar / Ocultar /
+- [x] **NATIVE-03**: La bandeja replica el menú actual (Mostrar / Ocultar /
       Pausar-Reanudar detección / Salir), doble-click muestra la ventana, y el
       toggle de detección hace POST a `/api/detection/{pause,resume}`.
 
@@ -94,7 +94,7 @@ que Tauri hacía", verificable contra el comportamiento 0.1.15.
 | OBS-01 | Phase 2 | Pending |
 | NATIVE-01 | Phase 3 | Complete |
 | SHELL-02 | Phase 3 | Complete |
-| NATIVE-03 | Phase 4 | Pending |
+| NATIVE-03 | Phase 4 | Complete |
 | NATIVE-04 | Phase 4 | Complete |
 | NATIVE-05 | Phase 4 | Pending |
 | NATIVE-06 | Phase 4 | Pending |

@@ -96,14 +96,14 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Discord Rich Presence set/clear activity funciona con el mismo Client ID y es no-op silencioso si Discord no está corriendo.
   4. Single-instance trae al frente la instancia viva; autostart arranca con `--minimized`; notificaciones, abrir externos (opener) y selector de carpetas (dialog) funcionan.
 
-**Plans**: 1/3 plans executed
+**Plans**: 2/3 plans executed
 **Wave 1**
 
 - [x] 04-01-PLAN.md — Frameless titlebar + window controls IPC + brand app icon (NATIVE-04)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04-02-PLAN.md — System tray + window prefs persist + close/minimize-to-tray + start-minimized (NATIVE-03, NATIVE-04)
+- [x] 04-02-PLAN.md — System tray + window prefs persist + close/minimize-to-tray + start-minimized (NATIVE-03, NATIVE-04)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -132,5 +132,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Electron shell scaffold + data-dir lock | 2/2 | Complete   | 2026-07-10 |
 | 2. Main core — sidecar lifecycle + logging | 2/2 | Complete   | 2026-07-10 |
 | 3. Native boundary + Tauri removal | 2/2 | Complete    | 2026-07-11 |
-| 4. Native feature parity | 1/3 | In Progress|  |
+| 4. Native feature parity | 2/3 | In Progress|  |
 | 5. Packaging + auto-update | 0/TBD | Not started | - |
