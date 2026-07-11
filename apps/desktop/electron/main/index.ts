@@ -28,6 +28,9 @@ function createWindow(): Promise<BrowserWindow> {
     minWidth: 760,
     minHeight: 560,
     frame: false,
+    // D-07: icono de marca ÚNICO (build/icon.png 256x256) reutilizado por la bandeja
+    // (Plan 02) y el empaquetado de Fase 5. build/ vive fuera de out/main, de ahí ../../.
+    icon: join(__dirname, "../../build/icon.png"),
     show: false,
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
