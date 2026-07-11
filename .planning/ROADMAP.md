@@ -97,8 +97,16 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Single-instance trae al frente la instancia viva; autostart arranca con `--minimized`; notificaciones, abrir externos (opener) y selector de carpetas (dialog) funcionan.
 
 **Plans**: 3 plans
+**Wave 1**
+
 - [ ] 04-01-PLAN.md — Frameless titlebar + window controls IPC + brand app icon (NATIVE-04)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 04-02-PLAN.md — System tray + window prefs persist + close/minimize-to-tray + start-minimized (NATIVE-03, NATIVE-04)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 04-03-PLAN.md — Discord RPC + single-instance + autostart + notifications/opener/dialog verify (NATIVE-05, NATIVE-06)
 
 ### Phase 5: Packaging + auto-update
