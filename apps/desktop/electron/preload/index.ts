@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld("nyanko", {
   // el booleano y fija los args (--minimized), nunca el renderer.
   getAutostart: () => ipcRenderer.invoke("autostart:get"),
   setAutostart: (enabled: boolean) => ipcRenderer.invoke("autostart:set", enabled),
-  // Suscripción a "detección pausada"; el emisor (tray/window) llega en Fase 4.
+  // Suscripción a "detección pausada"; el emisor es el toggle del tray.
   // Devuelve un unsubscribe para no fugar listeners al desmontar.
   onDetectionPaused: (cb: (paused: boolean) => void) => {
     const h = (_e: unknown, paused: boolean) => cb(paused);

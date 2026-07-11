@@ -5,6 +5,6 @@ import { native } from "./native";
 export type { WindowPrefs } from "./native";
 import type { WindowPrefs } from "./native";
 
-// native.getWindowPrefs/setWindowPrefs son stubs de Fase 4 (NATIVE-04).
+// Persisten en window_prefs.json (NATIVE-04) — ver electron/main/window-prefs.ts.
 export const getWindowPrefs = (): Promise<WindowPrefs> => native.getWindowPrefs();
 export const setWindowPrefs = (prefs: WindowPrefs): Promise<void> => native.setWindowPrefs(prefs);

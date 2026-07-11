@@ -4,7 +4,7 @@ import { native } from "./native";
 export type { DiscordActivity } from "./native";
 import type { DiscordActivity } from "./native";
 
-// native.setDiscordActivity/clearDiscordActivity son stubs de Fase 4 (NATIVE-05).
+// Rich Presence (NATIVE-05): no-op silencioso si Discord no corre — ver electron/main/discord.ts.
 export const setDiscordActivity = (payload: DiscordActivity): Promise<void> =>
   native.setDiscordActivity(payload);
 export const clearDiscordActivity = (): Promise<void> => native.clearDiscordActivity();

@@ -1,7 +1,7 @@
 // Frontera nativa ÚNICA (NATIVE-01): el único módulo que el renderer importa para
 // ops nativas. Cada op enruta por window.nyanko (contextBridge) → ipcMain.handle.
-// Las ops de Fase 4/5 son stubs marcados para que ningún import de Tauri deba
-// sobrevivir. Regla dura: TODO acceso a `window` vive dentro de cuerpos de función
+// Solo checkForUpdates sigue siendo un stub (Fase 5).
+// Regla dura: TODO acceso a `window` vive dentro de cuerpos de función
 // (nunca al top level) para que native.ts sea importable bajo `node --import tsx` en
 // el self-check sin DOM.
 
