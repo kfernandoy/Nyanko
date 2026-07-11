@@ -11,26 +11,15 @@
     "check": "tsc --noEmit",
     "test:datadir": "node --import tsx --test electron/main/compat-paths.test.ts",
     "test:sidecar": "node --import tsx --test electron/main/sidecar.test.ts",
-    "test:native": "node --import tsx --test src/native.test.ts",
-    "tauri": "tauri"
+    "test:native": "node --import tsx --test src/native.test.ts"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.8.0",
     "electron-log": "^5.4.4",
-    "@tauri-apps/plugin-autostart": "^2.5.1",
-    "@tauri-apps/plugin-dialog": "^2.7.1",
-    "@tauri-apps/plugin-fs": "^2.5.1",
-    "@tauri-apps/plugin-notification": "^2.3.3",
-    "@tauri-apps/plugin-opener": "^2.5.0",
-    "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-shell": "^2.3.5",
-    "@tauri-apps/plugin-updater": "^2.10.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "sharp": "^0.35.2"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.8.4",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.2",
