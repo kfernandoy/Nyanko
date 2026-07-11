@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld("nyanko", {
   // ipcRenderer crudo (T-04-07). El payload de set se coacciona en el main.
   getWindowPrefs: () => ipcRenderer.invoke("window-prefs:get"),
   setWindowPrefs: (prefs: unknown) => ipcRenderer.invoke("window-prefs:set", prefs),
+  // Discord Rich Presence (NATIVE-05): métodos nombrados y tipados (T-04-10). El
+  // renderer solo aporta details/state/start_timestamp; el client id vive en el main.
+  setDiscordActivity: (payload: unknown) => ipcRenderer.invoke("discord:set-activity", payload),
+  clearDiscordActivity: () => ipcRenderer.invoke("discord:clear-activity"),
   // Suscripción a "detección pausada"; el emisor (tray/window) llega en Fase 4.
   // Devuelve un unsubscribe para no fugar listeners al desmontar.
   onDetectionPaused: (cb: (paused: boolean) => void) => {

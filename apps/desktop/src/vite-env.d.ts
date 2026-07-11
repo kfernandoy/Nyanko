@@ -28,5 +28,11 @@ interface Window {
       minimize_to_tray: boolean;
       start_minimized: boolean;
     }) => Promise<void>;
+    setDiscordActivity: (payload: {
+      details: string;
+      state: string;
+      start_timestamp?: number;
+    }) => Promise<void>;
+    clearDiscordActivity: () => Promise<void>;
   };
 }

@@ -75,13 +75,13 @@ export const native = {
   setWindowPrefs(prefs: WindowPrefs): Promise<void> {
     return window.nyanko?.setWindowPrefs(prefs) ?? Promise.resolve();
   },
-  setDiscordActivity(_payload: DiscordActivity): Promise<void> {
-    // ponytail: Discord RPC en Fase 4 (NATIVE-05) — silencioso, como el viejo ignore-on-error
-    return Promise.resolve();
+  // ── Discord Rich Presence (NATIVE-05) — op cableada; el fallback web sigue siendo
+  // un no-op silencioso (no hay socket IPC de Discord en un navegador).
+  setDiscordActivity(payload: DiscordActivity): Promise<void> {
+    return window.nyanko?.setDiscordActivity(payload) ?? Promise.resolve();
   },
   clearDiscordActivity(): Promise<void> {
-    // ponytail: Discord RPC en Fase 4 (NATIVE-05)
-    return Promise.resolve();
+    return window.nyanko?.clearDiscordActivity() ?? Promise.resolve();
   },
 
   // ── Controles de ventana (NATIVE-04) — op cableada con fallback web no-op ──

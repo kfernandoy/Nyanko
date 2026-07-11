@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { openLogsFolder } from "./logging";
 import { currentWindowPrefs, updateWindowPrefs } from "./window-prefs";
+import { setDiscordActivity, clearDiscordActivity } from "./discord";
 
 // Whitelist dura: el renderer solo puede leer estos ficheros del userData, nunca
 // una ruta arbitraria (path traversal). El sidecar escribe ambos en NYANKO_DATA_DIR
@@ -86,4 +87,10 @@ export function registerIpc({ onRetry }: { onRetry: () => void }): void {
   // aporta ni la ruta ni claves arbitrarias.
   ipcMain.handle("window-prefs:get", () => currentWindowPrefs());
   ipcMain.handle("window-prefs:set", (_e, prefs: unknown) => updateWindowPrefs(prefs));
+
+  // ── Discord Rich Presence (NATIVE-05 / D-02/D-03) ──
+  // El módulo conecta perezosamente y se traga los errores (T-04-08): con Discord
+  // cerrado esto es un no-op silencioso, nunca una excepción que cruce el IPC.
+  ipcMain.handle("discord:set-activity", (_e, payload: unknown) => setDiscordActivity(payload));
+  ipcMain.handle("discord:clear-activity", () => clearDiscordActivity());
 }
