@@ -11,6 +11,7 @@
     "check": "tsc --noEmit",
     "test:datadir": "node --import tsx --test electron/main/compat-paths.test.ts",
     "test:sidecar": "node --import tsx --test electron/main/sidecar.test.ts",
+    "test:native": "node --import tsx --test src/native.test.ts",
     "tauri": "tauri"
   },
   "dependencies": {
