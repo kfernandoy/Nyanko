@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Electron shell scaffold + data-dir lock** - electron-vite arranca el renderer actual con `userData` fijado a `app.nyanko.desktop` (completed 2026-07-10)
 - [x] **Phase 2: Main core — sidecar lifecycle + logging** - el main lanza/mata el sidecar Python con gate de readiness y escribe logs con electron-log (2 plans) (completed 2026-07-10)
-- [ ] **Phase 3: Native boundary + Tauri removal** - `src/native.ts` + preload contextBridge reemplazan todos los `@tauri-apps/*` y se borran las deps/`src-tauri`
+- [x] **Phase 3: Native boundary + Tauri removal** - `src/native.ts` + preload contextBridge reemplazan todos los `@tauri-apps/*` y se borran las deps/`src-tauri` (completed 2026-07-11)
 - [ ] **Phase 4: Native feature parity** - tray, window prefs/titlebar, Discord RPC, single-instance, autostart, notif, dialog y opener replican Tauri
 - [ ] **Phase 5: Packaging + auto-update** - electron-builder NSIS con sidecar+extensión como recursos y electron-updater desde GitHub Releases
 
@@ -82,7 +82,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-02-PLAN.md — purge @tauri-apps: rewire all consumers to native.ts, drop deps + tauri script, green Rust-free build (SHELL-02, NATIVE-01)
+- [x] 03-02-PLAN.md — purge @tauri-apps: rewire all consumers to native.ts, drop deps + tauri script, green Rust-free build (SHELL-02, NATIVE-01)
 
 ### Phase 4: Native feature parity
 
@@ -120,6 +120,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Electron shell scaffold + data-dir lock | 2/2 | Complete   | 2026-07-10 |
 | 2. Main core — sidecar lifecycle + logging | 2/2 | Complete   | 2026-07-10 |
-| 3. Native boundary + Tauri removal | 1/2 | In Progress|  |
+| 3. Native boundary + Tauri removal | 2/2 | Complete    | 2026-07-11 |
 | 4. Native feature parity | 0/TBD | Not started | - |
 | 5. Packaging + auto-update | 0/TBD | Not started | - |
