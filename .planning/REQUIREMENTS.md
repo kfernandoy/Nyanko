@@ -30,7 +30,7 @@ que Tauri hacía", verificable contra el comportamiento 0.1.15.
       Pausar-Reanudar detección / Salir), doble-click muestra la ventana, y el
       toggle de detección hace POST a `/api/detection/{pause,resume}`.
 
-- [ ] **NATIVE-04**: Las preferencias de ventana (close-to-tray, minimize-to-tray,
+- [x] **NATIVE-04**: Las preferencias de ventana (close-to-tray, minimize-to-tray,
       start-minimized) persisten en `window_prefs.json` y gobiernan el
       comportamiento; la titlebar frameless custom (minimizar/cerrar) funciona.
 
@@ -95,7 +95,7 @@ que Tauri hacía", verificable contra el comportamiento 0.1.15.
 | NATIVE-01 | Phase 3 | Complete |
 | SHELL-02 | Phase 3 | Complete |
 | NATIVE-03 | Phase 4 | Pending |
-| NATIVE-04 | Phase 4 | Pending |
+| NATIVE-04 | Phase 4 | Complete |
 | NATIVE-05 | Phase 4 | Pending |
 | NATIVE-06 | Phase 4 | Pending |
 | PKG-01 | Phase 5 | Pending |
