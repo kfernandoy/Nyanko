@@ -2,6 +2,7 @@ import { app, ipcMain, shell, dialog, Notification, BrowserWindow } from "electr
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { openLogsFolder } from "./logging";
+import { currentWindowPrefs, updateWindowPrefs } from "./window-prefs";
 
 // Whitelist dura: el renderer solo puede leer estos ficheros del userData, nunca
 // una ruta arbitraria (path traversal). El sidecar escribe ambos en NYANKO_DATA_DIR
@@ -78,4 +79,11 @@ export function registerIpc({ onRetry }: { onRetry: () => void }): void {
   ipcMain.handle("window:close", (e) => {
     BrowserWindow.fromWebContents(e.sender)?.close();
   });
+
+  // ── Preferencias de ventana (NATIVE-04 / D-05) ──
+  // get devuelve la caché sembrada en el arranque; set persiste el payload
+  // COACCIONADO (T-04-05) al data dir de la app (T-04-04) — el renderer nunca
+  // aporta ni la ruta ni claves arbitrarias.
+  ipcMain.handle("window-prefs:get", () => currentWindowPrefs());
+  ipcMain.handle("window-prefs:set", (_e, prefs: unknown) => updateWindowPrefs(prefs));
 }

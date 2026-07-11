@@ -24,6 +24,10 @@ contextBridge.exposeInMainWorld("nyanko", {
   minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
   toggleMaximizeWindow: () => ipcRenderer.invoke("window:toggle-maximize"),
   closeWindow: () => ipcRenderer.invoke("window:close"),
+  // Preferencias de ventana (NATIVE-04): métodos nombrados y tipados, nunca
+  // ipcRenderer crudo (T-04-07). El payload de set se coacciona en el main.
+  getWindowPrefs: () => ipcRenderer.invoke("window-prefs:get"),
+  setWindowPrefs: (prefs: unknown) => ipcRenderer.invoke("window-prefs:set", prefs),
   // Suscripción a "detección pausada"; el emisor (tray/window) llega en Fase 4.
   // Devuelve un unsubscribe para no fugar listeners al desmontar.
   onDetectionPaused: (cb: (paused: boolean) => void) => {

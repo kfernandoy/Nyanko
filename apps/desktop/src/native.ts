@@ -62,16 +62,18 @@ export const native = {
     return Promise.resolve();
   },
   getWindowPrefs(): Promise<WindowPrefs> {
-    // ponytail: window prefs en Fase 4 (NATIVE-04)
-    return Promise.resolve({
-      close_to_tray: false,
-      minimize_to_tray: false,
-      start_minimized: false,
-    });
+    // Fallback web (dev sin bridge): defaults; en Electron lee window_prefs.json.
+    return (
+      window.nyanko?.getWindowPrefs() ??
+      Promise.resolve({
+        close_to_tray: false,
+        minimize_to_tray: false,
+        start_minimized: false,
+      })
+    );
   },
-  setWindowPrefs(_prefs: WindowPrefs): Promise<void> {
-    // ponytail: window prefs en Fase 4 (NATIVE-04)
-    return Promise.resolve();
+  setWindowPrefs(prefs: WindowPrefs): Promise<void> {
+    return window.nyanko?.setWindowPrefs(prefs) ?? Promise.resolve();
   },
   setDiscordActivity(_payload: DiscordActivity): Promise<void> {
     // ponytail: Discord RPC en Fase 4 (NATIVE-05) — silencioso, como el viejo ignore-on-error

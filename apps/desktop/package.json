@@ -11,7 +11,8 @@
     "check": "tsc --noEmit",
     "test:datadir": "node --import tsx --test electron/main/compat-paths.test.ts",
     "test:sidecar": "node --import tsx --test electron/main/sidecar.test.ts",
-    "test:native": "node --import tsx --test src/native.test.ts"
+    "test:native": "node --import tsx --test src/native.test.ts",
+    "test:prefs": "node --import tsx --test electron/main/window-prefs.test.ts"
   },
   "dependencies": {
     "electron-log": "^5.4.4",

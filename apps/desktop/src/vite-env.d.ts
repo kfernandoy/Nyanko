@@ -18,5 +18,15 @@ interface Window {
     minimizeWindow: () => Promise<void>;
     toggleMaximizeWindow: () => Promise<void>;
     closeWindow: () => Promise<void>;
+    getWindowPrefs: () => Promise<{
+      close_to_tray: boolean;
+      minimize_to_tray: boolean;
+      start_minimized: boolean;
+    }>;
+    setWindowPrefs: (prefs: {
+      close_to_tray: boolean;
+      minimize_to_tray: boolean;
+      start_minimized: boolean;
+    }) => Promise<void>;
   };
 }
