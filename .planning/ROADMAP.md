@@ -76,8 +76,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. El repo buildea sin Rust: se eliminan las deps `@tauri-apps/*` de `package.json` y no queda `src-tauri` en el árbol.
 
 **Plans**: 2 plans
+**Wave 1**
 
 - [ ] 03-01-PLAN.md — build the native.ts boundary + preload/IPC surface + assert-based self-check (NATIVE-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 03-02-PLAN.md — purge @tauri-apps: rewire all consumers to native.ts, drop deps + tauri script, green Rust-free build (SHELL-02, NATIVE-01)
 
 ### Phase 4: Native feature parity
