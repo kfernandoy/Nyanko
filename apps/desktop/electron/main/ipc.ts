@@ -1,4 +1,4 @@
-import { app, ipcMain } from "electron";
+import { app, ipcMain, shell, dialog, Notification, BrowserWindow } from "electron";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { openLogsFolder } from "./logging";
@@ -31,5 +31,36 @@ export function registerIpc({ onRetry }: { onRetry: () => void }): void {
     } catch {
       return null;
     }
+  });
+
+  // ── Frontera nativa cableada (Fase 3) ──
+  // T-03-02 (high): openExternal SOLO acepta http/https. Sin file:, sin protocol
+  // handlers custom, sin lanzar ejecutables desde un renderer comprometido.
+  ipcMain.handle("openExternal", (_e, url: unknown) => {
+    if (typeof url !== "string" || !/^https?:\/\//i.test(url)) return;
+    return shell.openExternal(url);
+  });
+  // T-03-02 (medium): openPath/revealItemInDir abren SOLO rutas locales de la
+  // biblioteca; se rechaza cualquier string con esquema URL (://).
+  ipcMain.handle("openPath", (_e, p: unknown) => {
+    if (typeof p !== "string" || p.includes("://")) return "";
+    return shell.openPath(p);
+  });
+  ipcMain.handle("revealItemInDir", (_e, p: unknown) => {
+    if (typeof p !== "string" || p.includes("://")) return;
+    shell.showItemInFolder(p);
+  });
+  // Diálogo de carpeta (asociar biblioteca). Devuelve la ruta o null si se cancela.
+  ipcMain.handle("openFolderDialog", async () => {
+    const w = BrowserWindow.getFocusedWindow();
+    const r = await dialog.showOpenDialog(w!, { properties: ["openDirectory"] });
+    return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+  });
+  // Versión real de la app (antes era placeholder "" en prod desde el preload).
+  ipcMain.handle("appVersion", () => app.getVersion());
+  // Notificación nativa. Título/cuerpo son strings i18n de la propia app
+  // (T-03-04: spoofing negligible, aceptado); se castea por si acaso.
+  ipcMain.handle("notify", (_e, title: unknown, body: unknown) => {
+    new Notification({ title: String(title), body: String(body) }).show();
   });
 }

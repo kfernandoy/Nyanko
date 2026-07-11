@@ -4,10 +4,16 @@
 // Opcional: en dev/degradado la app puede correr sin él.
 interface Window {
   nyanko?: {
-    appVersion: string;
     openLogsFolder: () => Promise<string>;
     retryStartup: () => Promise<void>;
     quit: () => void;
     readAppDataFile: (name: string) => Promise<string | null>;
+    appVersion: () => Promise<string>;
+    openExternal: (url: string) => Promise<void>;
+    openPath: (path: string) => Promise<string>;
+    revealItemInDir: (path: string) => Promise<void>;
+    openFolderDialog: () => Promise<string | null>;
+    notify: (title: string, body: string) => Promise<void>;
+    onDetectionPaused: (cb: (paused: boolean) => void) => () => void;
   };
 }
