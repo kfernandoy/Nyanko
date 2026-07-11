@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { native } from "./native";
 import { useApp } from "./i18n";
 import { api } from "./api";
 import { useContextMenu, type CtxItem } from "./ContextMenu";
@@ -42,7 +42,7 @@ export function TorrentsView() {
     setError(null);
     try {
       const res = await api.downloadTorrent(it.signature, mode);
-      if (res.action === "magnet" && res.link) await openUrl(res.link);
+      if (res.action === "magnet" && res.link) await native.openExternal(res.link);
       setItems((prev) => prev.filter((x) => x.signature !== it.signature));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("torrents.downloadError"));
@@ -61,7 +61,7 @@ export function TorrentsView() {
     { sep: true },
     {
       label: t("ctx.moreTorrents"),
-      onClick: () => void openUrl(`https://nyaa.si/?f=0&c=1_2&q=${encodeURIComponent(it.media_title ?? it.raw_title)}`),
+      onClick: () => void native.openExternal(`https://nyaa.si/?f=0&c=1_2&q=${encodeURIComponent(it.media_title ?? it.raw_title)}`),
     },
   ];
 

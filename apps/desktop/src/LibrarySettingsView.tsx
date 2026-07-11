@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { native, isNative } from "./native";
 
 import { api } from "./api";
 import { useApp } from "./i18n";
@@ -25,8 +25,8 @@ export function LibrarySettingsView() {
   const addFolder = async () => {
     setError(null);
     try {
-      const selected = await open({ directory: true, multiple: false });
-      if (typeof selected !== "string") return;
+      const selected = await native.openFolderDialog();
+      if (!selected) return;
       setBusy(true);
       await api.addLibraryFolder(selected, true);
       await load();
@@ -76,7 +76,8 @@ export function LibrarySettingsView() {
     }
   };
 
-  const isTauri = "__TAURI_INTERNALS__" in window;
+  // ponytail: renombrar isTauri->isNative es cosmético; se deja el mínimo diff
+  const isTauri = isNative;
 
   return <section className="account-settings">
     <div className="account-heading">

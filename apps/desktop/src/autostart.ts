@@ -1,19 +1,6 @@
-import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
+import { native } from "./native";
 
-export async function getAutostart(): Promise<boolean> {
-  if (!("__TAURI_INTERNALS__" in window)) return false;
-  try {
-    return await isEnabled();
-  } catch {
-    return false;
-  }
-}
-
-export async function setAutostart(enabled: boolean): Promise<void> {
-  if (!("__TAURI_INTERNALS__" in window)) return;
-  if (enabled) {
-    await enable();
-  } else {
-    await disable();
-  }
-}
+// Delgado wrapper sobre la frontera nativa: mantiene las firmas que usan App.tsx y
+// DetectorSettingsView. native.getAutostart/setAutostart son stubs de Fase 4 (NATIVE-06).
+export const getAutostart = (): Promise<boolean> => native.getAutostart();
+export const setAutostart = (enabled: boolean): Promise<void> => native.setAutostart(enabled);

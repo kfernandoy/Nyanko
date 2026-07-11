@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { native } from "./native";
 import { useApp, mediaFormatLabel } from "./i18n";
 import { api } from "./api";
 import { useContextMenu, type CtxItem } from "./ContextMenu";
@@ -94,9 +94,9 @@ export function LocalLibraryView({ onBack, onSelect }: { onBack: () => void; onS
     ...(s.next_path ? [
       {
         label: `${t("np.local.play")}${s.next_episode != null ? ` · ${t("np.local.episode")} ${s.next_episode}` : ""}`,
-        onClick: () => void openPath(s.next_path!),
+        onClick: () => void native.openPath(s.next_path!),
       },
-      { label: t("ctx.openFolder"), onClick: () => void revealItemInDir(s.next_path!) },
+      { label: t("ctx.openFolder"), onClick: () => void native.revealItemInDir(s.next_path!) },
     ] : []),
     { sep: true } as CtxItem,
     { label: s.matched ? t("local.fixMatch") : t("local.associate"), onClick: () => openAssociate(s) },
@@ -130,7 +130,7 @@ export function LocalLibraryView({ onBack, onSelect }: { onBack: () => void; onS
                   <button
                     className="pending-local-play poster-play"
                     title={`${t("np.local.play")}${s.next_episode != null ? ` · ${t("np.local.episode")} ${s.next_episode}` : ""}`}
-                    onClick={(e) => { e.stopPropagation(); void openPath(s.next_path!); }}
+                    onClick={(e) => { e.stopPropagation(); void native.openPath(s.next_path!); }}
                   >▶</button>
                 )}
               </div>
@@ -174,7 +174,7 @@ export function LocalLibraryView({ onBack, onSelect }: { onBack: () => void; onS
                 <button
                   className="row-plus"
                   title={`${t("np.local.play")}${s.next_episode != null ? ` · ${t("np.local.episode")} ${s.next_episode}` : ""}`}
-                  onClick={() => void openPath(s.next_path!)}
+                  onClick={() => void native.openPath(s.next_path!)}
                 >▶</button>
               )}
               <button className="row-edit" title={s.matched ? t("local.fixMatch") : t("local.associate")} onClick={() => openAssociate(s)}>⚲</button>

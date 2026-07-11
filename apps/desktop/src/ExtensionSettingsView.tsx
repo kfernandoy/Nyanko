@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { native } from "./native";
 
 import { api } from "./api";
 import { useApp } from "./i18n";
@@ -32,7 +32,7 @@ export function ExtensionSettingsView() {
     if (!path) return;
     setError(null);
     try {
-      await revealItemInDir(path);
+      await native.revealItemInDir(path);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("ext.openError"));
     }

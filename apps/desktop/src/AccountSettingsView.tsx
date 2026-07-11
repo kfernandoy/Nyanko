@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { native } from "./native";
 
 import { api } from "./api";
 import { useApp } from "./i18n";
@@ -173,7 +173,7 @@ export function AccountSettingsView({
             }
             <p className="signup-hint">
               {t("acc.noAccount")}{" "}
-              <button className="link-button" onClick={() => void openUrl(SIGNUP_URLS[prov]).catch(() => {})}>
+              <button className="link-button" onClick={() => void native.openExternal(SIGNUP_URLS[prov]).catch(() => {})}>
                 {t("acc.createOn")} {providerLabel(prov)}
               </button>
             </p>

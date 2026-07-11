@@ -1,25 +1,10 @@
-import { invoke } from "@tauri-apps/api/core";
+import { native } from "./native";
 
-export type DiscordActivity = {
-  details: string;
-  state: string;
-  start_timestamp?: number;
-};
+// El tipo vive ahora en native.ts; se re-exporta para no tocar los call sites de App.tsx.
+export type { DiscordActivity } from "./native";
+import type { DiscordActivity } from "./native";
 
-export async function setDiscordActivity(payload: DiscordActivity): Promise<void> {
-  if (!("__TAURI_INTERNALS__" in window)) return;
-  try {
-    await invoke("discord_set_activity", { payload });
-  } catch {
-    // Discord not running / not configured — ignore.
-  }
-}
-
-export async function clearDiscordActivity(): Promise<void> {
-  if (!("__TAURI_INTERNALS__" in window)) return;
-  try {
-    await invoke("discord_clear_activity");
-  } catch {
-    // ignore
-  }
-}
+// native.setDiscordActivity/clearDiscordActivity son stubs de Fase 4 (NATIVE-05).
+export const setDiscordActivity = (payload: DiscordActivity): Promise<void> =>
+  native.setDiscordActivity(payload);
+export const clearDiscordActivity = (): Promise<void> => native.clearDiscordActivity();

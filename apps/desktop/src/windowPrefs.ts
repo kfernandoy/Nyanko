@@ -1,27 +1,10 @@
-import { invoke } from "@tauri-apps/api/core";
+import { native } from "./native";
 
-export type WindowPrefs = {
-  close_to_tray: boolean;
-  minimize_to_tray: boolean;
-  start_minimized: boolean;
-};
+// El tipo vive ahora en native.ts; se re-exporta para no tocar los call sites de
+// DetectorSettingsView.
+export type { WindowPrefs } from "./native";
+import type { WindowPrefs } from "./native";
 
-const DEFAULTS: WindowPrefs = {
-  close_to_tray: false,
-  minimize_to_tray: false,
-  start_minimized: false,
-};
-
-export async function getWindowPrefs(): Promise<WindowPrefs> {
-  if (!("__TAURI_INTERNALS__" in window)) return DEFAULTS;
-  try {
-    return await invoke<WindowPrefs>("get_window_prefs");
-  } catch {
-    return DEFAULTS;
-  }
-}
-
-export async function setWindowPrefs(prefs: WindowPrefs): Promise<void> {
-  if (!("__TAURI_INTERNALS__" in window)) return;
-  await invoke("set_window_prefs", { prefs });
-}
+// native.getWindowPrefs/setWindowPrefs son stubs de Fase 4 (NATIVE-04).
+export const getWindowPrefs = (): Promise<WindowPrefs> => native.getWindowPrefs();
+export const setWindowPrefs = (prefs: WindowPrefs): Promise<void> => native.setWindowPrefs(prefs);
