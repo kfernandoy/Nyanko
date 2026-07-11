@@ -108,8 +108,8 @@ function previewDetails(item: MediaItem, mediaType: MediaType, scoreFormat: Medi
 // bajo Electron (isNative) y sus botones cablean IPC real (NATIVE-04).
 function Titlebar() {
   return (
-    <div className="titlebar" data-tauri-drag-region>
-      <span className="titlebar-brand" data-tauri-drag-region>Nyanko</span>
+    <div className="titlebar">
+      <span className="titlebar-brand">Nyanko</span>
       <div className="titlebar-buttons">
         <button aria-label="Minimizar" onClick={() => void native.minimizeWindow()}>
           <svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" /></svg>

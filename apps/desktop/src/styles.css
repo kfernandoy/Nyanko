@@ -207,9 +207,12 @@ textarea { resize: vertical; }
 .app-shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; background: radial-gradient(circle 800px at 75% -120px, var(--shell-glow) 0, transparent 100%), var(--bg); }
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 28px 20px; border-right: 1px solid var(--border); background: var(--sidebar-bg); }
 /* Barra de título propia (ventana sin decoración nativa) */
-.titlebar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; justify-content: space-between; height: 34px; padding-left: 14px; border-bottom: 1px solid var(--border); background: var(--sidebar-bg); user-select: none; }
+/* En Electron el arrastre de una ventana frameless es CSS, no un atributo (Tauri usaba
+   data-tauri-drag-region). La barra arrastra; los botones se excluyen con no-drag o
+   quedarían muertos al clic. */
+.titlebar { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; justify-content: space-between; height: 34px; padding-left: 14px; border-bottom: 1px solid var(--border); background: var(--sidebar-bg); user-select: none; -webkit-app-region: drag; }
 .titlebar-brand { color: var(--text-dim); font-size: 12px; font-weight: 600; letter-spacing: .04em; pointer-events: none; }
-.titlebar-buttons { display: flex; height: 100%; }
+.titlebar-buttons { display: flex; height: 100%; -webkit-app-region: no-drag; }
 .titlebar-buttons button { width: 46px; height: 100%; border: 0; display: grid; place-items: center; color: var(--text-dim); background: transparent; cursor: default; }
 .titlebar-buttons button:hover { color: var(--text-bright); background: var(--hover); }
 .titlebar-buttons .titlebar-close:hover { color: #fff; background: #c42b1c; }
