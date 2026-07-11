@@ -71,6 +71,10 @@ export function currentWindowPrefs(): WindowPrefs {
 
 // Handler de window-prefs:set — persiste (coaccionado) y refresca la caché.
 export function updateWindowPrefs(input: unknown): WindowPrefs {
+  // registerIpc corre en whenReady, seedWindowPrefs después del gate del sidecar: en esa
+  // ventana cacheDir aún está vacío y join("", …) escribiría en process.cwd(). No persistir
+  // hasta estar anclados al userData.
+  if (cacheDir === "") return (cache = coercePrefs(input));
   cache = saveWindowPrefs(cacheDir, input);
   return cache;
 }
