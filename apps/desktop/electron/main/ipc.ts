@@ -63,4 +63,19 @@ export function registerIpc({ onRetry }: { onRetry: () => void }): void {
   ipcMain.handle("notify", (_e, title: unknown, body: unknown) => {
     new Notification({ title: String(title), body: String(body) }).show();
   });
+
+  // ── Controles de ventana frameless (NATIVE-04) ──
+  // T-04-01 (EoP): cada handler opera SOLO sobre la ventana del emisor
+  // (BrowserWindow.fromWebContents(event.sender)) — un renderer nunca controla
+  // otra ventana por id, y no se acepta payload alguno.
+  ipcMain.handle("window:minimize", (e) => {
+    BrowserWindow.fromWebContents(e.sender)?.minimize();
+  });
+  ipcMain.handle("window:toggle-maximize", (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    if (w) w.isMaximized() ? w.unmaximize() : w.maximize();
+  });
+  ipcMain.handle("window:close", (e) => {
+    BrowserWindow.fromWebContents(e.sender)?.close();
+  });
 }

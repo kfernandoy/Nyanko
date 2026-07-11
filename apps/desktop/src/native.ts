@@ -82,18 +82,15 @@ export const native = {
     return Promise.resolve();
   },
 
-  // ── Stubs Fase 4 (throw — un botón muerto es un bug que queremos que aflore) ──
+  // ── Controles de ventana (NATIVE-04) — op cableada con fallback web no-op ──
   minimizeWindow(): Promise<void> {
-    // ponytail: controles de ventana en Fase 4 (NATIVE-04)
-    throw new Error("Controles de ventana: Fase 4");
+    return window.nyanko?.minimizeWindow() ?? Promise.resolve();
   },
   toggleMaximizeWindow(): Promise<void> {
-    // ponytail: controles de ventana en Fase 4 (NATIVE-04)
-    throw new Error("Controles de ventana: Fase 4");
+    return window.nyanko?.toggleMaximizeWindow() ?? Promise.resolve();
   },
   closeWindow(): Promise<void> {
-    // ponytail: controles de ventana en Fase 4 (NATIVE-04)
-    throw new Error("Controles de ventana: Fase 4");
+    return window.nyanko?.closeWindow() ?? Promise.resolve();
   },
 
   // ── Stub Fase 5 (throw) ──

@@ -15,5 +15,8 @@ interface Window {
     openFolderDialog: () => Promise<string | null>;
     notify: (title: string, body: string) => Promise<void>;
     onDetectionPaused: (cb: (paused: boolean) => void) => () => void;
+    minimizeWindow: () => Promise<void>;
+    toggleMaximizeWindow: () => Promise<void>;
+    closeWindow: () => Promise<void>;
   };
 }

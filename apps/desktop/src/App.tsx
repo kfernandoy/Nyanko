@@ -103,13 +103,9 @@ function previewDetails(item: MediaItem, mediaType: MediaType, scoreFormat: Medi
   };
 }
 
-const HAS_TAURI = "__TAURI_INTERNALS__" in window;
-
-// Barra de título propia: la ventana va sin decoración nativa (decorations: false)
-// para que minimizar/maximizar/cerrar adopten los estilos de la app. Cerrar dispara
-// CloseRequested, así que el comportamiento de bandeja se conserva.
-// ponytail: titlebar sigue oculto hasta Fase 4 — native.minimize/close son throw-stubs
-// (NATIVE-04) y nunca se alcanzan mientras el gate HAS_TAURI esté apagado bajo Electron.
+// Barra de título propia: la ventana va sin decoración nativa (frame: false)
+// para que minimizar/maximizar/cerrar adopten los estilos de la app. Se muestra
+// bajo Electron (isNative) y sus botones cablean IPC real (NATIVE-04).
 function Titlebar() {
   return (
     <div className="titlebar" data-tauri-drag-region>
@@ -1040,8 +1036,8 @@ export default function App() {
 
   return (
     <>
-    {HAS_TAURI && <Titlebar />}
-    <div className={`app-shell${HAS_TAURI ? " with-titlebar" : ""}`}>
+    {isNative && <Titlebar />}
+    <div className={`app-shell${isNative ? " with-titlebar" : ""}`}>
       <aside className="sidebar">
         <div className="brand"><KittenLogo /><strong>Nyanko</strong></div>
         <nav>

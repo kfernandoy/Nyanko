@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld("nyanko", {
   revealItemInDir: (path: string) => ipcRenderer.invoke("revealItemInDir", path),
   openFolderDialog: () => ipcRenderer.invoke("openFolderDialog"),
   notify: (title: string, body: string) => ipcRenderer.invoke("notify", title, body),
+  // Controles de ventana frameless (NATIVE-04): canales nombrados y tipados,
+  // nunca ipcRenderer crudo (T-04-02). Actúan solo sobre la ventana del emisor.
+  minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
+  toggleMaximizeWindow: () => ipcRenderer.invoke("window:toggle-maximize"),
+  closeWindow: () => ipcRenderer.invoke("window:close"),
   // Suscripción a "detección pausada"; el emisor (tray/window) llega en Fase 4.
   // Devuelve un unsubscribe para no fugar listeners al desmontar.
   onDetectionPaused: (cb: (paused: boolean) => void) => {
