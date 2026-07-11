@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { openUrl, openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { native, isNative } from "./native";
 import { useContextMenu, type CtxItem } from "./ContextMenu";
 import { useCompact } from "./hooks";
 import { KittenLogo } from "./KittenLogo";
@@ -8,9 +8,6 @@ import { useApp, mediaFormatLabel } from "./i18n";
 import { displayTitle, foldTitle } from "./title";
 import { setDiscordActivity, clearDiscordActivity } from "./discord";
 import { getAutostart, setAutostart } from "./autostart";
-import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { DetectorSettingsView } from "./DetectorSettingsView";
 import { PlaybackHistoryView } from "./PlaybackHistoryView";
 import { DiscoveryView } from "./DiscoveryView";
@@ -111,19 +108,20 @@ const HAS_TAURI = "__TAURI_INTERNALS__" in window;
 // Barra de título propia: la ventana va sin decoración nativa (decorations: false)
 // para que minimizar/maximizar/cerrar adopten los estilos de la app. Cerrar dispara
 // CloseRequested, así que el comportamiento de bandeja se conserva.
+// ponytail: titlebar sigue oculto hasta Fase 4 — native.minimize/close son throw-stubs
+// (NATIVE-04) y nunca se alcanzan mientras el gate HAS_TAURI esté apagado bajo Electron.
 function Titlebar() {
-  const window_ = getCurrentWindow();
   return (
     <div className="titlebar" data-tauri-drag-region>
       <span className="titlebar-brand" data-tauri-drag-region>Nyanko</span>
       <div className="titlebar-buttons">
-        <button aria-label="Minimizar" onClick={() => void window_.minimize()}>
+        <button aria-label="Minimizar" onClick={() => void native.minimizeWindow()}>
           <svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" /></svg>
         </button>
-        <button aria-label="Maximizar" onClick={() => void window_.toggleMaximize()}>
+        <button aria-label="Maximizar" onClick={() => void native.toggleMaximizeWindow()}>
           <svg width="10" height="10" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" /></svg>
         </button>
-        <button className="titlebar-close" aria-label="Cerrar" onClick={() => void window_.close()}>
+        <button className="titlebar-close" aria-label="Cerrar" onClick={() => void native.closeWindow()}>
           <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0 L10 10 M10 0 L0 10" stroke="currentColor" /></svg>
         </button>
       </div>
@@ -357,12 +355,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!("__TAURI_INTERNALS__" in window)) return;
-    let unlisten: (() => void) | undefined;
-    listen<boolean>("detection-paused", (event) => setDetectionPaused(event.payload))
-      .then((fn) => { unlisten = fn; })
-      .catch(() => {});
-    return () => { unlisten?.(); };
+    if (!isNative) return;
+    const unlisten = native.onDetectionPaused((paused) => setDetectionPaused(paused));
+    return () => unlisten();
   }, []);
 
   useEffect(() => {
@@ -372,10 +367,8 @@ export default function App() {
         const prev = prevTorrentUnreadRef.current;
         prevTorrentUnreadRef.current = r.count;
         setTorrentUnread(r.count);
-        if (r.count > prev && r.count > 0 && "__TAURI_INTERNALS__" in window) {
-          let granted = await isPermissionGranted();
-          if (!granted) granted = (await requestPermission()) === "granted";
-          if (granted) sendNotification({ title: t("torrents.title"), body: t("torrents.notify") });
+        if (r.count > prev && r.count > 0 && isNative) {
+          await native.notify(t("torrents.title"), t("torrents.notify"));
         }
       } catch { /* ignore */ }
     };
@@ -589,10 +582,7 @@ export default function App() {
   const connectAccount = async (provider = "anilist", alias = "default") => {
     try {
       const { url } = await api.authUrl(provider, alias);
-      if ("__TAURI_INTERNALS__" in window) await openUrl(url);
-      else if (!window.open(url, "_blank", "noopener,noreferrer")) {
-        throw new Error("El navegador bloqueó la ventana de autenticación");
-      }
+      await native.openExternal(url);
     } catch (reason) {
       setError(errorMessage(reason, "No se pudo iniciar OAuth"));
     }
@@ -919,8 +909,7 @@ export default function App() {
   };
 
   const openExternal = async (url: string) => {
-    if ("__TAURI_INTERNALS__" in window) await openUrl(url);
-    else window.open(url, "_blank", "noopener,noreferrer");
+    await native.openExternal(url);
   };
 
   const quickStatus = async (item: MediaItem, status: string, mediaType: MediaType) => {
@@ -1023,9 +1012,9 @@ export default function App() {
         { sep: true } as CtxItem,
         {
           label: `${t("np.local.play")}${local.next_episode != null ? ` · ${local.next_episode}` : ""}`,
-          onClick: () => void openPath(local.next_path!),
+          onClick: () => void native.openPath(local.next_path!),
         },
-        { label: t("ctx.openFolder"), onClick: () => void revealItemInDir(local.next_path!) },
+        { label: t("ctx.openFolder"), onClick: () => void native.revealItemInDir(local.next_path!) },
       ] : []),
       { sep: true } as CtxItem,
       { label: t("ctx.delete"), danger: true, onClick: () => void removeFromList(item, mediaType) },
@@ -2801,7 +2790,7 @@ function PendingLocalReminder({ onSelect, onSeeMore }: { onSelect: (id: number) 
             <strong>{item.title}</strong>
             <span>{t("np.local.episode")} {item.next_episode}{item.available_count > 1 ? ` · ${item.available_count} ${t("np.local.available")}` : ""}</span>
           </div>
-          <button className="pending-local-play" title={t("np.local.play")} onClick={(e) => { e.stopPropagation(); void openPath(item.next_path); }}>▶</button>
+          <button className="pending-local-play" title={t("np.local.play")} onClick={(e) => { e.stopPropagation(); void native.openPath(item.next_path); }}>▶</button>
         </article>
       ))}
     </div>

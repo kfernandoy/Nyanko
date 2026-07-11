@@ -1,9 +1,5 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { getVersion } from "@tauri-apps/api/app";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { check } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
+import { native, isNative } from "./native";
 import { api } from "./api";
 import { KittenLogo } from "./KittenLogo";
 import { useApp, type Lang, type Theme, type TitleLanguage } from "./i18n";
@@ -69,7 +65,7 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
   const [updateState, setUpdateState] = useState<"idle" | "checking" | "none" | "downloading" | "error">("idle");
 
   useEffect(() => {
-    if ("__TAURI_INTERNALS__" in window) void getVersion().then(setAppVersion).catch(() => {});
+    if (isNative) void native.appVersion().then(setAppVersion).catch(() => {});
   }, []);
 
   const checkForUpdates = async () => {
@@ -77,22 +73,9 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
     setError(null);
     setMessage(null);
     try {
-      const update = await check();
-      if (!update) {
-        setUpdateState("none");
-        setMessage(t("about.upToDate"));
-        return;
-      }
-      if (!window.confirm(`${t("about.updateFound")} ${update.version}. ${t("about.updateInstall")}`)) {
-        setUpdateState("idle");
-        return;
-      }
-      setUpdateState("downloading");
-      // Cerrar el sidecar antes de instalar: si sigue vivo bloquea nyanko-api.exe y
-      // _internal y el instalador falla (el hook NSIS es el respaldo).
-      await invoke("stop_sidecar").catch(() => {});
-      await update.downloadAndInstall();
-      await relaunch();
+      // ponytail: flujo real de updater lo reconstruye Fase 5 en el main (PKG-02).
+      // Hoy native.checkForUpdates es un throw-stub, así que el catch informa el error.
+      await native.checkForUpdates();
     } catch (reason) {
       setUpdateState("error");
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -366,7 +349,7 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
         )}
       </div>
       <div className="about-support">
-        <button className="about-patreon" onClick={() => void openUrl(PATREON_URL)}>❤ Patreon</button>
+        <button className="about-patreon" onClick={() => void native.openExternal(PATREON_URL)}>❤ Patreon</button>
       </div>
     </>}
 
