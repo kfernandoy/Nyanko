@@ -34,11 +34,11 @@ que Tauri hacía", verificable contra el comportamiento 0.1.15.
       start-minimized) persisten en `window_prefs.json` y gobiernan el
       comportamiento; la titlebar frameless custom (minimizar/cerrar) funciona.
 
-- [ ] **NATIVE-05**: Discord Rich Presence set/clear activity funciona mediante
+- [x] **NATIVE-05**: Discord Rich Presence set/clear activity funciona mediante
       una librería RPC de Node, con el mismo Client ID y no-op silencioso si
       Discord no está.
 
-- [ ] **NATIVE-06**: Single-instance (traer al frente la instancia viva),
+- [x] **NATIVE-06**: Single-instance (traer al frente la instancia viva),
       autostart con `--minimized`, notificaciones, abrir externos (opener) y
       selector de carpetas (dialog) funcionan por equivalentes de Electron.
 
@@ -96,7 +96,7 @@ que Tauri hacía", verificable contra el comportamiento 0.1.15.
 | SHELL-02 | Phase 3 | Complete |
 | NATIVE-03 | Phase 4 | Complete |
 | NATIVE-04 | Phase 4 | Complete |
-| NATIVE-05 | Phase 4 | Pending |
-| NATIVE-06 | Phase 4 | Pending |
+| NATIVE-05 | Phase 4 | Complete |
+| NATIVE-06 | Phase 4 | Complete |
 | PKG-01 | Phase 5 | Pending |
 | PKG-02 | Phase 5 | Pending |

@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 4
+current_phase: 04
 current_phase_name: native-feature-parity
 status: executing
 stopped_at: Phase 4 context gathered
-last_updated: "2026-07-11T06:20:13.732Z"
+last_updated: "2026-07-11T17:20:01.337Z"
 last_activity: 2026-07-11
-last_activity_desc: Phase 4 execution started
+last_activity_desc: Phase 04 execution started
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
-  completed_plans: 8
-  percent: 60
+  completed_plans: 9
+  percent: 80
 ---
 
 # Project State
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-10)
 
 **Core value:** El tracking sigue funcionando idéntico tras cambiar el motor — misma biblioteca, mismos datos, misma detección; solo cambia el shell de Tauri a Electron.
-**Current focus:** Phase 4 — native-feature-parity
+**Current focus:** Phase 04 — native-feature-parity
 
 ## Current Position
 
-Phase: 4 (native-feature-parity) — EXECUTING
+Phase: 04 (native-feature-parity) — EXECUTING
 Plan: 3 of 3
 Status: Ready to execute
-Last activity: 2026-07-11 — Phase 4 execution started
+Last activity: 2026-07-11 — Phase 04 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -59,6 +59,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P02 | 12 min | 3 tasks | 14 files |
 | Phase 04 P01 | 20m | 2 tasks | 6 files |
 | Phase 04 P02 | ~15m | 3 tasks | 9 files |
+| Phase 04 P03 | ~18m | 2 tasks tasks | 7 files files |
 
 ## Accumulated Context
 
@@ -75,6 +76,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 04-01: single 256x256 brand icon at build/icon.png (D-07) reused by tray + Phase 5
 - [Phase ?]: 04-01: titlebar render gate flipped HAS_TAURI -> isNative; JSX/styles verbatim (D-04)
 - [Phase ?]: 04-02: window_prefs.json at userData, no migration (D-05); set payload coerced to 3 booleans + userData-scoped write (T-04-04/05); tray labels keep accented 'detección' per Rust parity (D-08); window-prefs core electron-free for test:prefs
+- [Phase ?]: 04-03: T-04-SC gate approved by user before installing @xhayper/discord-rpc@1.3.4; Discord RP lazy-connects + silent no-op (D-02/D-03) plus a no-op error listener to prevent an EventEmitter main-process crash; single-instance = requestSingleInstanceLock + focus; autostart = app.setLoginItemSettings(args:['--minimized'])
 
 ### Pending Todos
 
@@ -95,6 +97,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-11T06:19:13.242Z
+Last session: 2026-07-11T17:19:44.314Z
 Stopped at: Phase 4 context gathered
 Resume file: .planning/phases/04-native-feature-parity/04-CONTEXT.md
