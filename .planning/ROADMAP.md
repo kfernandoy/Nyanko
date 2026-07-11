@@ -132,5 +132,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Electron shell scaffold + data-dir lock | 2/2 | Complete   | 2026-07-10 |
 | 2. Main core — sidecar lifecycle + logging | 2/2 | Complete   | 2026-07-10 |
 | 3. Native boundary + Tauri removal | 2/2 | Complete    | 2026-07-11 |
-| 4. Native feature parity | 3/3 | Complete   | 2026-07-11 |
+| 4. Native feature parity | 3/3 | Complete    | 2026-07-11 |
 | 5. Packaging + auto-update | 0/TBD | Not started | - |

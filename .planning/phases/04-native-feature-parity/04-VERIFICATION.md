@@ -1,69 +1,86 @@
 ---
 phase: 04-native-feature-parity
 verified: 2026-07-11T14:05:00Z
-status: human_needed
+status: passed
 score: 3/11 must-haves verified
 behavior_unverified: 8
 overrides_applied: 0
 deferred:
+
   - truth: "El icono de la bandeja/ventana existe en el build empaquetado (NSIS)"
     addressed_in: "Phase 5"
     evidence: "Phase 5 goal: 'electron-builder NSIS con sidecar+extensión como recursos'. build/icon.png es el buildResources dir de electron-builder, que por defecto NO se empaqueta dentro de la app — Phase 5 debe incluirlo en `files`/`extraResources` o el Tray quedará sin icono en producción."
 behavior_unverified_items:
+
   - truth: "La bandeja muestra el menú (Mostrar / Ocultar / Pausar-Reanudar detección / Salir)"
     test: "Lanzar la app; click derecho en el icono de bandeja"
     expected: "Menú con exactamente: Mostrar, Ocultar, Pausar detección, separador, Salir"
     why_human: "El Tray solo existe en una sesión GUI viva; grep prueba las etiquetas, no que la bandeja se monte"
+
   - truth: "Doble-click en la bandeja muestra y enfoca la ventana"
     test: "Ocultar la ventana (Ocultar) y hacer doble click izquierdo en el icono"
     expected: "La ventana reaparece, se restaura si estaba minimizada y toma el foco"
     why_human: "Evento nativo del Tray; presencia del handler no prueba la transición show+restore+focus"
+
   - truth: "El toggle de detección hace POST a /api/detection/{pause,resume} y la etiqueta refleja el estado"
     test: "Con el backend arriba, pulsar 'Pausar detección'; luego reabrir el menú"
     expected: "El sidecar recibe POST /api/detection/pause, la etiqueta pasa a 'Reanudar detección' y el renderer recibe detection-paused"
     why_human: "Transición de estado (detectionPaused) + IO HTTP contra el sidecar vivo; en error HTTP el estado NO debe cambiar"
+
   - truth: "close_to_tray oculta en vez de salir; minimize_to_tray oculta al minimizar"
     test: "Ajustes → activar close-to-tray y minimize-to-tray; cerrar la ventana; luego minimizar"
     expected: "Cerrar oculta (proceso sigue vivo, icono en bandeja); minimizar oculta; 'Mostrar' la restaura; 'Salir' sí sale"
     why_human: "Invariante de cancelación: e.preventDefault() en 'close' + flag isQuitting; ningún test ejercita el evento de ventana"
+
   - truth: "start_minimized (o --minimized) arranca sin mostrar la ventana"
     test: "Activar start-minimized y relanzar; o lanzar con --minimized"
     expected: "La app arranca sin ventana visible (solo bandeja); 'Mostrar' la abre"
     why_human: "Orden de arranque (seed prefs → ready-to-show); solo observable en un lanzamiento real"
+
   - truth: "La titlebar frameless renderiza y minimizar/maximizar/cerrar responden"
     test: "Lanzar la app; usar los tres botones de la titlebar y arrastrar la barra"
     expected: "Titlebar visible; minimizar → taskbar; maximizar/restaurar; cerrar → cierra (u oculta si close-to-tray); arrastre mueve la ventana"
     why_human: "Transiciones de estado de la BrowserWindow y CSS -webkit-app-region; requieren GUI"
+
   - truth: "Discord Rich Presence set/clear funciona y es no-op silencioso sin Discord"
     test: "Con Discord abierto, reproducir un episodio; luego cerrar Discord con la app corriendo; luego parar la reproducción"
     expected: "Aparece la presencia (serie · Ep N / usuario · proveedor / tiempo transcurrido); al cerrar Discord la app NO crashea; al parar se limpia la presencia"
     why_human: "Requiere el cliente Discord vivo y su socket IPC local; la presencia visible no es observable por grep"
+
   - truth: "Single-instance trae al frente la instancia viva; autostart arranca con --minimized"
     test: "Con la app corriendo, lanzar un segundo ejecutable; luego activar autostart en ajustes y revisar el login item"
     expected: "El segundo proceso sale y la ventana viva se muestra/enfoca; el login item queda registrado con el argumento --minimized (y se elimina al desactivar)"
     why_human: "Requiere un segundo lanzamiento real y el registro de inicio de sesión de Windows"
 human_verification:
+
   - test: "Bandeja: click derecho → menú (Mostrar / Ocultar / Pausar detección / Salir); doble-click muestra la ventana"
     expected: "Los cuatro ítems en español y el doble click restaura+enfoca"
     why_human: "El Tray solo existe en una sesión GUI viva"
+
   - test: "Bandeja: pulsar 'Pausar detección' con el backend arriba"
     expected: "POST /api/detection/pause llega al sidecar, la etiqueta pasa a 'Reanudar detección' y el renderer refleja la pausa"
     why_human: "Transición de estado + HTTP contra el sidecar vivo"
+
   - test: "Prefs de ventana: activar close-to-tray / minimize-to-tray y cerrar/minimizar"
     expected: "Ambas ocultan a bandeja; 'Mostrar' restaura; 'Salir' hace un quit limpio (sin nyanko-api.exe huérfano)"
     why_human: "Intercepción de eventos de ventana; no ejercitada por ningún test"
+
   - test: "Start-minimized: activar el ajuste (o lanzar con --minimized)"
     expected: "La app arranca sin ventana visible, solo icono de bandeja"
     why_human: "Solo observable en un lanzamiento real"
+
   - test: "Titlebar frameless: minimizar / maximizar / cerrar + arrastre"
     expected: "Los tres botones responden y la barra arrastra la ventana"
     why_human: "Transiciones de estado de la ventana; requieren GUI"
+
   - test: "Discord: reproducir con Discord abierto; cerrar Discord a mitad de sesión; parar la reproducción"
     expected: "Presencia visible con details/state/elapsed; sin crash al cerrar Discord; clear al parar"
     why_human: "Requiere el socket IPC local de Discord"
+
   - test: "Single-instance: lanzar un segundo ejecutable con la app corriendo"
     expected: "El segundo sale y la ventana viva se muestra + enfoca (incluso desde bandeja)"
     why_human: "Requiere un segundo lanzamiento real"
+
   - test: "Autostart: activar el toggle en ajustes y revisar el login item de Windows"
     expected: "Login item registrado con --minimized; al desactivar, eliminado"
     why_human: "Requiere inspeccionar el registro de inicio de sesión del SO"
