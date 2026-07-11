@@ -13,7 +13,7 @@ que Tauri hacía", verificable contra el comportamiento 0.1.15.
 - [ ] **SHELL-01**: `apps/desktop` corre en desarrollo con `electron-vite dev`,
       levantando el renderer React actual sin cambios de UI.
 
-- [ ] **SHELL-02**: El repo no depende de Rust/Tauri para buildear: se eliminan
+- [x] **SHELL-02**: El repo no depende de Rust/Tauri para buildear: se eliminan
       las deps `@tauri-apps/*` y no queda `src-tauri`.
 
 ### Frontera nativa (native.ts + preload)
@@ -93,7 +93,7 @@ que Tauri hacía", verificable contra el comportamiento 0.1.15.
 | NATIVE-02 | Phase 2 | Pending |
 | OBS-01 | Phase 2 | Pending |
 | NATIVE-01 | Phase 3 | Complete |
-| SHELL-02 | Phase 3 | Pending |
+| SHELL-02 | Phase 3 | Complete |
 | NATIVE-03 | Phase 4 | Pending |
 | NATIVE-04 | Phase 4 | Pending |
 | NATIVE-05 | Phase 4 | Pending |

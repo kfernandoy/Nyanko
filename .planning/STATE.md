@@ -4,9 +4,9 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 03
 current_phase_name: native-boundary-tauri-removal
-status: executing
+status: verifying
 stopped_at: Phase 2 complete — sidecar lifecycle + logging verified (5/5 criteria)
-last_updated: "2026-07-11T00:38:03.167Z"
+last_updated: "2026-07-11T00:50:00.425Z"
 last_activity: 2026-07-11
 last_activity_desc: Phase 03 execution started
 progress:
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-07-10)
 
 Phase: 03 (native-boundary-tauri-removal) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-11 — Phase 03 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 03 P01 | 8 | 3 tasks | 6 files |
+| Phase 03 P02 | 12 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,7 @@ Recent decisions affecting current work:
 - electron-vite (no Electron a mano) por HMR main/preload/renderer + integración builder.
 - `src/native.ts` como frontera nativa única; `userData` fijo a `app.nyanko.desktop`.
 - [Phase ?]: native.ts wired ops keep web/dev fallbacks; window-control + updater stubs throw, autostart/prefs/discord stubs are safe no-ops
+- [Phase ?]: Phase 03: every renderer consumer imports native.ts only; @tauri-apps deps + tauri script removed; repo builds Rust-free
 
 ### Pending Todos
 
@@ -88,6 +90,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-11T00:37:09.123Z
+Last session: 2026-07-11T00:49:12.061Z
 Stopped at: Phase 2 complete — sidecar lifecycle + logging verified (5/5 criteria)
 Resume file: .planning/phases/02-main-core-sidecar-lifecycle-logging/02-VERIFICATION.md
