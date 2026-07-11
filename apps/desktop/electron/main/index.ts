@@ -127,12 +127,28 @@ async function runStartup(): Promise<void> {
   }
 }
 
-app.whenReady().then(() => {
-  // registerIpc UNA sola vez: ipcMain.handle rechaza handlers duplicados, y el
-  // Retry re-corre el gate sin re-registrar.
-  registerIpc({ onRetry: () => void runStartup() });
-  void runStartup();
-});
+// ── Instancia única (NATIVE-06, paridad plugin single_instance de lib.rs) ──
+// Sin esto el segundo proceso salía sin mostrar nada y la app "parecía colgada"
+// (además de pelearse por el puerto del sidecar). El perdedor del lock sale; el
+// vivo recibe 'second-instance' y trae la ventana al frente (show+unminimize+focus,
+// que además la rescata de la bandeja).
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!mainWindow) return;
+    mainWindow.show();
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  });
+
+  app.whenReady().then(() => {
+    // registerIpc UNA sola vez: ipcMain.handle rechaza handlers duplicados, y el
+    // Retry re-corre el gate sin re-registrar.
+    registerIpc({ onRetry: () => void runStartup() });
+    void runStartup();
+  });
+}
 
 // D-08: matar el sidecar en cada salida antes de cerrar. Se difiere el quit hasta
 // que killSidecar (graceful → taskkill /T /F del árbol) termine — si no, el loop

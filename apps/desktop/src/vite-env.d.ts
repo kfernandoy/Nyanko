@@ -34,5 +34,7 @@ interface Window {
       start_timestamp?: number;
     }) => Promise<void>;
     clearDiscordActivity: () => Promise<void>;
+    getAutostart: () => Promise<boolean>;
+    setAutostart: (enabled: boolean) => Promise<void>;
   };
 }

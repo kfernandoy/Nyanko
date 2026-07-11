@@ -93,4 +93,13 @@ export function registerIpc({ onRetry }: { onRetry: () => void }): void {
   // cerrado esto es un no-op silencioso, nunca una excepción que cruce el IPC.
   ipcMain.handle("discord:set-activity", (_e, payload: unknown) => setDiscordActivity(payload));
   ipcMain.handle("discord:clear-activity", () => clearDiscordActivity());
+
+  // ── Autostart (NATIVE-06, paridad del plugin autostart de lib.rs) ──
+  // El item de inicio de sesión se registra con --minimized: index.ts ya lee ese
+  // flag en ready-to-show y deja la ventana oculta (arranca en bandeja).
+  // ponytail: setLoginItemSettings es la API nativa — sin librería de autostart.
+  ipcMain.handle("autostart:get", () => app.getLoginItemSettings().openAtLogin);
+  ipcMain.handle("autostart:set", (_e, enabled: unknown) => {
+    app.setLoginItemSettings({ openAtLogin: Boolean(enabled), args: ["--minimized"] });
+  });
 }

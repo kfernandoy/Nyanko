@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld("nyanko", {
   // renderer solo aporta details/state/start_timestamp; el client id vive en el main.
   setDiscordActivity: (payload: unknown) => ipcRenderer.invoke("discord:set-activity", payload),
   clearDiscordActivity: () => ipcRenderer.invoke("discord:clear-activity"),
+  // Autostart (NATIVE-06): métodos nombrados y tipados (T-04-10); el main coacciona
+  // el booleano y fija los args (--minimized), nunca el renderer.
+  getAutostart: () => ipcRenderer.invoke("autostart:get"),
+  setAutostart: (enabled: boolean) => ipcRenderer.invoke("autostart:set", enabled),
   // Suscripción a "detección pausada"; el emisor (tray/window) llega en Fase 4.
   // Devuelve un unsubscribe para no fugar listeners al desmontar.
   onDetectionPaused: (cb: (paused: boolean) => void) => {

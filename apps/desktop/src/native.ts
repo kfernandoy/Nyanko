@@ -52,15 +52,15 @@ export const native = {
     return window.nyanko?.readAppDataFile(name) ?? Promise.resolve(null);
   },
 
-  // ── Stubs Fase 4 (no-op seguro) ──
+  // ── Autostart (NATIVE-06) — op cableada; en web no hay item de inicio → false/no-op.
   getAutostart(): Promise<boolean> {
-    // ponytail: autostart llega en Fase 4 (NATIVE-06)
-    return Promise.resolve(false);
+    return window.nyanko?.getAutostart() ?? Promise.resolve(false);
   },
-  setAutostart(_enabled: boolean): Promise<void> {
-    // ponytail: autostart llega en Fase 4 (NATIVE-06)
-    return Promise.resolve();
+  setAutostart(enabled: boolean): Promise<void> {
+    return window.nyanko?.setAutostart(enabled) ?? Promise.resolve();
   },
+
+  // ── Preferencias de ventana (NATIVE-04) ──
   getWindowPrefs(): Promise<WindowPrefs> {
     // Fallback web (dev sin bridge): defaults; en Electron lee window_prefs.json.
     return (
