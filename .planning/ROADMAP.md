@@ -75,10 +75,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Un self-check assert-based del boundary falla si alguna operación nativa queda sin mapear.
   4. El repo buildea sin Rust: se eliminan las deps `@tauri-apps/*` de `package.json` y no queda `src-tauri` en el árbol.
 
-**Plans**: 2 plans
+**Plans**: 1/2 plans executed
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — build the native.ts boundary + preload/IPC surface + assert-based self-check (NATIVE-01)
+- [x] 03-01-PLAN.md — build the native.ts boundary + preload/IPC surface + assert-based self-check (NATIVE-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -120,6 +120,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Electron shell scaffold + data-dir lock | 2/2 | Complete   | 2026-07-10 |
 | 2. Main core — sidecar lifecycle + logging | 2/2 | Complete   | 2026-07-10 |
-| 3. Native boundary + Tauri removal | 0/2 | Not started | - |
+| 3. Native boundary + Tauri removal | 1/2 | In Progress|  |
 | 4. Native feature parity | 0/TBD | Not started | - |
 | 5. Packaging + auto-update | 0/TBD | Not started | - |
