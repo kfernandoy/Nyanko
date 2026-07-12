@@ -1,6 +1,6 @@
 // Frontera nativa ÚNICA (NATIVE-01): el único módulo que el renderer importa para
 // ops nativas. Cada op enruta por window.nyanko (contextBridge) → ipcMain.handle.
-// Solo checkForUpdates sigue siendo un stub (Fase 5).
+// Ya no queda ningún stub: checkForUpdates/installUpdate se cablearon en la Fase 5.
 // Regla dura: TODO acceso a `window` vive dentro de cuerpos de función
 // (nunca al top level) para que native.ts sea importable bajo `node --import tsx` en
 // el self-check sin DOM.
@@ -95,14 +95,17 @@ export const native = {
     return window.nyanko?.closeWindow() ?? Promise.resolve();
   },
 
-  // ── Stub Fase 5 (throw) ──
-  checkForUpdates(): Promise<void> {
-    // ponytail: actualizador en Fase 5 (PKG-02)
-    throw new Error("Actualizaciones: Fase 5");
+  // ── Auto-update (PKG-02) — ops cableadas. Fallback web: en un navegador no hay
+  // updates, así que el check es un no-op silencioso (null), no un throw.
+  checkForUpdates(): Promise<{ version: string } | null> {
+    return window.nyanko?.checkForUpdates() ?? Promise.resolve(null);
+  },
+  installUpdate(): Promise<void> {
+    return window.nyanko?.installUpdate() ?? Promise.resolve();
   },
 };
 
-// Manifest: toda clave-op de función arriba (cableadas + stubs). El self-check
+// Manifest: toda clave-op de función arriba. El self-check
 // (native.test.ts) lo compara contra `native` en ambas direcciones. NO incluye
 // isNative (es boolean, no una op).
 export const NATIVE_OPS: string[] = [
@@ -124,4 +127,5 @@ export const NATIVE_OPS: string[] = [
   "toggleMaximizeWindow",
   "closeWindow",
   "checkForUpdates",
+  "installUpdate",
 ];

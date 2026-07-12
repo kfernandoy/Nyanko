@@ -73,9 +73,20 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
     setError(null);
     setMessage(null);
     try {
-      // ponytail: flujo real de updater lo reconstruye Fase 5 en el main (PKG-02).
-      // Hoy native.checkForUpdates es un throw-stub, así que el catch informa el error.
-      await native.checkForUpdates();
+      const update = await native.checkForUpdates();
+      if (!update) {
+        setUpdateState("none");
+        setMessage(t("about.upToDate"));
+        return;
+      }
+      if (!window.confirm(`${t("about.updateFound")} ${update.version}. ${t("about.updateInstall")}`)) {
+        setUpdateState("idle");
+        return;
+      }
+      setUpdateState("downloading");
+      // ponytail: sin equivalente del viejo invoke("stop_sidecar") — el main mata el
+      // sidecar dentro de downloadAndInstallUpdate(), antes de quitAndInstall (D-05).
+      await native.installUpdate();
     } catch (reason) {
       setUpdateState("error");
       setError(reason instanceof Error ? reason.message : String(reason));

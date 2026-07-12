@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld("nyanko", {
   // el booleano y fija los args (--minimized), nunca el renderer.
   getAutostart: () => ipcRenderer.invoke("autostart:get"),
   setAutostart: (enabled: boolean) => ipcRenderer.invoke("autostart:set", enabled),
+  // Auto-update (PKG-02): métodos nombrados y SIN argumentos (T-05-05). El renderer
+  // no aporta URL ni payload — el feed vive en app-update.yml dentro del paquete —
+  // y el main rechaza installUpdate si no hubo antes un check con update.
+  checkForUpdates: () => ipcRenderer.invoke("updates:check"),
+  installUpdate: () => ipcRenderer.invoke("updates:install"),
   // Suscripción a "detección pausada"; el emisor es el toggle del tray.
   // Devuelve un unsubscribe para no fugar listeners al desmontar.
   onDetectionPaused: (cb: (paused: boolean) => void) => {

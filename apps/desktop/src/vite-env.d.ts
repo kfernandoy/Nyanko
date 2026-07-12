@@ -36,5 +36,7 @@ interface Window {
     clearDiscordActivity: () => Promise<void>;
     getAutostart: () => Promise<boolean>;
     setAutostart: (enabled: boolean) => Promise<void>;
+    checkForUpdates: () => Promise<{ version: string } | null>;
+    installUpdate: () => Promise<void>;
   };
 }
