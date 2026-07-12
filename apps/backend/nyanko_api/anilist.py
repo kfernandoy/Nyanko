@@ -187,13 +187,36 @@ DETAIL_QUERY = (
     "}\n"
 )
 
-# Lote: hasta 50 detalles de anime en una sola request (probado ~3.5s / 434 KB,
-# sin rechazo por complejidad). Reduce el backfill de horas a minutos.
+# Campos del LOTE del backfill: todo lo que la grid pinta, SIN los cuatro bloques de
+# conexiones (characters/staff/relations/recommendations). Esos cuatro son el 95% del
+# coste y NO se ven en la grid: solo hacen falta al abrir una ficha, y ahí se bajan.
+#
+# El porqué, medido contra AniList el 2026-07-12 con 50 ids:
+#   completa (con los 4 bloques) : 17-25 s · 434 KB
+#   esta                         :  1,3-2,5 s · 91,6 KB
+# Diez veces menos. Sobre una biblioteca de 1.811 títulos son ~2 min en vez de ~15.
+#
+# OJO — el comentario original decía "probado ~3.5s / 434 KB" para la query completa, y
+# era cierto cuando se escribió. AniList se ha degradado desde entonces (~6x más lenta, y
+# su rate limit bajó de 90 a 30 req/min: la cabecera X-RateLimit-Limit ahora dice 30).
+# El backfill no se rompió por un cambio nuestro: se rompió porque el proveedor cambió
+# bajo nuestros pies. Si AniList se recupera, esta query ligera sigue siendo la correcta
+# — pedir 4x más datos de los que se pintan nunca fue buena idea.
+_ANIME_LIST_FIELDS = """
+    id updatedAt siteUrl description(asHtml: false) format status source season seasonYear
+    episodes duration genres countryOfOrigin averageScore synonyms bannerImage
+    title { userPreferred romaji english native }
+    coverImage { extraLarge color }
+    studios { nodes { name } }
+    nextAiringEpisode { episode airingAt }
+    trailer { id site }
+"""
+
 BATCH_DETAIL_QUERY = (
     "query BatchMediaDetails($ids: [Int]) {\n"
     "  Viewer { mediaListOptions { scoreFormat } }\n"
     "  Page(perPage: 50) {\n"
-    "    media(id_in: $ids, type: ANIME) {" + _ANIME_DETAIL_FIELDS + "    }\n"
+    "    media(id_in: $ids, type: ANIME) {" + _ANIME_LIST_FIELDS + "    }\n"
     "  }\n"
     "}\n"
 )
@@ -294,12 +317,23 @@ MANGA_DETAIL_QUERY = (
 )
 
 # Igual que BATCH_DETAIL_QUERY (anime) pero para manga: sin la MediaList por item (la
-# entrada del usuario se reconstruye desde la biblioteca local al servir el detalle).
+# entrada del usuario se reconstruye desde la biblioteca local al servir el detalle), y
+# sin los bloques de conexiones (staff/relations/recommendations) por el mismo motivo que
+# el anime: no se pintan en la grid y multiplican el coste de la request. Se bajan al
+# abrir la ficha.
+_MANGA_LIST_FIELDS = """
+    id updatedAt siteUrl description(asHtml: false) format status source
+    chapters volumes genres countryOfOrigin averageScore synonyms bannerImage
+    title { userPreferred romaji english native }
+    coverImage { extraLarge color }
+    studios { nodes { name } }
+"""
+
 MANGA_BATCH_DETAIL_QUERY = (
     "query BatchMangaDetails($ids: [Int]) {\n"
     "  Viewer { mediaListOptions { scoreFormat } }\n"
     "  Page(perPage: 50) {\n"
-    "    media(id_in: $ids, type: MANGA) {" + _MANGA_DETAIL_FIELDS + "    }\n"
+    "    media(id_in: $ids, type: MANGA) {" + _MANGA_LIST_FIELDS + "    }\n"
     "  }\n"
     "}\n"
 )

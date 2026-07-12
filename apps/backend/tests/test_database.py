@@ -959,3 +959,63 @@ def test_id_mal_ignored_for_manga(monkeypatch):
     )
     database.sync_provider_library("anilist", "AniList", [manga], media_type="MANGA")
     assert database.canonical_media_id("mal", 2) is None
+
+
+def test_backfill_ligero_no_borra_los_personajes_ya_cacheados(monkeypatch):
+    """Un detalle LIGERO (sin characters/staff/relations/recommendations) no debe pisar
+    los que ya estaban cacheados.
+
+    El backfill baja `_ANIME_LIST_FIELDS`, que omite esos cuatro bloques (son el 95% del
+    coste de la request y no se pintan en la grid). Llegan como listas vacías. Sin la
+    guarda del CASE WHEN en sync_media_details, cada pasada del backfill BORRARÍA el
+    reparto y las relaciones que la apertura de ficha había cacheado — pérdida de datos
+    silenciosa, y la ficha se quedaría vacía al reabrirla.
+    """
+    from nyanko_api.models import CharacterEdge, CharacterName, CharacterNode, RelationEdge
+
+    database = memory_database(monkeypatch)
+    item = MediaItem(id=42, title="Example", status="CURRENT", progress=3, episodes=12)
+    database.sync_provider_library("anilist", "AniList", [item])
+    media_id = database.sync_provider_library("anilist", "AniList", [item])["42"]
+
+    base = dict(
+        id=42,
+        title="Example",
+        media_type="ANIME",
+        score_format="POINT_100",
+        synonyms=[],
+        site_url="https://example.test/anime/42",
+        genres=[],
+        studios=[],
+    )
+
+    # 1. La apertura de ficha cachea el detalle COMPLETO (con reparto y relaciones).
+    completo = MediaDetails(
+        **base,
+        characters=[
+            CharacterEdge(role="MAIN", node=CharacterNode(name=CharacterName(full="Nyanko")))
+        ],
+        relations=[
+            RelationEdge(id=99, title="Example 2", format="TV", relation_type="SEQUEL")
+        ],
+    )
+    database.sync_media_details("anilist", 42, completo)
+
+    guardado = database.get_persisted_media_details("anilist", media_id)
+    assert len(guardado.characters) == 1
+    assert len(guardado.relations) == 1
+
+    # 2. Pasa el backfill con un detalle LIGERO: los cuatro bloques vienen vacíos.
+    ligero = MediaDetails(**base, description="texto refrescado por el backfill")
+    assert ligero.characters == [] and ligero.relations == []
+    database.sync_media_details("anilist", 42, ligero)
+
+    # 3. El reparto y las relaciones SIGUEN AHÍ; lo demás sí se refrescó.
+    tras_backfill = database.get_persisted_media_details("anilist", media_id)
+    assert len(tras_backfill.characters) == 1, (
+        "el backfill ligero borró los personajes cacheados: pérdida de datos"
+    )
+    assert len(tras_backfill.relations) == 1, (
+        "el backfill ligero borró las relaciones cacheadas: pérdida de datos"
+    )
+    assert tras_backfill.description == "texto refrescado por el backfill"

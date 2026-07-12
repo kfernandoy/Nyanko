@@ -1510,8 +1510,20 @@ class Database:
                 "country = excluded.country, average_score = excluded.average_score, "
                 "next_episode = excluded.next_episode, next_airing_at = excluded.next_airing_at, "
                 "score_format = excluded.score_format, trailer_json = excluded.trailer_json, "
-                "characters_json = excluded.characters_json, staff_json = excluded.staff_json, "
-                "relations_json = excluded.relations_json, recommendations_json = excluded.recommendations_json, "
+                # Los cuatro bloques pesados NO se pisan con un valor vacío. El backfill baja
+                # un detalle LIGERO (sin characters/staff/relations/recommendations: ver
+                # _ANIME_LIST_FIELDS) y esos campos llegan como '[]'. Sin esta guarda, cada
+                # pasada del backfill BORRARÍA los personajes y relaciones que la apertura de
+                # ficha había cacheado. Un '[]' entrante significa "no lo he pedido", no "no
+                # tiene". Escribir vacío encima de datos buenos es pérdida de datos silenciosa.
+                "characters_json = CASE WHEN excluded.characters_json IN ('[]', '') "
+                "THEN media_details_cache.characters_json ELSE excluded.characters_json END, "
+                "staff_json = CASE WHEN excluded.staff_json IN ('[]', '') "
+                "THEN media_details_cache.staff_json ELSE excluded.staff_json END, "
+                "relations_json = CASE WHEN excluded.relations_json IN ('[]', '') "
+                "THEN media_details_cache.relations_json ELSE excluded.relations_json END, "
+                "recommendations_json = CASE WHEN excluded.recommendations_json IN ('[]', '') "
+                "THEN media_details_cache.recommendations_json ELSE excluded.recommendations_json END, "
                 "fetched_at = excluded.fetched_at, payload_hash = excluded.payload_hash",
                 (
                     media_id,

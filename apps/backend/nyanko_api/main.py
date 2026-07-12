@@ -804,6 +804,35 @@ def _list_entry_from_remote(raw: dict | None) -> MediaListEntry | None:
     )
 
 
+def _persisted_detail_is_light(
+    database: Database, provider: str, external_id: int
+) -> bool:
+    """¿HAY una fila persistida y le faltan los bloques pesados (backfill ligero)?
+
+    El backfill baja `_ANIME_LIST_FIELDS` / `_MANGA_LIST_FIELDS`: todo lo que la grid
+    pinta, pero SIN characters/staff/relations/recommendations, que son el 95% del coste
+    de la request contra AniList y solo se ven al abrir la ficha. Cuando el usuario abre
+    una ficha así, hay que completarla con un fetch real: si no, el camino de abajo la
+    serviría desde la BD sin reparto ni relaciones, y para siempre.
+
+    Devuelve False cuando NO hay fila (el "skeleton"): ese caso ya tiene su propio camino
+    —servir al instante lo que se sepa y refrescar en segundo plano— y no se toca.
+
+    ponytail: heurística de "los cuatro vacíos" en vez de una columna nueva en la BD. Un
+    anime de AniList sin reparto NI staff NI relaciones NI recomendaciones no existe en la
+    práctica. Techo conocido: para un título tan oscuro que de verdad no tenga ninguno de
+    los cuatro, cada apertura hará un fetch (cacheado 900 s por `cached_value`) — ficha
+    lenta, no dato incorrecto. Si molesta, la salida es una columna `related_fetched`.
+    """
+    canonical = database.canonical_media_id(provider, external_id)
+    if canonical is None:
+        return False
+    row = database.get_persisted_media_details(provider, canonical)
+    if row is None:
+        return False
+    return not (row.characters or row.staff or row.relations or row.recommendations)
+
+
 def _local_media_details(
     database: Database, provider: str, account: str, external_id: int
 ) -> MediaDetails | None:
@@ -2621,6 +2650,18 @@ async def media_details(
         persisted = await asyncio.to_thread(
             _local_media_details, database, provider, account, media_id
         )
+        if persisted is not None and await asyncio.to_thread(
+            _persisted_detail_is_light, database, provider, media_id
+        ):
+            # Fila persistida por el backfill LIGERO: tiene el texto y las portadas, pero no
+            # el reparto ni las relaciones. Descartarla aquí hace que el camino de red de
+            # abajo baje el detalle COMPLETO (DETAIL_QUERY) y lo persista. Sin esto, el
+            # camino de abajo serviría la fila tal cual y la ficha se quedaría sin reparto
+            # para siempre — nunca vuelve a pedir nada si ya hay fila.
+            # Cuesta un fetch (~3 s, con el spinner que ya existe) la PRIMERA vez que se abre
+            # cada ficha; a partir de ahí es un HIT instantáneo. A cambio, el backfill de la
+            # biblioteca entera pasa de ~15 min a ~2 min.
+            persisted = None
         if persisted is not None:
             missing = await asyncio.to_thread(
                 _missing_detail_assets, settings, provider, media_id, persisted

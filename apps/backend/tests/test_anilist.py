@@ -675,3 +675,30 @@ async def test_media_details_batch_pide_timeout_que_cubre_la_query():
         f"timeout={seen['timeout']}s es demasiado justo: la query de 50 ids tarda ~27 s "
         "medidos. Con menos de 45 s no hay margen para una AniList lenta."
     )
+
+
+def test_batch_query_no_pide_los_bloques_pesados():
+    """El lote del backfill NO debe pedir characters/staff/relations/recommendations.
+
+    Medido contra AniList (2026-07-12, 50 ids): con los cuatro bloques la request tarda
+    17-25 s y pesa 434 KB; sin ellos, 1,3-2,5 s y 91,6 KB. Diez veces menos, y ninguno de
+    los cuatro se pinta en la grid — solo al abrir una ficha, que es donde se bajan.
+    """
+    from nyanko_api.anilist import BATCH_DETAIL_QUERY, DETAIL_QUERY, MANGA_BATCH_DETAIL_QUERY
+
+    for pesado in ("characters", "staff", "relations", "recommendations"):
+        assert pesado not in BATCH_DETAIL_QUERY, (
+            f"BATCH_DETAIL_QUERY vuelve a pedir '{pesado}': eso multiplica x10 el tiempo "
+            "del backfill (17-25 s por lote de 50 en vez de 1,3-2,5 s) para pintar datos "
+            "que la grid no muestra."
+        )
+    for pesado in ("staff", "relations", "recommendations"):
+        assert pesado not in MANGA_BATCH_DETAIL_QUERY, (
+            f"MANGA_BATCH_DETAIL_QUERY vuelve a pedir '{pesado}'."
+        )
+
+    # La ficha SÍ los necesita: la query de detalle individual no se toca.
+    for pesado in ("characters", "staff", "relations", "recommendations"):
+        assert pesado in DETAIL_QUERY, (
+            f"DETAIL_QUERY (abrir ficha) dejó de pedir '{pesado}': la ficha se quedaría vacía."
+        )
