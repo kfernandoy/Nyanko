@@ -193,11 +193,23 @@ async function main() {
 
   // 4. Firmar. Se invoca por npx con la versión PINEADA — @tauri-apps/cli NO
   //    vuelve a package.json (SHELL-02: el repo se queda Tauri-free).
+  //
+  //  `npx` es un .cmd en Windows y Node se niega a lanzarlo sin shell (CVE-2024-27980),
+  //  así que shell: true no es opcional. Y con shell, un argumento VACÍO (`--password` "")
+  //  desaparece al reconstruir la línea de comandos: el firmador se come el fichero como
+  //  si fuera la contraseña y aborta con «required argument <FILE> not provided». La forma
+  //  `--password=` mantiene el token entero y pasa la contraseña vacía. Es la misma que ya
+  //  documentaba el RELEASING.md de la era Tauri. Las rutas van entrecomilladas porque con
+  //  shell las parte el espacio.
   console.log(`… signing ${exeName} with ${SIGNER_PKG}`);
-  execFileSync("npx", ["--yes", SIGNER_PKG, "signer", "sign", "-f", PRIVATE_KEY, "--password", "", exePath], {
-    stdio: ["ignore", "inherit", "inherit"], // la clave se pasa por RUTA; su contenido nunca se vuelca (T-05-13)
-    shell: process.platform === "win32",
-  });
+  execFileSync(
+    "npx",
+    ["--yes", SIGNER_PKG, "signer", "sign", "-f", `"${PRIVATE_KEY}"`, "--password=", `"${exePath}"`],
+    {
+      stdio: ["ignore", "inherit", "inherit"], // la clave se pasa por RUTA; su contenido nunca se vuelca (T-05-13)
+      shell: true,
+    },
+  );
 
   const sigPath = `${exePath}.sig`;
   if (!existsSync(sigPath)) fail(`the signer did not produce ${sigPath}.`);
@@ -215,17 +227,38 @@ async function main() {
   //    borradores; /releases/tags/... no.
   const tag = `v${version}`;
   const releases = await gh(token, `https://api.github.com/repos/${REPO}/releases?per_page=100`);
-  const release = releases.find((r) => r.tag_name === tag);
-  if (!release) fail(`no release tagged ${tag} in ${REPO}. Run \`npm run dist:publish\` first.`);
+  const matches = releases.filter((r) => r.tag_name === tag);
+  if (matches.length === 0) fail(`no release tagged ${tag} in ${REPO}. Run \`npm run dist:publish\` first.`);
+  // Un tag identifica UN release... salvo entre borradores: GitHub deja crear varios
+  // borradores con el mismo tag_name (el tag no existe de verdad hasta publicar). Si una
+  // subida falla a medias y se reintenta, quedan dos, y elegir "el primero" es una tirada
+  // de dados sobre a cuál le subimos la firma. Se exige que haya exactamente uno.
+  if (matches.length > 1) {
+    fail(
+      `${matches.length} releases share the tag ${tag} (ids: ${matches.map((r) => r.id).join(", ")}).\n` +
+        "  GitHub allows this among DRAFTS. Delete the stale ones and re-run.",
+    );
+  }
+  const release = matches[0];
 
   const exeAsset = release.assets.find((a) => a.name === exeName);
   if (!exeAsset) fail(`release ${tag} has no asset named ${exeName}. electron-builder did not upload the installer.`);
 
-  // 7. Subir. La url del latest.json sale del browser_download_url que devuelve
-  //    la API para el asset que ACABAMOS de firmar — no se compone a mano
-  //    (T-05-12: firmar un fichero y apuntar a otro es indetectable hasta que
-  //    falla en el cliente).
-  const latestJson = buildLatestJson({ version, notes, signature, url: exeAsset.browser_download_url });
+  // 7. Subir.
+  //
+  //  LA URL. En un BORRADOR, el browser_download_url que devuelve la API es PROVISIONAL:
+  //  apunta a .../releases/download/untagged-<hash>/... porque el tag todavía no existe.
+  //  En cuanto se publica el release, los assets pasan a servirse bajo su tag y esa URL
+  //  untagged muere con un 404. Meterla en el latest.json publicaría un puente firmado que
+  //  apunta a un enlace muerto: la firma sería correcta, la descarga imposible, y NINGÚN
+  //  0.1.15 se actualizaría jamás — sin un solo error visible por nuestro lado (T-05-12).
+  //  Así que se usa la URL definitiva, la que el release servirá una vez publicado. El
+  //  NOMBRE del fichero no se inventa: sale del asset que la API acaba de devolver y que
+  //  es exactamente el que hemos firmado.
+  const downloadUrl = release.draft
+    ? `https://github.com/${REPO}/releases/download/${tag}/${exeAsset.name}`
+    : exeAsset.browser_download_url;
+  const latestJson = buildLatestJson({ version, notes, signature, url: downloadUrl });
   await uploadAsset(token, release, `${exeName}.sig`, "application/octet-stream", signature);
   await uploadAsset(token, release, "latest.json", "application/json", JSON.stringify(latestJson, null, 2));
 
@@ -233,7 +266,7 @@ async function main() {
   const fresh = await gh(token, `https://api.github.com/repos/${REPO}/releases/${release.id}`);
   console.log(`\n  Release ${tag} (${fresh.draft ? "DRAFT" : "published"}) — assets:`);
   for (const a of fresh.assets) console.log(`    - ${a.name}`);
-  console.log(`\n  latest.json → ${exeAsset.browser_download_url}`);
+  console.log(`\n  latest.json → ${downloadUrl}`);
   if (fresh.draft) {
     console.log(`\n  NEXT: publish the draft on GitHub. A draft does NOT resolve through`);
     console.log(`  releases/latest/download/... — the 0.1.15 install base would see nothing.\n`);
