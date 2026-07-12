@@ -123,16 +123,18 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 6 plans
 
 - [ ] 05-01-PLAN.md — electron-builder.yml + EULA + hook NSIS + cadena de build sin Tauri (PKG-01) · wave 1
-- [ ] 05-03-PLAN.md — gate empírico D-02: migración desde la instalación Tauri sin perder la biblioteca (PKG-01, DATA-01) · wave 2
 - [ ] 05-05-PLAN.md — icono empaquetado: `iconPath()` por `process.resourcesPath` (PKG-01) · wave 2
-- [ ] 05-02-PLAN.md — electron-updater en el main + flujo de Acerca de restaurado (PKG-02) · wave 3
-- [ ] 05-04-PLAN.md — publicar v0.2.0 + puente minisign/latest.json para los usuarios 0.1.15 (PKG-01, PKG-02) · wave 4
-- [ ] 05-06-PLAN.md — publicar v0.2.1 y probar el auto-update real 0.2.0 → 0.2.1 (PKG-02) · wave 5
+- [ ] 05-03-PLAN.md — gate empírico D-02: migración desde la instalación Tauri sin perder la biblioteca (PKG-01, DATA-01) · wave 3
+- [ ] 05-02-PLAN.md — electron-updater en el main + flujo de Acerca de restaurado (PKG-02) · wave 4
+- [ ] 05-04-PLAN.md — publicar v0.2.0 + puente minisign/latest.json para los usuarios 0.1.15 (PKG-01, PKG-02) · wave 5
+- [ ] 05-06-PLAN.md — publicar v0.2.1 y probar el auto-update real 0.2.0 → 0.2.1 (PKG-02) · wave 6
 
-*Las waves 2-5 son secuenciales a propósito: los checkpoints de 05-02/03/04/06 instalan y
-desinstalan Nyanko en la MISMA máquina, y cada uno necesita un estado de partida concreto
-(ver `<coreografia_del_estado_de_la_maquina>` en 05-03-PLAN.md). 05-05 es código puro y es el único
-que puede correr en paralelo (wave 2, no toca la máquina).*
+*La fase es una escalera, no un abanico, y es a propósito. Los checkpoints de 05-03/02/04/06
+instalan y desinstalan Nyanko en la MISMA máquina, y cada uno necesita un estado de partida concreto
+(ver `<coreografia_del_estado_de_la_maquina>` en 05-03-PLAN.md). 05-05 va solo en la wave 2 —antes
+que 05-03, no en paralelo con él— porque 05-03 corre un `npm run build` de raíz y 05-05 edita el
+código fuente que ese build empaqueta: paralelizarlos es una carrera de build alimentando el
+checkpoint más caro y destructivo de la fase.*
 
 ## Progress
 
