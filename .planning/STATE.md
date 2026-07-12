@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-07-10)
 
 Phase: 05 (packaging-auto-update) — **COMPLETE** (6/6 plans)
 Status: Fase 5 cerrada. **La migración 0.2 (Tauri → Electron) está completa: 5/5 fases.**
-Last activity: 2026-07-12 — 05-06 completo: auto-update real 0.2.0 → 0.2.1 ejecutado y aprobado
+Last activity: 2026-07-12 — quick 260712-q61: primeras features de 0.3 commiteadas (manga first-class, discovery↔biblioteca, ajustes en modal) tras sacar el backfill de media_type del camino de lectura
 
 **PKG-02 CERRADO — ejecutado, no solo escrito.** Una 0.2.0 instalada detectó la 0.2.1, la descargó
 **diferencialmente** (766 KB de 128 MB, gracias al `.blockmap`), verificó su SHA512, ejecutó
@@ -130,6 +130,12 @@ None yet.
 
 - **Data dir (crítico):** si `userData` no se fija antes del primer acceso a paths, Electron usaría `%APPDATA%\Nyanko` y la biblioteca existente quedaría huérfana. Mitigado por assert de arranque en Phase 1.
 - **Sidecar en frío:** conservar el gate de readiness (`waitForBackend` + wait del `port` file) para no reintroducir el "Cargando biblioteca ~1min". Cubierto en Phase 2.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260712-q61 | media_type backfill out of the library read path; first 0.3 commits (manga first-class, discovery↔library, settings modal) | 2026-07-12 | c46ecb2, b52a919 | [260712-q61-media-type-backfill](./quick/260712-q61-media-type-backfill/) |
 
 ## Deferred Items
 
