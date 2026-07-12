@@ -1,0 +1,66 @@
+# Config de empaquetado NSIS (Fase 5, PKG-01). Traducción campo-a-campo del bloque
+# `bundle` del tauri.conf.json de 0.1.15 — ver 05-PATTERNS.md.
+
+# LOAD-BEARING: mismo identifier que el build Tauri. Fija userData en
+# %APPDATA%\app.nyanko.desktop y la identidad en Agregar/quitar programas.
+# Cambiarlo deja huérfana la biblioteca de TODOS los usuarios existentes. (DATA-01)
+appId: app.nyanko.desktop
+productName: Nyanko
+
+directories:
+  # `release`, NO `dist`: apps/desktop/dist/ aún tiene un build Vite viejo y mezclarlos confunde.
+  output: release
+  buildResources: build
+
+asar: true
+
+win:
+  target: nsis
+  # electron-builder deriva el .ico de un PNG >=256px. icon.png está verificado a 256x256,
+  # así que no hace falta el generador de iconos (build:icons, roto y descartado en la Tarea 2).
+  icon: build/icon.png
+
+nsis:
+  # D-03: asistido, per-user, sin UAC. perMachine: true pediría UAC en CADA auto-update.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  # D-03: paridad con el `languages: [Spanish, English]` + selector de Tauri.
+  installerLanguages: [es_ES, en_US]
+  multiLanguageInstaller: true
+  displayLanguageSelector: true
+  # Fichero bilingüe ES/EN único (restaurado de a50659c^). Ojo: el NSIS de Tauri nunca
+  # tuvo licenseFile, así que esta página del asistente es NUEVA respecto a 0.1.15.
+  license: build/EULA.txt
+  # `include`, NO `script`: `script` REEMPLAZA el instalador entero; `include` inyecta las macros.
+  include: build/installer.nsh
+  # DATA-01: explícito aunque sea el default. Es la ÚNICA línea que impide que el
+  # desinstalador se lleve por delante %APPDATA%\app.nyanko.desktop — la biblioteca entera
+  # del usuario. Ponerlo a true es pérdida de datos silenciosa. (T-05-01)
+  deleteAppDataOnUninstall: false
+  artifactName: Nyanko-Setup-${version}.${ext}
+
+# D-08: electron-builder genera latest.yml (con SHA512 y tamaño correctos) POR CONSTRUCCIÓN,
+# y mete resources/app-update.yml en el paquete — es el feed del que el updater (Plan 02)
+# saca el endpoint. Escribir esos ficheros a mano rompe el update de todos los usuarios en silencio.
+publish:
+  provider: github
+  owner: kfernandoy
+  repo: Nyanko
+
+# D-06/D-07: el layout NO se elige, lo dicta el código YA EXISTENTE.
+# - resolveSidecarExe() (sidecar.ts:35-39) exige resources/nyanko-api/nyanko-api.exe.
+# - main.py §extension_bundle resuelve Path(sys.executable).parent / "extension", y sys.executable
+#   es resources/nyanko-api/nyanko-api.exe → los bundles van AL LADO del exe, no en
+#   resources/extension/. En el sitio "obvio" (calcado de Tauri) el endpoint
+#   /api/extension/bundle devuelve nulls y el botón "abrir carpeta de la extensión" muere en
+#   producción SIN ningún error visible. El sidecar no se toca (0.2 = engine-swap puro).
+extraResources:
+  - from: ../../apps/backend/dist/nyanko-api
+    to: nyanko-api
+  - from: ../../apps/extension/dist/chromium
+    to: nyanko-api/extension/chromium
+  - from: ../../apps/extension/dist/firefox
+    to: nyanko-api/extension/firefox
+  - from: build/icon.png
+    to: icon.png
