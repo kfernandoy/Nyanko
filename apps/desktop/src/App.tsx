@@ -43,10 +43,11 @@ import type {
 } from "./types";
 
 type Filter = "ALL" | "CURRENT" | "PLANNING" | "COMPLETED" | "PAUSED" | "DROPPED";
-type View = "library" | "manga" | "now-playing" | "history" | "activity" | "seasons" | "statistics" | "discovery" | "torrents" | "settings" | "local-library";
+type View = "library" | "manga" | "now-playing" | "history" | "activity" | "seasons" | "statistics" | "discovery" | "torrents" | "local-library";
 type CacheableView = "library" | "activity" | "seasons" | "statistics" | "details";
 type Season = "WINTER" | "SPRING" | "SUMMER" | "FALL";
 type MediaType = "ANIME" | "MANGA";
+type DetailListChange = { update?: MediaEntryUpdate; removed?: boolean };
 
 const SEASONS: Season[] = ["WINTER", "SPRING", "SUMMER", "FALL"];
 
@@ -62,6 +63,8 @@ function errorMessage(reason: unknown, fallback: string): string {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
+
+const nowSeconds = () => Math.floor(Date.now() / 1000);
 
 function previewDetails(item: MediaItem, mediaType: MediaType, scoreFormat: MediaDetails["score_format"]): MediaDetails {
   return {
@@ -176,11 +179,13 @@ export default function App() {
   // #<vista> en la URL abre esa pestaña directamente (deep-link / depuración)
   const [view, setView] = useState<View>(() => {
     const requested = window.location.hash.slice(1) as View;
-    const views: View[] = ["library", "manga", "now-playing", "history", "activity", "seasons", "statistics", "discovery", "torrents", "settings", "local-library"];
+    const views: View[] = ["library", "manga", "now-playing", "history", "activity", "seasons", "statistics", "discovery", "torrents", "local-library"];
     return views.includes(requested) ? requested : "library";
   });
+  const [settingsOpen, setSettingsOpen] = useState(() => window.location.hash.slice(1) === "settings");
   const [season, setSeason] = useState(currentAnimeSeason);
   const [filter, setFilter] = useState<Filter>("CURRENT");
+  const [mangaFocusFilter, setMangaFocusFilter] = useState<Filter>("CURRENT");
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -718,6 +723,91 @@ export default function App() {
     return map;
   }, [media]);
 
+  const discoveryAnimeStatuses = useMemo(() => new Map(media.map((item) => [item.id, item.status])), [media]);
+  const discoveryMangaStatuses = useMemo(() => new Map(manga.map((item) => [item.id, item.status])), [manga]);
+
+  const addDiscoveryItemToLibrary = (item: SearchResult, mediaType: MediaType, status: string) => {
+    const updated_at = nowSeconds();
+    const entry: MediaItem = {
+      id: item.id,
+      title: item.title,
+      status,
+      progress: 0,
+      score: null,
+      episodes: item.episodes,
+      chapters: item.chapters ?? null,
+      volumes: item.volumes ?? null,
+      cover_image: item.cover_image,
+      title_romaji: item.title_romaji ?? null,
+      title_english: item.title_english ?? null,
+      title_native: item.title_native ?? null,
+      synonyms: item.synonyms ?? [],
+      genres: item.genres ?? [],
+      year: item.year ?? null,
+      format: item.format,
+      provider: activeAccount.provider,
+      account_alias: activeAccount.alias,
+      updated_at,
+    };
+    const setList = mediaType === "MANGA" ? setManga : setMedia;
+    setList((current) => current.some((existing) => existing.id === item.id)
+      ? current.map((existing) => existing.id === item.id ? { ...existing, status, progress: 0, updated_at } : existing)
+      : [entry, ...current]);
+    if (mediaType === "MANGA") {
+      setMangaFocusFilter(status as Filter);
+      setMangaLoaded(true);
+    } else {
+      setFilter(status as Filter);
+    }
+  };
+
+  const upsertDetailsItemToLibrary = (
+    item: MediaDetails,
+    mediaType: MediaType,
+    account: ActiveAccount,
+    update: MediaEntryUpdate,
+    canonicalId: number | null,
+  ) => {
+    const updated_at = nowSeconds();
+    const status = update.status ?? item.list_entry?.status ?? "PLANNING";
+    const entry: MediaItem = {
+      id: item.id,
+      title: item.title,
+      status,
+      progress: update.progress ?? item.list_entry?.progress ?? 0,
+      score: update.score === 0 ? null : update.score ?? item.list_entry?.score ?? null,
+      episodes: item.episodes,
+      chapters: item.chapters ?? null,
+      volumes: item.volumes ?? null,
+      cover_image: item.cover_image,
+      title_romaji: item.title_romaji,
+      title_english: item.title_english,
+      title_native: item.title_native,
+      synonyms: item.synonyms,
+      genres: item.genres,
+      year: item.season_year,
+      season: item.season,
+      format: item.format,
+      site_url: item.site_url,
+      canonical_id: canonicalId ?? item.canonical_id ?? null,
+      provider: account.provider,
+      account_alias: account.alias,
+      updated_at,
+    };
+    const setList = mediaType === "MANGA" ? setManga : setMedia;
+    setList((current) => current.some((existing) => existing.id === item.id)
+      ? current.map((existing) => existing.id === item.id ? { ...existing, ...entry, tags: existing.tags } : existing)
+      : [entry, ...current]);
+    if (["CURRENT", "PLANNING", "COMPLETED", "PAUSED", "DROPPED"].includes(status)) {
+      if (mediaType === "MANGA") {
+        setMangaFocusFilter(status as Filter);
+        setMangaLoaded(true);
+      } else {
+        setFilter(status as Filter);
+      }
+    }
+  };
+
   // Como Taiga: sin menú del navegador; el clic derecho es de la app.
   // Se permite el nativo solo en campos editables (copiar/pegar).
   useEffect(() => {
@@ -853,19 +943,38 @@ export default function App() {
   const refreshDetails = async () => {
     if (!details) return;
     const requestId = detailRequestRef.current;
+    const mediaType = details.media_type === "MANGA" ? "MANGA" : "ANIME";
     const [{ data: updated, cacheStatus }] = await Promise.all([
-      (details.media_type === "MANGA"
+      (mediaType === "MANGA"
         ? api.mangaDetails(details.id, detailAccount)
         : api.mediaDetails(details.id, detailAccount)),
-      load(true),
+      mediaType === "MANGA" ? loadManga(true) : load(true),
     ]);
     detailsCacheRef.current.set(
-      detailCacheKey(detailAccount, details.media_type ?? "ANIME", details.id),
+      detailCacheKey(detailAccount, mediaType, details.id),
       updated,
     );
     if (detailRequestRef.current !== requestId) return;  // se cerró/cambió durante el refetch
     setDetails(updated);
     setCacheStatus("details", cacheStatus);
+    setActivityLoaded(false);
+    setStatisticsLoaded(false);
+  };
+
+  const handleDetailsChanged = async (change?: DetailListChange) => {
+    const item = details;
+    const mediaType = item?.media_type === "MANGA" ? "MANGA" : "ANIME";
+    const account = detailAccount;
+    const canonicalId = detailCanonicalId;
+    await refreshDetails();
+    if (!item || !change) return;
+    if (change.removed) {
+      const setList = mediaType === "MANGA" ? setManga : setMedia;
+      setList((current) => current.filter((existing) => existing.id !== item.id));
+    } else if (change.update) {
+      upsertDetailsItemToLibrary(item, mediaType, account, change.update, canonicalId);
+    }
+    setHistoryVersion((value) => value + 1);
     setActivityLoaded(false);
     setStatisticsLoaded(false);
   };
@@ -876,8 +985,9 @@ export default function App() {
     if (item.episodes && nextProgress >= item.episodes) update.status = "COMPLETED";
     else if (item.status === "PLANNING") update.status = "CURRENT";
     // optimistic: patch the row immediately so the count moves without waiting on a refetch
+    const updated_at = nowSeconds();
     setMedia((current) => current.map((m) =>
-      m.id === item.id ? { ...m, progress: nextProgress, status: update.status ?? m.status } : m));
+      m.id === item.id ? { ...m, progress: nextProgress, status: update.status ?? m.status, updated_at } : m));
     try {
       // El backend aplica el cambio local y lo encola hacia el proveedor; no hace falta
       // refetch (la lista en vivo superpone las mutaciones pendientes).
@@ -893,8 +1003,9 @@ export default function App() {
     const update: MediaEntryUpdate = { progress: nextProgress };
     if (item.chapters && nextProgress >= item.chapters) update.status = "COMPLETED";
     else if (item.status === "PLANNING") update.status = "CURRENT";
+    const updated_at = nowSeconds();
     setManga((current) => current.map((m) =>
-      m.id === item.id ? { ...m, progress: nextProgress, status: update.status ?? m.status } : m));
+      m.id === item.id ? { ...m, progress: nextProgress, status: update.status ?? m.status, updated_at } : m));
     try {
       await api.bulkUpdateEntry(targetId, update);
     } catch (reason) {
@@ -910,9 +1021,12 @@ export default function App() {
 
   const quickStatus = async (item: MediaItem, status: string, mediaType: MediaType) => {
     const setList = mediaType === "MANGA" ? setManga : setMedia;
-    setList((current) => current.map((m) => (m.id === item.id ? { ...m, status } : m)));
+    const total = mediaType === "MANGA" ? item.chapters : item.episodes;
+    const progress = status === "COMPLETED" && total ? total : item.progress;
+    const updated_at = nowSeconds();
+    setList((current) => current.map((m) => (m.id === item.id ? { ...m, status, progress, updated_at } : m)));
     try {
-      await api.bulkUpdateEntry(item.canonical_id ?? item.id, { status });
+      await api.bulkUpdateEntry(item.canonical_id ?? item.id, progress !== item.progress ? { status, progress } : { status });
     } catch (reason) {
       setError(errorMessage(reason, "No se pudo cambiar el estado"));
       if (mediaType === "MANGA") { setMangaLoaded(false); await loadManga(); } else await load(true);
@@ -921,7 +1035,8 @@ export default function App() {
 
   const quickScore = async (item: MediaItem, score: number, mediaType: MediaType) => {
     const setList = mediaType === "MANGA" ? setManga : setMedia;
-    setList((current) => current.map((m) => (m.id === item.id ? { ...m, score: score || null } : m)));
+    const updated_at = nowSeconds();
+    setList((current) => current.map((m) => (m.id === item.id ? { ...m, score: score || null, updated_at } : m)));
     try {
       await api.bulkUpdateEntry(item.canonical_id ?? item.id, { score });
     } catch (reason) {
@@ -1077,9 +1192,9 @@ export default function App() {
             <small>{{ anilist: "AniList", mal: "MyAnimeList", kitsu: "Kitsu" }[activeAccount.provider] ?? activeAccount.provider}</small>
           </div>
           <button
-            className={`account-gear${view === "settings" ? " active" : ""}`}
+            className={`account-gear${settingsOpen ? " active" : ""}`}
             title={t("nav.settings")}
-            onClick={(event) => { event.stopPropagation(); setAccountMenuOpen(false); setView("settings"); }}
+            onClick={(event) => { event.stopPropagation(); setAccountMenuOpen(false); setSettingsOpen(true); }}
           >
             <NavIcon view="settings" />
           </button>
@@ -1115,29 +1230,32 @@ export default function App() {
           </div>
         )}
 
-        {!loading && !health?.authenticated && media.length === 0 && view !== "settings" ? (
+        {!loading && !health?.authenticated && media.length === 0 ? (
           <Empty title={t("common.connectAccount")} detail={t("common.connectAccount.detail")} />
         ) : view === "library" ? (
           <LibraryView items={media} filter={filter} query={query} loading={loading} setFilter={setFilter} setQuery={setQuery} onProgress={quickProgress} onContext={(event, item) => openMenu(event, libraryItemMenu(item, "ANIME"))} onScore={(event, item) => openMenu(event, scoreMenuItems(item, "ANIME"))} onSelect={(item) => void openDetails(item.id, "ANIME", item.provider && item.account_alias ? { provider: item.provider, alias: item.account_alias } : activeAccount, item.canonical_id, item)} />
         ) : view === "manga" ? (
-          <MangaLibraryView items={manga} loading={sectionLoading && !mangaLoaded} onContext={(event, item) => openMenu(event, libraryItemMenu(item, "MANGA"))} onScore={(event, item) => openMenu(event, scoreMenuItems(item, "MANGA"))} onSelect={(item) => void openDetails(item.id, "MANGA", item.provider && item.account_alias ? { provider: item.provider, alias: item.account_alias } : activeAccount, item.canonical_id, item)} onProgress={quickProgressManga} />
+          <MangaLibraryView items={manga} loading={sectionLoading && !mangaLoaded} focusFilter={mangaFocusFilter} onContext={(event, item) => openMenu(event, libraryItemMenu(item, "MANGA"))} onScore={(event, item) => openMenu(event, scoreMenuItems(item, "MANGA"))} onSelect={(item) => void openDetails(item.id, "MANGA", item.provider && item.account_alias ? { provider: item.provider, alias: item.account_alias } : activeAccount, item.canonical_id, item)} onProgress={quickProgressManga} />
         ) : view === "now-playing" ? (
           <NowPlayingView candidate={candidate} match={match} prefs={playbackPrefs} onIgnore={() => void ignorePlayback()} onUndo={() => void undoPlayback()} onSelect={openDetails} onCorrected={async (next) => { setMatch(next); if (next.match) { await confirmMatch(next); } }} onConfirmEpisode={(m, ep) => confirmMatch(m, ep)} onSeeMore={() => setView("local-library")} />
         ) : view === "history" ? (
           <PlaybackHistoryView refreshKey={historyVersion} onSelect={openDetails} onRefresh={() => setHistoryVersion((v) => v + 1)} />
         ) : view === "discovery" ? (
-          <DiscoveryView onSelect={(id, mediaType) => void openDetails(id, mediaType)} provider={activeAccount.provider} displayAdult={displayAdult} />
-        ) : view === "settings" ? (
-          <DetectorSettingsView
-            authenticated={Boolean(health?.authenticated)}
-            activeAccount={activeAccount}
-            capabilities={capabilities}
-            onSync={forceSync}
-            onPreferencesChanged={refreshAfterPreferences}
-            onConnectAccount={connectAccount}
-            onAccountChanged={changeAccount}
-            autostart={autostart}
-            onToggleAutostart={toggleAutostart}
+          <DiscoveryView
+            onSelect={(id, mediaType) => void openDetails(id, mediaType)}
+            provider={activeAccount.provider}
+            displayAdult={displayAdult}
+            animeStatuses={discoveryAnimeStatuses}
+            mangaStatuses={discoveryMangaStatuses}
+            onMediaTypeChange={(mediaType) => {
+              if (mediaType === "MANGA" && !mangaLoaded) void loadManga(true);
+            }}
+            onAdded={(item, mediaType, status) => {
+              addDiscoveryItemToLibrary(item, mediaType, status);
+              setHistoryVersion((value) => value + 1);
+              setActivityLoaded(false);
+              setStatisticsLoaded(false);
+            }}
           />
         ) : view === "torrents" ? (
           <TorrentsView />
@@ -1155,8 +1273,28 @@ export default function App() {
       </main>
       <BackfillProgress />
       {contextMenu}
+      {settingsOpen && (
+        <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSettingsOpen(false)}>
+          <section className="settings-modal">
+            <button className="modal-close" onClick={() => setSettingsOpen(false)} aria-label={t("detail.close")} />
+            <p className="eyebrow">{t("view.settings.eyebrow")}</p>
+            <h2>{t("view.settings.title")}</h2>
+            <DetectorSettingsView
+              authenticated={Boolean(health?.authenticated)}
+              activeAccount={activeAccount}
+              capabilities={capabilities}
+              onSync={forceSync}
+              onPreferencesChanged={refreshAfterPreferences}
+              onConnectAccount={connectAccount}
+              onAccountChanged={changeAccount}
+              autostart={autostart}
+              onToggleAutostart={toggleAutostart}
+            />
+          </section>
+        </div>
+      )}
       {detailLoading && <div className="modal-backdrop"><div className="modal-loading"><div className="spinner" role="status" aria-label={t("common.loadingInfo")} /></div></div>}
-      {details && <DetailsModal key={`${details.id}-${details.list_entry?.id ?? "preview"}-${details.score_format}`} details={details} canonicalId={detailCanonicalId} mediaType={details.media_type === "MANGA" ? "MANGA" : "ANIME"} detailAccount={detailAccount} onClose={closeDetails} onChanged={refreshDetails} onSelect={(id, type) => { closeDetails(); void openDetails(id, type); }} />}
+      {details && <DetailsModal key={`${details.id}-${details.list_entry?.id ?? "preview"}-${details.score_format}`} details={details} canonicalId={detailCanonicalId} mediaType={details.media_type === "MANGA" ? "MANGA" : "ANIME"} detailAccount={detailAccount} onClose={closeDetails} onChanged={handleDetailsChanged} onSelect={(id, type) => { closeDetails(); void openDetails(id, type); }} />}
     </div>
     </>
   );
@@ -1598,7 +1736,7 @@ function NavIcon({ view }: { view: string }) {
     statistics: <><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></>,
     discovery: <><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>,
     torrents: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>,
-    settings: <><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></>,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8.92 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.31.22.65.22 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,
   };
   return (
     <svg
@@ -1810,8 +1948,8 @@ function MediaListRow({ item, mediaType = "ANIME", onSelect, onProgress, onConte
   );
 }
 
-function MangaLibraryView({ items, loading, onSelect, onProgress, onContext, onScore }: {
-  items: MediaItem[]; loading: boolean; onSelect: (item: MediaItem) => void;
+function MangaLibraryView({ items, loading, focusFilter, onSelect, onProgress, onContext, onScore }: {
+  items: MediaItem[]; loading: boolean; focusFilter: Filter; onSelect: (item: MediaItem) => void;
   onProgress?: (item: MediaItem, nextProgress: number) => Promise<void>;
   onContext?: (event: React.MouseEvent, item: MediaItem) => void;
   onScore?: (event: React.MouseEvent, item: MediaItem) => void;
@@ -1819,6 +1957,7 @@ function MangaLibraryView({ items, loading, onSelect, onProgress, onContext, onS
   const { t, titleLanguage } = useApp();
   const compact = useCompact();
   const [filter, setFilter] = useState<Filter>("CURRENT");
+  useEffect(() => { setFilter(focusFilter); }, [focusFilter]);
   const [query, setQuery] = useState("");
   // Por defecto "última actualización"; la elección del usuario persiste (localStorage).
   const [sort, setSort] = useState<SortKey>(() => (localStorage.getItem("manga-sort") as SortKey) || "UPDATED_DESC");
@@ -1903,7 +2042,7 @@ function ActivityView({ items, hasMore, loadingMore, onLoadMore, onSelect }: {
   hasMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => Promise<void>;
-  onSelect: (id: number) => void;
+  onSelect: (id: number, mediaType?: MediaType) => void;
 }) {
   const { t } = useApp();
   const [type, setType] = useState("ALL");
@@ -1957,7 +2096,7 @@ function ActivityView({ items, hasMore, loadingMore, onLoadMore, onSelect }: {
         ? item.minProg !== item.maxProg ? `${t("activity.ep")} ${item.minProg}–${item.maxProg}` : `${t("activity.ep")} ${item.maxProg}`
         : item.status;
       return (
-        <article className="activity-row clickable" key={item.id} onClick={() => onSelect(item.media_id)}>
+        <article className="activity-row clickable" key={item.id} onClick={() => onSelect(item.media_id, item.media_type === "MANGA" ? "MANGA" : "ANIME")}>
           <div className="activity-cover" style={item.cover_image ? { backgroundImage: `url(${item.cover_image})` } : undefined} />
           <div><strong>{item.title}</strong><span>{progLabel}{item.count > 1 ? ` · ×${item.count}` : ""}</span></div>
           <time>{new Intl.DateTimeFormat("es", { dateStyle: "medium", timeStyle: "short" }).format(item.created_at * 1000)}</time>
@@ -2328,7 +2467,7 @@ function DetailsModal({ details, canonicalId, mediaType, detailAccount, onClose,
   mediaType: "ANIME" | "MANGA";
   detailAccount: ActiveAccount;
   onClose: () => void;
-  onChanged: () => Promise<void>;
+  onChanged: (change?: DetailListChange) => Promise<void>;
   onSelect?: (id: number, type: "ANIME" | "MANGA") => void;
 }) {
   const { t, titleLanguage } = useApp();
@@ -2381,7 +2520,7 @@ function DetailsModal({ details, canonicalId, mediaType, detailAccount, onClose,
     try {
       const targetId = canonicalId ?? details.id;
       const result = await api.bulkUpdateEntry(targetId, update);
-      await onChanged();
+      await onChanged({ update });
       setUndoUpdate(entry ? snapshotEntryUpdate(entry) : null);
       setUndoDelete(false);
       setUpdateResults(result.results);
@@ -2406,7 +2545,7 @@ function DetailsModal({ details, canonicalId, mediaType, detailAccount, onClose,
     setUpdateResults(null);
     try {
       await api.deleteEntry(entry.id, detailAccount);
-      await onChanged();
+      await onChanged({ removed: true });
       setUndoUpdate(snapshotEntryUpdate(entry));
       setUndoDelete(true);
       setTab("info");
@@ -2427,7 +2566,7 @@ function DetailsModal({ details, canonicalId, mediaType, detailAccount, onClose,
     try {
       const targetId = canonicalId ?? details.id;
       const result = await api.bulkUpdateEntry(targetId, undoUpdate);
-      await onChanged();
+      await onChanged({ update: undoUpdate });
       setUndoUpdate(null);
       setUndoDelete(false);
       setUpdateResults(result.results);
@@ -2444,7 +2583,7 @@ function DetailsModal({ details, canonicalId, mediaType, detailAccount, onClose,
 
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
     <section className="details-modal">
-      <button className="modal-close" onClick={onClose} aria-label={t("detail.close")}>×</button>
+      <button className="modal-close" onClick={onClose} aria-label={t("detail.close")} />
       <div className="detail-banner" style={details.banner_image ? { backgroundImage: `linear-gradient(0deg, #11151f 0%, transparent 75%), url(${details.banner_image})` } : undefined} />
       <div className="detail-heading">
         <div className="detail-poster" style={details.cover_image ? { backgroundImage: `url(${details.cover_image})` } : undefined} />
@@ -2460,6 +2599,7 @@ function DetailsModal({ details, canonicalId, mediaType, detailAccount, onClose,
         )}
         <button className={tab === "edit" ? "selected" : ""} onClick={() => setTab("edit")}>{entry ? t("detail.tab.editList") : t("detail.tab.addList")}</button>
       </div>
+      {(modalError || modalSuccess || undoUpdate || updateResults) && <div className="detail-notices">
       {modalError && <div className="modal-error">{modalError}</div>}
       {modalSuccess && <div className="modal-success">{modalSuccess}</div>}
       {undoUpdate && (
@@ -2480,6 +2620,7 @@ function DetailsModal({ details, canonicalId, mediaType, detailAccount, onClose,
           ))}
         </div>
       )}
+      </div>}
       {tab === "info" && <div className="detail-body">
         {description && <div className="synopsis"><h3>{t("detail.synopsis")}</h3><p>{description}</p></div>}
         <div className="detail-facts">

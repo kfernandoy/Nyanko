@@ -13,6 +13,7 @@ const GENRES = [
 ];
 const ADULT_GENRES = ["Hentai"];
 const SEASONS = ["WINTER", "SPRING", "SUMMER", "FALL"];
+const YEAR_OPTIONS = Array.from({ length: Math.max(0, new Date().getFullYear() + 3 - 1970) }, (_, i) => new Date().getFullYear() + 2 - i);
 
 const DEFAULT_FILTERS: SearchFilters = {
   query: "",
@@ -47,7 +48,29 @@ function resultSubtitle(t: (key: string) => string, item: SearchResult, mediaTyp
   return parts.filter(Boolean).join(" · ");
 }
 
-export function DiscoveryView({ onSelect, provider, displayAdult }: { onSelect: (mediaId: number, mediaType: MediaType) => void; provider: string; displayAdult: boolean }) {
+function listStatusLabel(t: (key: string) => string, status: string, mediaType: MediaType): string {
+  if (status === "CURRENT" && mediaType === "MANGA") return t("filter.reading");
+  const label = t(`badge.${status}`);
+  return label === `badge.${status}` ? status : label;
+}
+
+export function DiscoveryView({
+  onSelect,
+  provider,
+  displayAdult,
+  animeStatuses,
+  mangaStatuses,
+  onMediaTypeChange,
+  onAdded,
+}: {
+  onSelect: (mediaId: number, mediaType: MediaType) => void;
+  provider: string;
+  displayAdult: boolean;
+  animeStatuses: Map<number, string>;
+  mangaStatuses: Map<number, string>;
+  onMediaTypeChange?: (mediaType: MediaType) => void;
+  onAdded?: (item: SearchResult, mediaType: MediaType, status: string) => Promise<void> | void;
+}) {
   const { t } = useApp();
   const [filters, setFilters] = useState<SearchFilters>(DEFAULT_FILTERS);
 
@@ -60,6 +83,10 @@ export function DiscoveryView({ onSelect, provider, displayAdult }: { onSelect: 
   const [addError, setAddError] = useState<string | null>(null);
   const [wontWatch, setWontWatch] = useState<Set<string>>(new Set());
   const [showMarked, setShowMarked] = useState(true);
+  const [hideLibraryItems, setHideLibraryItems] = useState(false);
+  const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
+
+  useEffect(() => { setLocalStatuses({}); }, [provider]);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,6 +124,12 @@ export function DiscoveryView({ onSelect, provider, displayAdult }: { onSelect: 
   const mediaType = filters.media_type;
   const isAnime = mediaType === "ANIME";
   const formats = isAnime ? ANIME_FORMATS : MANGA_FORMATS;
+  const libraryStatuses = mediaType === "ANIME" ? animeStatuses : mangaStatuses;
+  const visibleResults = results.filter((item) => {
+    const marked = wontWatch.has(String(item.id));
+    const libraryStatus = localStatuses[item.id] ?? libraryStatuses.get(item.id);
+    return !(marked && !showMarked) && !(libraryStatus && hideLibraryItems);
+  });
 
   const search = async (nextFilters: SearchFilters) => {
     setLoading(true);
@@ -139,12 +172,13 @@ export function DiscoveryView({ onSelect, provider, displayAdult }: { onSelect: 
   };
 
   const setMediaType = (next: MediaType) => {
+    onMediaTypeChange?.(next);
     setFilters((previous) => ({
       ...previous,
       page: 1,
       media_type: next,
       format: null,
-      year: next === "MANGA" ? null : previous.year,
+      year: previous.year,
       season: null,
       status: null,
       genre: null,
@@ -156,7 +190,9 @@ export function DiscoveryView({ onSelect, provider, displayAdult }: { onSelect: 
     setAdding({ id: item.id, status });
     setAddError(null);
     try {
-      await api.editEntry(item.id, { status, progress: 0 });
+      await api.editEntry(item.id, { status, progress: 0 }, mediaType);
+      setLocalStatuses((current) => ({ ...current, [item.id]: status }));
+      await onAdded?.(item, mediaType, status);
     } catch (reason) {
       setAddError(reason instanceof Error ? reason.message : t("discover.addError"));
     } finally {
@@ -191,16 +227,10 @@ export function DiscoveryView({ onSelect, provider, displayAdult }: { onSelect: 
           <option value="">{t("discover.status.any")}</option>
           {STATUSES.map((value) => <option key={value} value={value}>{t(`mstatus.${value}`)}</option>)}
         </select>
-        {isAnime && (
-          <input
-            type="number"
-            value={filters.year ?? ""}
-            onChange={(event) => update({ year: event.target.value ? Number(event.target.value) : null })}
-            placeholder={t("discover.year")}
-            min={1970}
-            max={2099}
-          />
-        )}
+        <select value={filters.year ?? ""} onChange={(event) => update({ year: event.target.value ? Number(event.target.value) : null })}>
+          <option value="">{t("discover.year")}</option>
+          {YEAR_OPTIONS.map((year) => <option key={year} value={year}>{year}</option>)}
+        </select>
         {isAnime && provider === "anilist" && (
           <select value={filters.season ?? ""} onChange={(event) => update({ season: event.target.value || null })}>
             <option value="">{t("discover.season.any")}</option>
@@ -225,19 +255,23 @@ export function DiscoveryView({ onSelect, provider, displayAdult }: { onSelect: 
           <input type="checkbox" checked={showMarked} onChange={() => void toggleShowMarked()} />
           {t("discover.showWontWatch")}
         </label>
+        <label className="discovery-adult">
+          <input type="checkbox" checked={hideLibraryItems} onChange={(event) => setHideLibraryItems(event.target.checked)} />
+          {t("discover.hideLibrary")}
+        </label>
       </div>
       {error && <div className="modal-error">{error}</div>}
       {addError && <div className="modal-error">{addError}</div>}
       {loading ? (
         <div className="empty"><strong>{t("discover.loading")}</strong></div>
-      ) : results.length === 0 ? (
+      ) : visibleResults.length === 0 ? (
         <div className="empty"><strong>{t("discover.empty")}</strong></div>
       ) : (
         <>
           <div className="discovery-grid">
-            {results.map((item) => {
+            {visibleResults.map((item) => {
               const marked = wontWatch.has(String(item.id));
-              if (marked && !showMarked) return null;
+              const libraryStatus = localStatuses[item.id] ?? libraryStatuses.get(item.id);
               return (
               <article
                 key={item.id}
@@ -248,7 +282,11 @@ export function DiscoveryView({ onSelect, provider, displayAdult }: { onSelect: 
                 <div>
                   <strong>{item.title}</strong>
                   <small>{resultSubtitle(t, item, mediaType)}</small>
-                  <div className="discovery-semaphore" onClick={(event) => event.stopPropagation()}>
+                  {libraryStatus ? (
+                    <div className="discovery-library-status" title={listStatusLabel(t, libraryStatus, mediaType)}>
+                      {listStatusLabel(t, libraryStatus, mediaType)}
+                    </div>
+                  ) : <div className="discovery-semaphore" onClick={(event) => event.stopPropagation()}>
                     <button
                       className="sem sem-watch"
                       title={isAnime ? t("discover.add.watching") : t("discover.add.reading")}
@@ -275,7 +313,7 @@ export function DiscoveryView({ onSelect, provider, displayAdult }: { onSelect: 
                     >
                       ✕
                     </button>
-                  </div>
+                  </div>}
                 </div>
               </article>
               );

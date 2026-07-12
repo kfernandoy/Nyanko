@@ -59,6 +59,7 @@ export interface ActivityItem {
   media_id: number;
   title: string;
   cover_image: string | null;
+  media_type?: "ANIME" | "MANGA" | string | null;
 }
 
 export interface SeasonMedia {

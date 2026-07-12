@@ -33,17 +33,23 @@ export function AccountSettingsView({
   onAccountChanged,
   generalExtras,
   providerExtras,
+  accountTab,
+  onAccountTabChange,
 }: {
   activeAccount: { provider: string; alias: string };
   onConnect: (provider: string, alias: string) => Promise<void>;
   onAccountChanged: (provider: string, alias: string) => Promise<void>;
   generalExtras?: React.ReactNode;
   providerExtras?: (providerId: string) => React.ReactNode;
+  accountTab?: string;
+  onAccountTabChange?: (tab: string) => void;
 }) {
   const { t } = useApp();
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
-  const [tab, setTab] = useState<string>("general");
+  const [localTab, setLocalTab] = useState<string>("general");
+  const tab = accountTab ?? localTab;
+  const setTab = onAccountTabChange ?? setLocalTab;
   const [saving, setSaving] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -203,12 +209,12 @@ export function AccountSettingsView({
       </div>
     </div>
 
-    <div className="settings-tabs provider-subtabs">
+    {!onAccountTabChange && <div className="settings-tabs provider-subtabs">
       <button className={tab === "general" ? "active" : ""} onClick={() => setTab("general")}>{t("acc.general")}</button>
       {PROVIDERS.map((p) => (
         <button key={p.id} className={tab === p.id ? "active" : ""} onClick={() => setTab(p.id)}>{p.label}</button>
       ))}
-    </div>
+    </div>}
 
     {error && <div className="modal-error">{error}</div>}
     {message && <div className="modal-success">{message}</div>}

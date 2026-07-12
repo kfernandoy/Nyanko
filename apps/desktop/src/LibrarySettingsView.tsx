@@ -12,12 +12,18 @@ export function LibrarySettingsView() {
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [subfolders, setSubfolders] = useState<Record<number, string[]>>({});
 
   const message = (reason: unknown): string =>
     reason instanceof Error ? reason.message : t("libset.error");
 
   const load = useCallback(async () => {
-    setFolders(await api.libraryFolders());
+    const next = await api.libraryFolders();
+    setFolders(next);
+    const pairs = await Promise.all(next
+      .filter((folder) => folder.recursive)
+      .map(async (folder) => [folder.id, await api.librarySubfolders(folder.id).catch(() => [])] as const));
+    setSubfolders(Object.fromEntries(pairs));
   }, []);
 
   useEffect(() => { void load().catch((reason) => setError(message(reason))); }, [load]);
@@ -94,7 +100,14 @@ export function LibrarySettingsView() {
     <div className="folder-list">
       {folders.map((folder) => (
         <article key={folder.id} className="folder-item">
-          <div className="folder-path"><strong title={folder.path}>{folder.path}</strong></div>
+          <div className="folder-path">
+            <strong title={folder.path}>{folder.path}</strong>
+            {folder.recursive && subfolders[folder.id]?.length > 0 && (
+              <ul className="folder-subfolders">
+                {subfolders[folder.id].map((path) => <li key={path}>{path}</li>)}
+              </ul>
+            )}
+          </div>
           <label className="checkbox-field"><input type="checkbox" checked={folder.recursive} disabled={busy} onChange={() => void toggleRecursive(folder)} /> {t("libset.recursive")}</label>
           <button className="danger small" disabled={busy} onClick={() => void remove(folder)}>{t("libset.remove")}</button>
         </article>

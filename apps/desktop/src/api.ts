@@ -244,6 +244,7 @@ async function rawRequest(path: string, options?: RequestInit, timeoutMs = REQUE
 
 async function request<T>(path: string, options?: RequestInit, timeoutMs?: number): Promise<T> {
   const response = await rawRequest(path, options, timeoutMs);
+  if (options?.method && options.method !== "GET") inFlightRequests.clear();
   if (response.status === 204) return undefined as T;
   return normalizeAssetUrls(await response.json(), await getApiUrl());
 }
@@ -301,6 +302,7 @@ export const api = {
   revokeExtensionClient: (clientId: number) =>
     request<void>(`/api/extension/clients/${clientId}`, { method: "DELETE" }),
   libraryFolders: () => request<LibraryFolder[]>("/api/library/folders"),
+  librarySubfolders: (folderId: number) => request<string[]>(`/api/library/folders/${folderId}/subfolders`),
   addLibraryFolder: (path: string, recursive: boolean) =>
     request<LibraryFolder>("/api/library/folders", { method: "POST", body: JSON.stringify({ path, recursive }) }),
   deleteLibraryFolder: (folderId: number) =>
@@ -336,8 +338,8 @@ export const api = {
   },
   mediaDetails: (mediaId: number, account: ActiveAccount = activeAccount) => cachedGet<MediaDetails>(withAccount(`/api/media/${mediaId}`, account)),
   mangaDetails: (mediaId: number, account: ActiveAccount = activeAccount) => cachedGet<MediaDetails>(withAccount(`/api/media/${mediaId}/manga`, account)),
-  editEntry: (mediaId: number, update: MediaEntryUpdate) =>
-    request<MediaListEntry>(withAccount(`/api/media/${mediaId}/entry`), {
+  editEntry: (mediaId: number, update: MediaEntryUpdate, mediaType?: "ANIME" | "MANGA") =>
+    request<MediaListEntry>(withAccount(`/api/media/${mediaId}/entry${mediaType ? `?media_type=${mediaType}` : ""}`), {
       method: "PUT",
       body: JSON.stringify(update),
     }),

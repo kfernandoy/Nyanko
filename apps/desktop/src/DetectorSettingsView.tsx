@@ -46,6 +46,7 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
   const { t, lang, setLang, theme, setTheme, titleLanguage, setTitleLanguage, discordRpc, setDiscordRpc, discordFields, setDiscordFields } = useApp();
   const providerLabel = PROVIDER_LABELS[activeAccount.provider] ?? activeAccount.provider;
   const [tab, setTab] = useState<SettingsTab>("proveedores");
+  const [providerTab, setProviderTab] = useState<string>("general");
   // ponytail: appTab removed — only "general" subtab remains
   const [recogTab, setRecogTab] = useState<"general" | "reproductores" | "plataformas">("general");
   const [detectors, setDetectors] = useState<DetectorInfo[]>([]);
@@ -208,15 +209,31 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
   };
 
   return <section className="detector-settings">
-    <div className="settings-tabs">
-      <button className={tab === "proveedores" ? "active" : ""} onClick={() => switchTab("proveedores")}>{t("settings.tab.providers")}</button>
-      <button className={tab === "biblioteca" ? "active" : ""} onClick={() => switchTab("biblioteca")}>{t("settings.tab.library")}</button>
-      <button className={tab === "aplicacion" ? "active" : ""} onClick={() => switchTab("aplicacion")}>{t("settings.tab.app")}</button>
-      <button className={tab === "reconocimiento" ? "active" : ""} onClick={() => switchTab("reconocimiento")}>{t("settings.tab.recognition")}</button>
-      <button className={tab === "torrents" ? "active" : ""} onClick={() => switchTab("torrents")}>{t("settings.tab.torrents")}</button>
-      <button className={tab === "acerca" ? "active" : ""} onClick={() => switchTab("acerca")}>{t("settings.tab.about")}</button>
-    </div>
+    <nav className="settings-nav" aria-label={t("nav.settings")}>
+      <button className={tab === "proveedores" ? "active" : ""} onClick={() => switchTab("proveedores")}><SettingsNavIcon tab="proveedores" />{t("settings.tab.providers")}</button>
+      {tab === "proveedores" && (
+        <div className="settings-subnav">
+          <button className={providerTab === "general" ? "active" : ""} onClick={() => setProviderTab("general")}>{t("acc.general")}</button>
+          {(["anilist", "mal", "kitsu"] as const).map((provider) => (
+            <button key={provider} className={providerTab === provider ? "active" : ""} onClick={() => setProviderTab(provider)}>{PROVIDER_LABELS[provider]}</button>
+          ))}
+        </div>
+      )}
+      <button className={tab === "biblioteca" ? "active" : ""} onClick={() => switchTab("biblioteca")}><SettingsNavIcon tab="biblioteca" />{t("settings.tab.library")}</button>
+      <button className={tab === "aplicacion" ? "active" : ""} onClick={() => switchTab("aplicacion")}><SettingsNavIcon tab="aplicacion" />{t("settings.tab.app")}</button>
+      <button className={tab === "reconocimiento" ? "active" : ""} onClick={() => switchTab("reconocimiento")}><SettingsNavIcon tab="reconocimiento" />{t("settings.tab.recognition")}</button>
+      {tab === "reconocimiento" && (
+        <div className="settings-subnav">
+          <button className={recogTab === "general" ? "active" : ""} onClick={() => setRecogTab("general")}>{t("settings.subtab.general")}</button>
+          <button className={recogTab === "reproductores" ? "active" : ""} onClick={() => setRecogTab("reproductores")}>{t("settings.subtab.players")}</button>
+          <button className={recogTab === "plataformas" ? "active" : ""} onClick={() => setRecogTab("plataformas")}>{t("settings.subtab.streaming")}</button>
+        </div>
+      )}
+      <button className={tab === "torrents" ? "active" : ""} onClick={() => switchTab("torrents")}><SettingsNavIcon tab="torrents" />{t("settings.tab.torrents")}</button>
+      <button className={tab === "acerca" ? "active" : ""} onClick={() => switchTab("acerca")}><SettingsNavIcon tab="acerca" />{t("settings.tab.about")}</button>
+    </nav>
 
+    <div className="settings-content">
     {message && <div className="modal-success">{message}</div>}
     {error && <div className="modal-error">{error}</div>}
 
@@ -225,6 +242,8 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
         activeAccount={activeAccount}
         onConnect={onConnectAccount}
         onAccountChanged={onAccountChanged}
+        accountTab={providerTab}
+        onAccountTabChange={setProviderTab}
         generalExtras={<ConflictSettingsView />}
         providerExtras={(prov) => (prov === activeAccount.provider && preferences ? (
           <div className="profile-settings">
@@ -365,12 +384,6 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
     </>}
 
     {tab === "reconocimiento" && <>
-      <div className="settings-tabs provider-subtabs">
-        <button className={recogTab === "general" ? "active" : ""} onClick={() => setRecogTab("general")}>{t("settings.subtab.general")}</button>
-        <button className={recogTab === "reproductores" ? "active" : ""} onClick={() => setRecogTab("reproductores")}>{t("settings.subtab.players")}</button>
-        <button className={recogTab === "plataformas" ? "active" : ""} onClick={() => setRecogTab("plataformas")}>{t("settings.subtab.streaming")}</button>
-      </div>
-
       {recogTab === "general" && <>
         {playbackPreferences && <div className="profile-settings">
           <div className="profile-heading"><div><h2>{t("settings.auto.title")}</h2><span>{t("settings.auto.d")}</span></div></div>
@@ -435,5 +448,25 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
     </>}
 
     {tab === "torrents" && <TorrentsSettingsView />}
+    </div>
   </section>;
+}
+
+function SettingsNavIcon({ tab }: { tab: SettingsTab }) {
+  const shape = tab === "proveedores"
+    ? <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>
+    : tab === "biblioteca"
+      ? <path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      : tab === "aplicacion"
+        ? <><rect x="3" y="4" width="18" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="18" x2="12" y2="21" /></>
+        : tab === "reconocimiento"
+          ? <><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></>
+          : tab === "torrents"
+            ? <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>
+            : <><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></>;
+  return (
+    <svg className="settings-nav-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {shape}
+    </svg>
+  );
 }
