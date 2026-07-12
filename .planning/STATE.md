@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 05
 current_phase_name: packaging-auto-update
 status: executing
-stopped_at: Completed 05-03-PLAN.md (D-02 rama A + e2e verificado por el usuario)
-last_updated: "2026-07-12T08:50:48.254Z"
+stopped_at: Completed 05-04-PLAN.md (v0.2.0 publicado; D-01 probado sobre una 0.1.15 real)
+last_updated: "2026-07-12T09:40:00.000Z"
 last_activity: 2026-07-12
-last_activity_desc: "05-03 completo: D-02 resuelto por experimento, rama A cableada, e2e OK"
+last_activity_desc: "05-04 completo: release v0.2.0 publicado con los 4 artefactos; una 0.1.15 real migró sola a Electron"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 15
-  completed_plans: 13
-  percent: 80
+  completed_plans: 14
+  percent: 93
 ---
 
 # Project State
@@ -29,14 +29,21 @@ See: .planning/PROJECT.md (updated 2026-07-10)
 ## Current Position
 
 Phase: 05 (packaging-auto-update) — EXECUTING
-Plan: 5 of 6
-Status: Ready to execute (siguiente: 05-02, electron-updater — wave 4)
-Last activity: 2026-07-12 — 05-03 completo: D-02 resuelto por experimento, rama A cableada, e2e OK
+Plan: 6 of 6
+Status: Ready to execute (siguiente: 05-06, auto-update e2e real con el release 0.2.1 — cierra PKG-02)
+Last activity: 2026-07-12 — 05-04 completo: v0.2.0 publicado; una instalación 0.1.15 real migró sola a Electron
+
+**Nyanko 0.2.0 está PUBLICADO:** https://github.com/kfernandoy/Nyanko/releases/tag/v0.2.0
+(cuatro artefactos: `.exe` + `latest.yml` + `.exe.sig` + `latest.json`).
 
 **Estado de la máquina de pruebas: M2** — Nyanko 0.2.0 instalada en
-`%LOCALAPPDATA%\Programs\Nyanko`, biblioteca intacta, sin restos de Tauri. Es la precondición de
-la que parten los checkpoints de 05-02, 05-04 y 05-06. Backup de la biblioteca en
-`C:\Users\kfern\Desktop\nyanko-backup-05-03`.
+`%LOCALAPPDATA%\Programs\Nyanko` (llegó ahí **auto-migrando desde una 0.1.15 real**), biblioteca
+intacta, sin restos de Tauri. Es la precondición del checkpoint de 05-06. Backups en
+`C:\Users\kfern\Desktop\nyanko-backup-05-04` (fresco) y `…-05-03`.
+
+**PKG-02 sigue ABIERTO:** el camino feliz de electron-updater (descargar → SHA512 → matar sidecar →
+instalar → relanzar) necesita un SEGUNDO release y lo prueba el Plan 06 con la 0.2.1. Lo único
+ejercitado hasta ahora es su rama «estás al día».
 
 **Wave order (a ladder, not a fan — see ROADMAP note):**
 05-01 (electron-builder + build chain) → 05-05 (packaged icon) → 05-03 (D-02 migration gate)
@@ -74,6 +81,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 05 P05 | ~12 min | 1 tasks | 4 files |
 | Phase 05 P03 | ~35 min | 2 tasks | 1 files |
 | Phase 05 P02 | ~35 min | 3 tasks | 6 files |
+| Phase 05 P04 | ~75 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -99,6 +107,12 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-03 (verificación humana): el icono en bandeja de la 0.2.0 empaquetada cierra el hueco que 05-05 dejó abierto a propósito (su rama `isPackaged` no era ejecutable en dev)
 - [Phase 05]: El feed del updater vive en app-update.yml dentro del paquete, nunca en codigo — T-05-04: si el origen fuese configurable desde el main o el renderer, un renderer comprometido podria apuntar el updater a un exe arbitrario
 - [Phase 05]: El bloque files: del asar usa exclusiones negativas, no una whitelist — Reescribir la lista de lo que SI entra en el paquete es lo que rompe paquetes; sacar lo que sobra (!.claude, !.env*) es el diff minimo
+- [Phase 05]: 05-04 / **el `browser_download_url` de un asset en un release BORRADOR es PROVISIONAL** (`…/download/untagged-<hash>/…`) y **muere en 404 al publicar**. Meterlo en `latest.json` publica un puente correctamente firmado apuntando a un enlace muerto → TODO el parque 0.1.15 varado, sin ningún error visible (T-05-12). La URL se compone del **tag** + el **nombre del asset firmado** que devuelve la API
+- [Phase 05]: 05-04: **GitHub permite varios BORRADORES con el mismo `tag_name`** (el tag no es real hasta publicar). Un publish fallido a medias deja un huérfano y `releases.find()` coge «el primero» — azar sobre a cuál se le sube la firma. El puente exige que haya exactamente UNO
+- [Phase 05]: 05-04: `npx` es un `.cmd` → `shell: true` obligatorio (CVE-2024-27980) → un argumento **vacío** (`""`) se evapora al reconstruir la línea de comandos. Usar `--password=` (la forma que el RELEASING.md de la era Tauri ya documentaba)
+- [Phase 05]: 05-04: **el desinstalador de electron-builder IGNORA `/S`** y abre su asistente, incluso con la `QuietUninstallString` que publica el propio registro. Cualquier automatización que cuente con un uninstall silencioso se colgará ahí (a los usuarios no les afecta: nadie desinstala en el camino de D-01)
+- [Phase 05]: 05-04: la md5 de `nyanko.sqlite3` **cambia con el uso** (SQLite reescribe páginas in situ, el tamaño no se mueve). Como invariante de «no se ha perdido la biblioteca» solo vale entre pasos en los que la app NO corre; el invariante bueno son los **conteos por tabla**
+- [Phase 05]: 05-04 / D-01 PROBADO: una instalación 0.1.15 real arrancó, sondeó `latest.json`, verificó la firma minisign y ejecutó el instalador 0.2.0 SOLA. Que el instalador llegue a arrancar ES la prueba de la firma (Tauri se niega a ejecutar un binario que no verifica)
 
 ### Pending Todos
 
@@ -119,6 +133,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-12T08:50:08.645Z
-Stopped at: Completed 05-03-PLAN.md — siguiente 05-02 (electron-updater, wave 4)
+Last session: 2026-07-12T09:40:00.000Z
+Stopped at: Completed 05-04-PLAN.md — siguiente 05-06 (auto-update e2e real con la 0.2.1; cierra PKG-02)
 Resume file: None

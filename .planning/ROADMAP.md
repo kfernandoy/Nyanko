@@ -126,7 +126,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] 05-05-PLAN.md — icono empaquetado: `iconPath()` por `process.resourcesPath` (PKG-01) · wave 2
 - [x] 05-03-PLAN.md — gate empírico D-02: migración desde la instalación Tauri sin perder la biblioteca (PKG-01, DATA-01) · wave 3
 - [x] 05-02-PLAN.md — electron-updater en el main + flujo de Acerca de restaurado (PKG-02) · wave 4
-- [ ] 05-04-PLAN.md — publicar v0.2.0 + puente minisign/latest.json para los usuarios 0.1.15 (PKG-01, PKG-02) · wave 5
+- [x] 05-04-PLAN.md — publicar v0.2.0 + puente minisign/latest.json para los usuarios 0.1.15 (PKG-01, PKG-02) · wave 5
 - [ ] 05-06-PLAN.md — publicar v0.2.1 y probar el auto-update real 0.2.0 → 0.2.1 (PKG-02) · wave 6
 
 *La fase es una escalera, no un abanico, y es a propósito. Los checkpoints de 05-03/02/04/06
