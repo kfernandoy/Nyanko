@@ -447,6 +447,16 @@ class AniListError(RuntimeError):
 
 _client = RateLimitedClient(requests_per_minute=90)
 
+# Los 15 s por defecto del RateLimitedClient valen para las peticiones normales (una
+# búsqueda va en ~2 s), pero NO para los lotes del backfill: medido contra AniList con
+# una biblioteca real, la BATCH_DETAIL_QUERY de 50 ids tarda ~27 s (25 → 15,2 s ·
+# 10 → 6,2 s · 1 → 3,0 s). Con 15 s TODOS los lotes expiraban, el
+# `except Exception: continue` del backfill se lo tragaba sin registrar nada, `done`
+# no llegaba a incrementarse nunca, y la barra se quedaba clavada en "0/N" mientras el
+# backfill no terminaba jamás. 60 s deja margen para una AniList lenta sin aflojarle el
+# cinturón al resto del cliente.
+BATCH_TIMEOUT_SECONDS = 60.0
+
 
 class AniListClient:
     def __init__(self, settings: Settings):
@@ -513,11 +523,23 @@ class AniListClient:
             raise AniListError("El broker de OAuth no devolvió un token de AniList")
         return token
 
-    async def graphql(self, token: str, query: str, variables: dict | None = None) -> dict:
+    async def graphql(
+        self,
+        token: str,
+        query: str,
+        variables: dict | None = None,
+        timeout: float | None = None,
+    ) -> dict:
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        # timeout por petición (httpx lo acepta como kwarg): solo los lotes del backfill
+        # necesitan más de los 15 s por defecto. Ver BATCH_TIMEOUT_SECONDS.
+        extra = {"timeout": timeout} if timeout is not None else {}
         try:
             response = await self.client.post(
-                API_URL, headers=headers, json={"query": query, "variables": variables or {}}
+                API_URL,
+                headers=headers,
+                json={"query": query, "variables": variables or {}},
+                **extra,
             )
         except httpx.HTTPStatusError as exc:
             body = exc.response.text[:500]
@@ -882,7 +904,12 @@ class AniListClient:
         # usuario desde la biblioteca local al servirse. Aquí solo interesa el detalle.
         if not media_ids:
             return []
-        data = await self.graphql(token, BATCH_DETAIL_QUERY, {"ids": list(media_ids)})
+        data = await self.graphql(
+            token,
+            BATCH_DETAIL_QUERY,
+            {"ids": list(media_ids)},
+            timeout=BATCH_TIMEOUT_SECONDS,
+        )
         score_format = data["Viewer"]["mediaListOptions"]["scoreFormat"]
         return [
             self._parse_anime_details(media, score_format)
@@ -1013,7 +1040,12 @@ class AniListClient:
     ) -> list[MediaDetails]:
         if not media_ids:
             return []
-        data = await self.graphql(token, MANGA_BATCH_DETAIL_QUERY, {"ids": list(media_ids)})
+        data = await self.graphql(
+            token,
+            MANGA_BATCH_DETAIL_QUERY,
+            {"ids": list(media_ids)},
+            timeout=BATCH_TIMEOUT_SECONDS,
+        )
         score_format = data["Viewer"]["mediaListOptions"]["scoreFormat"]
         return [
             self._parse_manga_details(media, score_format)

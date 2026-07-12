@@ -631,3 +631,47 @@ def test_parse_staff_maps_role():
     assert len(result) == 1
     assert result[0].node.name.full == "Hayato Date"
     assert result[0].role == "Director"
+
+
+# ── Backfill: el lote de 50 detalles no cabe en el timeout por defecto ──
+#
+# Medido contra AniList el 2026-07-12 con una biblioteca real: la BATCH_DETAIL_QUERY
+# de 50 ids tarda ~27 s (25 -> 15,2 s · 10 -> 6,2 s · 1 -> 3,0 s). El default de
+# RateLimitedClient es 15 s, así que TODOS los lotes expiraban. `retry_with_backoff`
+# reintentaba 3 veces (otros 3 timeouts) y tardaba ~68 s por lote en rendirse; el
+# `except Exception: continue` del backfill se lo tragaba sin registrar nada y hacía
+# `continue` ANTES de incrementar `done`. Efecto: "Actualizando biblioteca 0/1811"
+# eternamente, sin una sola línea de log, y el backfill no terminaba JAMÁS.
+
+@pytest.mark.asyncio
+async def test_media_details_batch_pide_timeout_que_cubre_la_query():
+    seen: dict = {}
+
+    class _Resp:
+        def json(self) -> dict:
+            return {
+                "data": {
+                    "Viewer": {"mediaListOptions": {"scoreFormat": "POINT_10"}},
+                    "Page": {"media": []},
+                }
+            }
+
+    class _FakeClient:
+        async def post(self, url, **kwargs):
+            seen.update(kwargs)
+            return _Resp()
+
+    client = AniListClient(Settings())
+    client.client = _FakeClient()
+
+    await client.media_details_batch("tok", [1, 2, 3])
+
+    assert "timeout" in seen, (
+        "media_details_batch debe pedir un timeout explícito: con el default de 15 s "
+        "del RateLimitedClient, la query de 50 ids (~27 s) expira SIEMPRE y el backfill "
+        "se queda en 0/N para siempre."
+    )
+    assert seen["timeout"] >= 45, (
+        f"timeout={seen['timeout']}s es demasiado justo: la query de 50 ids tarda ~27 s "
+        "medidos. Con menos de 45 s no hay margen para una AniList lenta."
+    )

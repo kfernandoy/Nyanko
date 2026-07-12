@@ -704,7 +704,17 @@ def _warm_library_details(
                     try:
                         details_list = await batch_fetch(token, chunk)
                     except Exception:
-                        continue  # el lote se reintenta en el próximo warm
+                        # El lote se reintenta en el próximo warm, PERO se registra: un
+                        # `continue` mudo aquí hizo que un timeout sistemático (query de 50
+                        # ids ~27 s contra un cliente de 15 s) se manifestara solo como
+                        # "Actualizando biblioteca 0/N" clavado, sin una sola línea en
+                        # ningún log. Indiagnosticable. El coste de este log es 1 línea por
+                        # lote fallido; el de no tenerlo, una tarde de bisección.
+                        logger.warning(
+                            "backfill: lote de %d detalles falló (%s/%s); se reintenta en el próximo warm",
+                            len(chunk), provider, media_type, exc_info=True,
+                        )
+                        continue
                     # Todo el lote en UNA transacción, en un hilo: no bloquea el event
                     # loop (abrir una card durante el backfill seguía respondiendo) y no
                     # satura el lock de escritura como sí hacían 50 conexiones sueltas.
@@ -713,6 +723,10 @@ def _warm_library_details(
                             database.persist_details_batch, provider, details_list, media_type
                         )
                     except Exception:
+                        logger.warning(
+                            "backfill: no se pudo persistir un lote de %d detalles (%s/%s)",
+                            len(details_list), provider, media_type, exc_info=True,
+                        )
                         continue
                     downloads.extend(
                         asyncio.create_task(_download_one(d)) for d in details_list
