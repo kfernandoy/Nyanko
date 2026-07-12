@@ -4,11 +4,11 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 5
 current_phase_name: Packaging + auto-update
-status: executing
-stopped_at: Phase 5 context gathered
-last_updated: "2026-07-11T18:19:45.732Z"
+status: planned
+stopped_at: Phase 5 planned — 6 plans, checker passed after 2 revisions
+last_updated: "2026-07-11T23:45:00.000Z"
 last_activity: 2026-07-11
-last_activity_desc: Phase 4 complete, transitioned to Phase 5
+last_activity_desc: Phase 5 planned (6 plans, 6 waves) — ready to execute
 progress:
   total_phases: 5
   completed_phases: 4
@@ -24,14 +24,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-10)
 
 **Core value:** El tracking sigue funcionando idéntico tras cambiar el motor — misma biblioteca, mismos datos, misma detección; solo cambia el shell de Tauri a Electron.
-**Current focus:** Phase 04 — native-feature-parity
+**Current focus:** Phase 05 — packaging-auto-update
 
 ## Current Position
 
 Phase: 5 — Packaging + auto-update
-Plan: Not started
+Plan: 0/6 executed (planned, not started)
 Status: Ready to execute
-Last activity: 2026-07-11 — Phase 4 complete, transitioned to Phase 5
+Last activity: 2026-07-11 — Phase 5 planned: 6 plans in 6 sequential waves
+
+**Wave order (a ladder, not a fan — see ROADMAP note):**
+05-01 (electron-builder + build chain) → 05-05 (packaged icon) → 05-03 (D-02 migration gate)
+→ 05-02 (electron-updater) → 05-04 (publish v0.2.0 + Tauri bridge) → 05-06 (real auto-update e2e)
 
 Progress: [░░░░░░░░░░] 0%
 
