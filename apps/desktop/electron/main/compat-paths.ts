@@ -12,6 +12,18 @@ export function userDataDir(appDataPath: string): string {
   return join(appDataPath, LEGACY_APP_ID);
 }
 
+// PKG-01: icono de marca ÚNICO (D-07: 256x256, sin monocromo dedicado) que comparten
+// la ventana principal y la bandeja. `build/` es el buildResources de electron-builder
+// y NO viaja dentro de la app: en el NSIS la única copia es resources/icon.png
+// (extraResources, Plan 01). Misma forma que resolveSidecarExe() (sidecar.ts), con la
+// única desviación de que el icono se necesita en AMBOS caminos — de ahí la rama.
+// isPackaged/resourcesPath entran como PARÁMETROS: este módulo es Electron-free por
+// contrato (su self-check corre bajo Node plano, sin mock de electron).
+export function iconPath(isPackaged: boolean, resourcesPath: string, mainDir: string): string {
+  if (isPackaged) return join(resourcesPath, "icon.png");
+  return join(mainDir, "..", "..", "build", "icon.png"); // dev: out/main → apps/desktop
+}
+
 // Crash-guard de arranque: revienta si userData no cayó en el id heredado.
 export function assertUserDataDir(resolved: string): void {
   if (!resolved.endsWith(LEGACY_APP_ID)) {

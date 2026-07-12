@@ -2,10 +2,11 @@ import { app, Tray, Menu, nativeImage, BrowserWindow } from "electron";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { iconPath } from "./compat-paths";
 
-// Paridad D-06/D-07 con el viejo tray.rs: bandeja con el ícono de marca (D-07,
-// build/icon.png — sin ícono monocromo dedicado) y menú en español. Convención de
-// Windows: menú con click derecho; el doble click (izq) muestra la app.
+// Paridad D-06/D-07 con el viejo tray.rs: bandeja con el ícono de marca (D-07, sin
+// ícono monocromo dedicado) y menú en español. Convención de Windows: menú con click
+// derecho; el doble click (izq) muestra la app.
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -66,7 +67,11 @@ async function toggleDetection(
 // index.ts (guarda mainWindow tras createWindow).
 export function setupTray(getMainWindow: () => BrowserWindow | null): Tray | null {
   if (tray) return tray; // idempotente: Retry del splash no duplica la bandeja
-  const icon = nativeImage.createFromPath(join(__dirname, "../../build/icon.png"));
+  // T-05-19: createFromPath sobre una ruta inexistente devuelve una imagen VACÍA sin
+  // lanzar — el fallo sería silencioso, por eso la resolución está en iconPath() y testeada.
+  const icon = nativeImage.createFromPath(
+    iconPath(app.isPackaged, process.resourcesPath, __dirname),
+  );
   tray = new Tray(icon);
   tray.setToolTip("Nyanko");
 

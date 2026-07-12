@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from "electron";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { assertUserDataDir, userDataDir } from "./compat-paths";
+import { assertUserDataDir, iconPath, userDataDir } from "./compat-paths";
 import { setupLogging } from "./logging";
 import { isDevMode, startSidecar, killSidecar } from "./sidecar";
 import { createSplash, showSplashError } from "./splash";
@@ -35,9 +35,9 @@ function createWindow(): Promise<BrowserWindow> {
     minWidth: 760,
     minHeight: 560,
     frame: false,
-    // D-07: icono de marca ÚNICO (build/icon.png 256x256) reutilizado por la bandeja
-    // (Plan 02) y el empaquetado de Fase 5. build/ vive fuera de out/main, de ahí ../../.
-    icon: join(__dirname, "../../build/icon.png"),
+    // D-07: icono de marca ÚNICO, reutilizado por la bandeja. La resolución
+    // (empaquetado vs dev) vive en iconPath() — fuente única, con self-check.
+    icon: iconPath(app.isPackaged, process.resourcesPath, __dirname),
     show: false,
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
