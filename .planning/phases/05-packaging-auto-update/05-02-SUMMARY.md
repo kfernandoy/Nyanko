@@ -1,0 +1,151 @@
+---
+phase: 05-packaging-auto-update
+plan: 02
+subsystem: auto-update
+tags: [electron-updater, ipc, native-boundary, pkg-02]
+status: complete
+human_gate: pending
+
+requires:
+  - "resources/app-update.yml dentro del paquete (Plan 01 — el feed NO se configura en código)"
+  - "killSidecar() en electron/main/sidecar.ts:132 (Fase 3)"
+  - "isDevMode() en electron/main/sidecar.ts:23 (Fase 3)"
+  - "las 5 cadenas about.* de i18n.tsx y la máquina de estados de DetectorSettingsView (vivas pero sin usar desde la Fase 3)"
+provides:
+  - "apps/desktop/electron/main/updater.ts — checkForUpdate() + downloadAndInstallUpdate()"
+  - "canales IPC updates:check y updates:install (cero payload)"
+  - "window.nyanko.checkForUpdates / installUpdate"
+  - "native.installUpdate — NATIVE_OPS pasa de 18 a 19 ops"
+  - "native.checkForUpdates deja de ser un throw-stub"
+affects:
+  - "Plan 06: prueba el camino feliz (descargar → SHA512 → matar sidecar → instalar → relanzar) cuando existan dos releases"
+
+tech-stack:
+  added: []
+  patterns:
+    - "El feed vive en app-update.yml dentro del paquete; ni el renderer ni el main pueden repuntarlo (T-05-04)"
+    - "Guarda de módulo: installUpdate rechaza si no hubo antes un check positivo (T-05-05)"
+
+key-files:
+  created:
+    - apps/desktop/electron/main/updater.ts
+  modified:
+    - apps/desktop/electron/main/ipc.ts
+    - apps/desktop/electron/preload/index.ts
+    - apps/desktop/src/native.ts
+    - apps/desktop/src/vite-env.d.ts
+    - apps/desktop/src/DetectorSettingsView.tsx
+
+decisions:
+  - "electron-updater se importa por default import + destructuring: es CJS y el named export no sobrevive al interop ESM de electron-vite"
+  - "isUpdateAvailable existe en electron-updater 6.8.9 — no hizo falta el fallback por eventos que el plan contemplaba"
+  - "Cero UI nueva: se reconectó la máquina de estados y las cadenas i18n que ya estaban en el árbol"
+
+metrics:
+  duration: ~35 min
+  completed: 2026-07-12
+  tasks_completed: 2
+  files_created: 1
+  files_modified: 5
+---
+
+# Phase 5 Plan 02: Auto-update con electron-updater — Summary
+
+El botón «Buscar actualizaciones» vuelve a hacer lo que hacía en 0.1.15 — check → confirmar con el
+número de versión → descargar → matar el sidecar → reinstalar en silencio y relanzar — pero ahora
+contra electron-updater. Cierra el último stub de la frontera nativa que dejó la Fase 3.
+
+## Qué se construyó
+
+**Tarea 1 — `updater.ts` + dos canales IPC.** Un módulo de 66 líneas, todo wrapper fino (sin capa
+pura inventada: no hay nada que testear bajo Node plano, mismo caso que `tray.ts`). Dos exports y
+nada más: `checkForUpdate(): Promise<{version} | null>` y `downloadAndInstallUpdate(): Promise<void>`.
+`autoDownload = false` (la confirmación del usuario va ANTES de bajar 131 MB) y
+`autoInstallOnAppQuit = false`. El `autoUpdater.logger` apunta al mismo `electron-log` que configura
+`logging.ts`, así que un fallo de update aterriza en `main.log` (OBS-01) en vez de ser invisible.
+Los handlers `updates:check` / `updates:install` no aceptan payload alguno.
+
+**Tarea 2 — la frontera nativa y el flujo de «Acerca de».** El preload expone dos métodos nombrados
+sin argumentos; `vite-env.d.ts` los declara; `native.ts` sustituye el `throw new Error("Actualizaciones:
+Fase 5")` por el enrutado normal por `window.nyanko` (fallback web: `null`, no un throw — en un
+navegador no hay updates) y añade `installUpdate` a `NATIVE_OPS` (18 → 19 ops).
+`DetectorSettingsView.checkForUpdates` se reconstruyó con la MISMA forma del fuente 0.1.15
+(`43b399b^`), cambiando solo el motor.
+
+## Lo que NO se escribió
+
+Ni una línea de UI, ni una cadena de i18n. **`git diff --stat apps/desktop/src/i18n.tsx` no reporta
+nada** — las cinco cadenas (`about.upToDate`, `about.updateFound`, `about.updateInstall`,
+`about.checking`, `about.downloading`) y la máquina de estados
+(`idle | checking | none | downloading | error`) llevaban en el árbol desde la Fase 3, vivas y sin
+usar. Este plan las reconecta. El JSX de la tarjeta no se tocó: sus etiquetas ya estaban cableadas a
+esos estados.
+
+## Las tres cosas que no son negociables
+
+| Qué | Dónde | Por qué |
+|---|---|---|
+| El feed **no** está en el código | `resources/app-update.yml` (Plan 01) | T-05-04: si el origen fuese configurable desde el main o el renderer, un renderer comprometido podría apuntar el updater a un exe arbitrario. Verificado en el paquete: `provider: github, owner: kfernandoy, repo: Nyanko`. |
+| `killSidecar()` antes de `quitAndInstall` | `updater.ts` → `sidecar.ts:132` | D-05: el sidecar mantiene bloqueados `_internal\*` y su propio exe; si sobrevive, el copiado del instalador falla. Se **reusa** la función del `before-quit` (es idempotente, así que su segunda llamada es un no-op). |
+| `installUpdate` rechaza sin check previo | flag de módulo `updateAvailable` | T-05-05: lo máximo que consigue un renderer comprometido es reinstalar un update legítimo ya verificado (DoS menor), nunca ejecutar código. |
+
+## Verificación (ejecutada, no asumida)
+
+- **Tarea 1**, bloque `<automated>` del plan: `UPDATER OK` (+ `npx tsc --noEmit` → 0).
+- **Tarea 2**, bloque `<automated>` del plan: `RENDERER OK`. `npm run check` → 0.
+  `npm run test:native` → 2/2 (la simetría `native` ↔ `NATIVE_OPS` aguanta con las 19 ops).
+- `git diff --stat apps/desktop/src/i18n.tsx` → sin salida.
+- **`npm run build` construyó el instalador de verdad** (`Nyanko-Setup-0.2.0.exe`, 131.194.884 B) y
+  se inspeccionó el `app.asar` resultante — no basta con que compile, tiene que estar DENTRO del
+  paquete:
+
+  | comprobación en el paquete | resultado |
+  |---|---|
+  | `out/main/index.js` ← `updates:check`, `updates:install`, `quitAndInstall`, `autoDownload`, `killSidecar` | presentes |
+  | `out/preload/index.cjs` ← `updates:check`, `updates:install` | presentes |
+  | `out/renderer/…js` ← cadenas `about.upToDate` etc. | presentes |
+  | `out/renderer/…js` ← el viejo `"Actualizaciones: Fase 5"` | **0 — el stub no está en el paquete** |
+  | `resources/app-update.yml` | presente |
+
+## Lo que este plan NO prueba
+
+**PKG-02 no se cierra aquí.** El checkpoint solo puede ejercitar la mitad «detectar»: cuando corre,
+todavía no existe ningún release 0.2.0 publicado (eso es el Plan 04). El camino feliz completo
+—encontrar → descargar → verificar SHA512 → matar sidecar → reinstalar → relanzar— necesita DOS
+releases publicados y lo prueba el **Plan 06**. Escrito y empaquetado, sí; ejecutado, no.
+
+## Deviations from Plan
+
+Ninguna. Los dos `<automated>` pasaron a la primera y el plan se ejecutó tal como estaba escrito.
+
+Dos detalles menores donde la realidad fue más simple de lo que el plan contemplaba:
+
+1. El plan preveía un posible fallback por eventos (`update-available` / `update-not-available`) "si
+   `isUpdateAvailable` no existiera en la versión instalada". Existe (electron-updater 6.8.9,
+   `types.d.ts:27`), así que el fallback no se escribió. Menos código, mismo comportamiento.
+2. `electron-updater` es CommonJS: `import { autoUpdater } from "electron-updater"` no sobrevive al
+   interop ESM. Se importa por default + destructuring, con el porqué en un comentario.
+
+## Hallazgos fuera de alcance
+
+Ver `deferred-items.md` §D-I-01: el `app.asar` empaqueta el árbol de fuentes entero, incluidos
+`.env.development` y `.claude/settings.local.json` (a `electron-builder.yml` le falta un bloque
+`files:`). Es config del Plan 01 y ningún fichero de este plan la toca, así que **no se arregló**:
+cambiarla habría alterado el mismo instalador que este plan tiene que verificar. **No pude leer
+`.env.development` para saber si contiene algo sensible — mis permisos deniegan esa ruta y no lo
+eludí.** Merece una mirada humana.
+
+## Known Stubs
+
+Ninguno. Este plan *elimina* el último stub de la frontera nativa (Fase 3).
+
+## Checkpoint pendiente (Tarea 3)
+
+El plan tiene una tercera tarea que es un gate humano **bloqueante**, y está SIN aprobar. El
+instalador ya está construido y esperando; falta que un humano lo instale y compruebe los dos
+iconos y que el check sale a la red. **No se auto-aprobó.**
+
+## Self-Check: PASSED
+
+Ficheros declarados: existen (`updater.ts` creado, los 5 modificados en el diff).
+Commits declarados: existen (`1b3531e`, `58aa1aa`).
