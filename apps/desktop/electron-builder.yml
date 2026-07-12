@@ -14,6 +14,18 @@ directories:
 
 asar: true
 
+# Sin bloque `files:` electron-builder mete en el asar TODO lo que hay en apps/desktop,
+# incluida config de desarrollo que no pinta nada en un instalador PÚBLICO (un .asar se
+# extrae con un comando). Estas son exclusiones NEGATIVAS a propósito: no reescribimos la
+# lista de lo que SÍ entra —eso sí podría romper el paquete—, solo sacamos lo que sobra.
+# Verificado: el .env del BACKEND (que sí tiene el CLIENT_SECRET de AniList) nunca estuvo
+# aquí — ni en el asar ni en el sidecar de PyInstaller. Esto es higiene, no una fuga.
+files:
+  - "**/*"
+  - "!.claude${/*}"
+  - "!.env*"
+  - "!electron-builder.yml"
+
 win:
   target: nsis
   # electron-builder deriva el .ico de un PNG >=256px. icon.png está verificado a 256x256,
