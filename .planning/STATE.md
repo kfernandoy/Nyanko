@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 05
 current_phase_name: packaging-auto-update
 status: executing
-stopped_at: Phase 5 planned — 6 plans, checker passed after 2 revisions
-last_updated: "2026-07-12T04:10:34.833Z"
+stopped_at: Completed 05-03-PLAN.md (D-02 rama A + e2e verificado por el usuario)
+last_updated: "2026-07-12T00:00:00.000Z"
 last_activity: 2026-07-12
-last_activity_desc: Phase 05 execution started
+last_activity_desc: 05-03 complete — migración Tauri→Electron cableada y verificada e2e
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 15
-  completed_plans: 11
-  percent: 73
+  completed_plans: 12
+  percent: 80
 ---
 
 # Project State
@@ -29,9 +29,14 @@ See: .planning/PROJECT.md (updated 2026-07-10)
 ## Current Position
 
 Phase: 05 (packaging-auto-update) — EXECUTING
-Plan: 3 of 6
-Status: Ready to execute
-Last activity: 2026-07-12 — Phase 05 execution started
+Plan: 4 of 6
+Status: Ready to execute (siguiente: 05-02, electron-updater — wave 4)
+Last activity: 2026-07-12 — 05-03 completo: D-02 resuelto por experimento, rama A cableada, e2e OK
+
+**Estado de la máquina de pruebas: M2** — Nyanko 0.2.0 instalada en
+`%LOCALAPPDATA%\Programs\Nyanko`, biblioteca intacta, sin restos de Tauri. Es la precondición de
+la que parten los checkpoints de 05-02, 05-04 y 05-06. Backup de la biblioteca en
+`C:\Users\kfern\Desktop\nyanko-backup-05-03`.
 
 **Wave order (a ladder, not a fan — see ROADMAP note):**
 05-01 (electron-builder + build chain) → 05-05 (packaged icon) → 05-03 (D-02 migration gate)
@@ -67,6 +72,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 04 P03 | ~18m | 2 tasks tasks | 7 files files |
 | Phase 05 P01 | 55m | 3 tasks | 7 files |
 | Phase 05 P05 | ~12 min | 1 tasks | 4 files |
+| Phase 05 P03 | ~35 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -85,6 +91,11 @@ Recent decisions affecting current work:
 - [Phase ?]: 04-02: window_prefs.json at userData, no migration (D-05); set payload coerced to 3 booleans + userData-scoped write (T-04-04/05); tray labels keep accented 'detección' per Rust parity (D-08); window-prefs core electron-free for test:prefs
 - [Phase ?]: 04-03: T-04-SC gate approved by user before installing @xhayper/discord-rpc@1.3.4; Discord RP lazy-connects + silent no-op (D-02/D-03) plus a no-op error listener to prevent an EventEmitter main-process crash; single-instance = requestSingleInstanceLock + focus; autostart = app.setLoginItemSettings(args:['--minimized'])
 - [Phase ?]: 05-05: iconPath() recibe isPackaged/resourcesPath como parametros: compat-paths.ts sigue Electron-free y self-checkable bajo Node plano; el icono empaquetado se lee de resources/icon.png (extraResources del Plan 01), no de build/
+- [Phase 05]: 05-03 / D-02 RESUELTO POR EXPERIMENTO (2026-07-12, instalación 0.1.15 real): el `uninstall.exe /S` de Tauri **NO** borra `%APPDATA%\app.nyanko.desktop` (DB idéntica byte a byte, md5 51cb246b…). → se cablea la **rama A** (desinstalar Tauri en silencio en `customInit`); la **rama B no existe en el árbol** y `electron-builder.yml` no se toca (sin `nsis.guid`, electron-builder deriva su GUID del appId — no compartimos clave con Tauri, hacemos que Tauri desaparezca)
+- [Phase 05]: 05-03: la clave de desinstalación de Tauri es `HKCU\...\Uninstall\Nyanko` (un NOMBRE, no un GUID entre llaves) y sus valores vienen **entrecomillados dentro del propio dato** → hay que des-entrecomillarlos antes de usarlos como ruta
+- [Phase 05]: 05-03: el `ExecWait` usa `_?=<InstallLocation>` (desinstalación síncrona real) + remate `Delete`/`RMDir /r`. No es por el directorio: es porque Tauri y electron-builder crean el MISMO `$SMPROGRAMS\Nyanko.lnk`, y sin `_?=` el uninstaller rezagado (retorna en 2,5 s, sigue borrando detrás) se lleva por delante el acceso directo recién creado. No "simplificar" a un ExecWait pelado
+- [Phase 05]: 05-03: exe de Tauri = `nyanko-desktop.exe`, exe de Electron = `Nyanko.exe` — nombres DISTINTOS: instalar encima no habría pisado nada (esto es lo que habría roto la rama B)
+- [Phase 05]: 05-03 (verificación humana): el icono en bandeja de la 0.2.0 empaquetada cierra el hueco que 05-05 dejó abierto a propósito (su rama `isPackaged` no era ejecutable en dev)
 
 ### Pending Todos
 
@@ -105,6 +116,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-12T04:10:21.333Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-packaging-auto-update/05-CONTEXT.md
+Last session: 2026-07-12
+Stopped at: Completed 05-03-PLAN.md — siguiente 05-02 (electron-updater, wave 4)
+Resume file: None

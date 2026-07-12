@@ -148,9 +148,22 @@ desinstalación vivo a los 8 s.
 | **3. Agregar/quitar programas** | **UNA sola entrada**: `Nyanko 0.2.0` (clave `addaf0cf-bfbc-5cf6-8e26-a933ab4bb8bf`, HKCU). La entrada `Nyanko` de Tauri desapareció con su propio uninstaller. Ninguna en HKLM. |
 | **4. Accesos directos** | Menú Inicio y Escritorio → ambos apuntan a `C:\Users\kfern\AppData\Local\Programs\Nyanko\Nyanko.exe`, que existe y reporta **ProductVersion 0.2.0.0**. **Ninguno se perdió en la carrera** — que es exactamente lo que protege el `_?=`. |
 
-**Pendiente de confirmación humana:** que la app abre visualmente y la biblioteca renderiza con el
-mismo contenido (criterio e2e 2 del plan). Todo lo demás está medido; esto no se puede afirmar sin
-mirarlo. Ver el checkpoint devuelto al orquestador.
+### Verificación humana: **PASÓ** (2026-07-12)
+
+Criterio e2e 2 del plan, el único no automatizable. El usuario abrió Nyanko 0.2.0 desde el acceso
+directo y confirmó:
+
+- **La biblioteca renderiza** con su contenido real. La DB no solo sobrevivió byte a byte: la 0.2.0
+  la lee y la pinta. DATA-01 cerrado de extremo a extremo.
+- **El icono sale en la bandeja del sistema.**
+
+**El icono cierra además el hueco que el Plan 05-05 dejó abierto a propósito.** Aquel plan cableó
+`iconPath()` para resolver vía `process.resourcesPath` cuando la app está empaquetada, pero su
+propio SUMMARY dejó constancia de que esa rama **no era verificable desde el plan**: en dev
+`app.isPackaged` es `false`, así que la rama empaquetada nunca se ejecutaba y solo tenía un
+self-check unitario detrás. Aquí se ha ejecutado por primera vez en una instalación de verdad —
+icono visible en bandeja = `resources/icon.png` existe en el sitio que `iconPath()` calcula. 05-05
+queda validado en producción, no solo en test.
 
 ## Deviations from Plan
 
