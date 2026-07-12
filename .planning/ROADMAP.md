@@ -120,9 +120,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. El instalado incluye el sidecar (`nyanko-api.exe` + `_internal`) y los bundles de extensión (`chromium`/`firefox`) como `extraResources`, y la app arranca el sidecar en frío y carga la biblioteca.
   3. `electron-updater` detecta una versión nueva en GitHub Releases, la descarga verificando SHA512 y la instala tras detener el sidecar.
 
-**Plans**: 6 plans
+**Plans**: 1/6 plans executed
 
-- [ ] 05-01-PLAN.md — electron-builder.yml + EULA + hook NSIS + cadena de build sin Tauri (PKG-01) · wave 1
+- [x] 05-01-PLAN.md — electron-builder.yml + EULA + hook NSIS + cadena de build sin Tauri (PKG-01) · wave 1
 - [ ] 05-05-PLAN.md — icono empaquetado: `iconPath()` por `process.resourcesPath` (PKG-01) · wave 2
 - [ ] 05-03-PLAN.md — gate empírico D-02: migración desde la instalación Tauri sin perder la biblioteca (PKG-01, DATA-01) · wave 3
 - [ ] 05-02-PLAN.md — electron-updater en el main + flujo de Acerca de restaurado (PKG-02) · wave 4
@@ -147,4 +147,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Main core — sidecar lifecycle + logging | 2/2 | Complete   | 2026-07-10 |
 | 3. Native boundary + Tauri removal | 2/2 | Complete    | 2026-07-11 |
 | 4. Native feature parity | 3/3 | Complete    | 2026-07-11 |
-| 5. Packaging + auto-update | 0/TBD | Not started | - |
+| 5. Packaging + auto-update | 1/6 | In Progress|  |

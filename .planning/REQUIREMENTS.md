@@ -50,7 +50,7 @@ que Tauri hacía", verificable contra el comportamiento 0.1.15.
 
 ### Empaquetado y updates
 
-- [ ] **PKG-01**: `electron-builder` produce un instalador Windows NSIS
+- [x] **PKG-01**: `electron-builder` produce un instalador Windows NSIS
       (español/inglés, EULA) que incluye el sidecar (`nyanko-api.exe` +
       `_internal`) y los bundles de extensión (`chromium`/`firefox`) como
       recursos.
@@ -98,5 +98,5 @@ que Tauri hacía", verificable contra el comportamiento 0.1.15.
 | NATIVE-04 | Phase 4 | Complete |
 | NATIVE-05 | Phase 4 | Complete |
 | NATIVE-06 | Phase 4 | Complete |
-| PKG-01 | Phase 5 | Pending |
+| PKG-01 | Phase 5 | Complete |
 | PKG-02 | Phase 5 | Pending |
