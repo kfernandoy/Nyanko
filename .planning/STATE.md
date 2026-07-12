@@ -6,15 +6,15 @@ current_phase: 05
 current_phase_name: packaging-auto-update
 status: executing
 stopped_at: Phase 5 planned — 6 plans, checker passed after 2 revisions
-last_updated: "2026-07-12T04:06:05.263Z"
+last_updated: "2026-07-12T04:10:34.833Z"
 last_activity: 2026-07-12
 last_activity_desc: Phase 05 execution started
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 15
-  completed_plans: 10
-  percent: 67
+  completed_plans: 11
+  percent: 73
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-10)
 ## Current Position
 
 Phase: 05 (packaging-auto-update) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-07-12 — Phase 05 execution started
 
@@ -66,6 +66,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 04 P02 | ~15m | 3 tasks | 9 files |
 | Phase 04 P03 | ~18m | 2 tasks tasks | 7 files files |
 | Phase 05 P01 | 55m | 3 tasks | 7 files |
+| Phase 05 P05 | ~12 min | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 04-01: titlebar render gate flipped HAS_TAURI -> isNative; JSX/styles verbatim (D-04)
 - [Phase ?]: 04-02: window_prefs.json at userData, no migration (D-05); set payload coerced to 3 booleans + userData-scoped write (T-04-04/05); tray labels keep accented 'detección' per Rust parity (D-08); window-prefs core electron-free for test:prefs
 - [Phase ?]: 04-03: T-04-SC gate approved by user before installing @xhayper/discord-rpc@1.3.4; Discord RP lazy-connects + silent no-op (D-02/D-03) plus a no-op error listener to prevent an EventEmitter main-process crash; single-instance = requestSingleInstanceLock + focus; autostart = app.setLoginItemSettings(args:['--minimized'])
+- [Phase ?]: 05-05: iconPath() recibe isPackaged/resourcesPath como parametros: compat-paths.ts sigue Electron-free y self-checkable bajo Node plano; el icono empaquetado se lee de resources/icon.png (extraResources del Plan 01), no de build/
 
 ### Pending Todos
 
@@ -103,6 +105,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-12T04:05:48.079Z
+Last session: 2026-07-12T04:10:21.333Z
 Stopped at: Phase 5 context gathered
 Resume file: .planning/phases/05-packaging-auto-update/05-CONTEXT.md
