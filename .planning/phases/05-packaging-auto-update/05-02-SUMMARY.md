@@ -4,7 +4,7 @@ plan: 02
 subsystem: auto-update
 tags: [electron-updater, ipc, native-boundary, pkg-02]
 status: complete
-human_gate: pending
+human_gate: passed 2026-07-12
 
 requires:
   - "resources/app-update.yml dentro del paquete (Plan 01 — el feed NO se configura en código)"
@@ -35,18 +35,20 @@ key-files:
     - apps/desktop/src/native.ts
     - apps/desktop/src/vite-env.d.ts
     - apps/desktop/src/DetectorSettingsView.tsx
+    - apps/desktop/electron-builder.yml
 
 decisions:
   - "electron-updater se importa por default import + destructuring: es CJS y el named export no sobrevive al interop ESM de electron-vite"
   - "isUpdateAvailable existe en electron-updater 6.8.9 — no hizo falta el fallback por eventos que el plan contemplaba"
   - "Cero UI nueva: se reconectó la máquina de estados y las cadenas i18n que ya estaban en el árbol"
+  - "El bloque files: del asar usa exclusiones NEGATIVAS (!.claude, !.env*), no una whitelist: reescribir lo que SÍ entra es lo que rompe paquetes"
 
 metrics:
   duration: ~35 min
   completed: 2026-07-12
-  tasks_completed: 2
+  tasks_completed: 3
   files_created: 1
-  files_modified: 5
+  files_modified: 6
 ---
 
 # Phase 5 Plan 02: Auto-update con electron-updater — Summary
@@ -116,9 +118,22 @@ releases publicados y lo prueba el **Plan 06**. Escrito y empaquetado, sí; ejec
 
 ## Deviations from Plan
 
-Ninguna. Los dos `<automated>` pasaron a la primera y el plan se ejecutó tal como estaba escrito.
+### Auto-fixed Issues
 
-Dos detalles menores donde la realidad fue más simple de lo que el plan contemplaba:
+**1. [Rule 2 - Higiene/seguridad del paquete] `files:` en `electron-builder.yml`**
+- **Found during:** Tarea 3 (inspección del `app.asar` del instalador construido)
+- **Issue:** sin bloque `files:`, el asar empaquetaba `.claude/settings.local.json`,
+  `.env.development` y el árbol de fuentes entero, en un instalador destinado a publicarse.
+- **Investigación primero:** se descartó fuga de secretos (el `.env` del backend, el que tiene el
+  `CLIENT_SECRET`, nunca viajó — búsqueda literal en todo `win-unpacked`, negativa).
+- **Fix:** exclusiones negativas (`!.claude${/*}`, `!.env*`, `!electron-builder.yml`) sobre `**/*`.
+- **Files modified:** apps/desktop/electron-builder.yml
+- **Commit:** d8584e2
+- **Por qué se arregló y no se difirió:** entró antes de la verificación humana, para que el humano
+  validara exactamente el paquete que las waves 5-6 van a publicar. Detalle completo abajo.
+
+Los dos `<automated>` del plan pasaron a la primera y las Tareas 1-2 se ejecutaron tal como estaban
+escritas. Dos detalles menores donde la realidad fue más simple de lo que el plan contemplaba:
 
 1. El plan preveía un posible fallback por eventos (`update-available` / `update-not-available`) "si
    `isUpdateAvailable` no existiera en la versión instalada". Existe (electron-updater 6.8.9,
@@ -126,26 +141,47 @@ Dos detalles menores donde la realidad fue más simple de lo que el plan contemp
 2. `electron-updater` es CommonJS: `import { autoUpdater } from "electron-updater"` no sobrevive al
    interop ESM. Se importa por default + destructuring, con el porqué en un comentario.
 
-## Hallazgos fuera de alcance
+## Higiene del paquete: config de desarrollo dentro del asar (resuelto, `d8584e2`)
 
-Ver `deferred-items.md` §D-I-01: el `app.asar` empaqueta el árbol de fuentes entero, incluidos
-`.env.development` y `.claude/settings.local.json` (a `electron-builder.yml` le falta un bloque
-`files:`). Es config del Plan 01 y ningún fichero de este plan la toca, así que **no se arregló**:
-cambiarla habría alterado el mismo instalador que este plan tiene que verificar. **No pude leer
-`.env.development` para saber si contiene algo sensible — mis permisos deniegan esa ruta y no lo
-eludí.** Merece una mirada humana.
+Al inspeccionar el `app.asar` del instalador construido apareció que, **sin bloque `files:`**,
+electron-builder mete en el paquete todo lo que hay bajo `apps/desktop` — incluidos
+`.claude/settings.local.json` y `.env.development`, además del árbol de fuentes entero y un `dist/`
+obsoleto de la era Tauri. Un `.asar` no está cifrado: se extrae con un comando. Y las waves 5-6
+publican este instalador.
+
+**Se investigó ANTES de tocar nada, y no había fuga.** El `.env` que sí contiene el
+`NYANKO_ANILIST_CLIENT_SECRET` es el del **backend**, y nunca viajó: la búsqueda del secreto
+literal por todo `release/win-unpacked` no lo encuentra en ningún sitio, ni en el asar ni dentro
+del sidecar de PyInstaller. Era higiene, no un incidente.
+
+**Arreglo** (`electron-builder.yml`): exclusiones **negativas** sobre `**/*` —
+`!.claude${/*}`, `!.env*`, `!electron-builder.yml`. Deliberadamente NO se reescribió la lista de lo
+que SÍ entra: restructurar eso es precisamente lo que rompe paquetes.
+
+**Re-verificado tras reconstruir:** asar limpio (ni `.claude` ni `.env`), layout de recursos intacto
+(sidecar, ambos bundles de extensión, icono, `app-update.yml`) y `out\main\index.js` se sigue
+extrayendo del asar con el updater dentro (8 referencias a `autoUpdater`). El arreglo entró **antes**
+de la verificación humana, así que el humano validó exactamente el paquete que se va a publicar.
 
 ## Known Stubs
 
 Ninguno. Este plan *elimina* el último stub de la frontera nativa (Fase 3).
 
-## Checkpoint pendiente (Tarea 3)
+## Tarea 3 — verificación humana: PASÓ (2026-07-12)
 
-El plan tiene una tercera tarea que es un gate humano **bloqueante**, y está SIN aprobar. El
-instalador ya está construido y esperando; falta que un humano lo instale y compruebe los dos
-iconos y que el check sale a la red. **No se auto-aprobó.**
+El humano instaló el NSIS y confirmó las tres cosas:
+
+- **Icono de bandeja**: el gatito de Nyanko, no el genérico de Electron. Cierra el riesgo diferido
+  de la Fase 4 (cableado por el Plan 05).
+- **Icono de ventana**: el mismo en barra de tareas y Alt+Tab.
+- **Biblioteca**: carga (el sidecar arrancó desde `resources/nyanko-api/`).
+- **«Buscar actualizaciones»**: llega a GitHub y **falla con el error esperado** — no hay ningún
+  release 0.2.0 publicado todavía (eso es el Plan 04). **Ese error ES la condición de aprobado**: un
+  updater bien cableado tiene que salir a la red y no encontrar nada. Un «estás al día» habría sido
+  un falso positivo (nunca habría llegado a la red), y el viejo «Actualizaciones: Fase 5» habría
+  significado que el stub seguía vivo. No pasó ninguna de las dos.
 
 ## Self-Check: PASSED
 
-Ficheros declarados: existen (`updater.ts` creado, los 5 modificados en el diff).
-Commits declarados: existen (`1b3531e`, `58aa1aa`).
+Ficheros declarados: existen (`updater.ts` creado, los 6 modificados en el diff).
+Commits declarados: existen (`1b3531e`, `58aa1aa`, `d8584e2`).

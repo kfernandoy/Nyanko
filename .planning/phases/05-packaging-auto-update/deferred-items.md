@@ -1,12 +1,12 @@
 # Deferred items — Fase 05
 
-Hallazgos fuera del alcance del plan en el que se descubrieron. NO se arreglaron.
+Hallazgos fuera del alcance del plan en el que se descubrieron.
 
-## D-I-01 — El asar empaqueta el árbol de fuentes entero, incluidos dotfiles
+## ~~D-I-01 — El asar empaqueta el árbol de fuentes entero, incluidos dotfiles~~ → **RESUELTO** (`d8584e2`)
 
 - **Descubierto en:** Plan 05-02 (Tarea 3, al inspeccionar `app.asar` del instalador construido)
-- **Qué es:** `electron-builder.yml` (Plan 01) no declara `files:`, así que el default de
-  electron-builder mete en `app.asar` todo lo que no esté excluido. Listado real del paquete:
+- **Qué era:** `electron-builder.yml` (Plan 01) no declaraba `files:`, así que el default de
+  electron-builder metía en `app.asar` todo lo que hay bajo `apps/desktop`:
 
   ```
   \.claude\settings.local.json
@@ -18,16 +18,21 @@ Hallazgos fuera del alcance del plan en el que se descubrieron. NO se arreglaron
   \electron.vite.config.ts, \tsconfig.json, \vite.config.ts, \scripts\...
   ```
 
-  El código que la app EJECUTA (`\out\main`, `\out\preload`, `\out\renderer`) está correcto; esto
-  es peso muerto y superficie de información, no un fallo funcional.
+  El código que la app EJECUTA (`\out\main`, `\out\preload`, `\out\renderer`) estaba correcto: era
+  peso muerto y superficie de información, no un fallo funcional. Pero un `.asar` no está cifrado
+  —se extrae con un comando— y las waves 5-6 publican este instalador.
 
-- **Por qué importa:** `.env.development` y `.claude/settings.local.json` viajan dentro de un
-  paquete que se distribuye a usuarios. Un `.asar` no está cifrado: se extrae con `npx asar
-  extract` en un comando. Si alguno de esos ficheros contiene algo que no deba salir de la
-  máquina de desarrollo, ya está publicado. **No pude leer `.env.development` para comprobarlo:
-  mis permisos deniegan esa ruta, y no lo eludí.** Alguien con acceso debe mirarlo.
-- **Por qué NO se arregló aquí:** es la config de empaquetado del Plan 01
-  (`apps/desktop/electron-builder.yml`); ninguno de los ficheros de este plan la toca. Tocarla
-  habría cambiado el instalador que este mismo plan tiene que verificar en su checkpoint.
-- **Arreglo:** un bloque `files:` en `electron-builder.yml` que liste solo `out/**` (+ `package.json`),
-  y reconstruir. Debería además adelgazar bastante el paquete.
+- **Investigación, hecha ANTES de tocar nada: NO había fuga.** El `.env` que contiene el
+  `NYANKO_ANILIST_CLIENT_SECRET` es el del **backend**, y nunca viajó. La búsqueda del secreto
+  literal por todo `release/win-unpacked` no lo encuentra en ningún sitio — ni dentro del asar ni
+  dentro del sidecar de PyInstaller. Higiene, no un incidente.
+
+- **Arreglo:** bloque `files:` en `apps/desktop/electron-builder.yml` con exclusiones **negativas**
+  sobre `**/*` (`!.claude${/*}`, `!.env*`, `!electron-builder.yml`). Deliberadamente NO se reescribió
+  la whitelist de lo que sí entra: restructurar eso es lo que rompe paquetes.
+
+- **Re-verificado tras reconstruir:** asar limpio (ni `.claude` ni `.env`), layout de recursos
+  intacto (sidecar, ambos bundles de extensión, icono, `app-update.yml`) y `out\main\index.js` sigue
+  extrayéndose del asar con el updater dentro (8 referencias a `autoUpdater`). El arreglo entró
+  **antes** de la verificación humana del Plan 02, así que el humano validó exactamente el paquete
+  que se va a publicar.

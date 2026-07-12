@@ -6,14 +6,14 @@ current_phase: 05
 current_phase_name: packaging-auto-update
 status: executing
 stopped_at: Completed 05-03-PLAN.md (D-02 rama A + e2e verificado por el usuario)
-last_updated: "2026-07-12T00:00:00.000Z"
+last_updated: "2026-07-12T08:50:48.254Z"
 last_activity: 2026-07-12
-last_activity_desc: 05-03 complete — migración Tauri→Electron cableada y verificada e2e
+last_activity_desc: "05-03 completo: D-02 resuelto por experimento, rama A cableada, e2e OK"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 15
-  completed_plans: 12
+  completed_plans: 13
   percent: 80
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-10)
 ## Current Position
 
 Phase: 05 (packaging-auto-update) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute (siguiente: 05-02, electron-updater — wave 4)
 Last activity: 2026-07-12 — 05-03 completo: D-02 resuelto por experimento, rama A cableada, e2e OK
 
@@ -73,6 +73,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 05 P01 | 55m | 3 tasks | 7 files |
 | Phase 05 P05 | ~12 min | 1 tasks | 4 files |
 | Phase 05 P03 | ~35 min | 2 tasks | 1 files |
+| Phase 05 P02 | ~35 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,8 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-03: el `ExecWait` usa `_?=<InstallLocation>` (desinstalación síncrona real) + remate `Delete`/`RMDir /r`. No es por el directorio: es porque Tauri y electron-builder crean el MISMO `$SMPROGRAMS\Nyanko.lnk`, y sin `_?=` el uninstaller rezagado (retorna en 2,5 s, sigue borrando detrás) se lleva por delante el acceso directo recién creado. No "simplificar" a un ExecWait pelado
 - [Phase 05]: 05-03: exe de Tauri = `nyanko-desktop.exe`, exe de Electron = `Nyanko.exe` — nombres DISTINTOS: instalar encima no habría pisado nada (esto es lo que habría roto la rama B)
 - [Phase 05]: 05-03 (verificación humana): el icono en bandeja de la 0.2.0 empaquetada cierra el hueco que 05-05 dejó abierto a propósito (su rama `isPackaged` no era ejecutable en dev)
+- [Phase 05]: El feed del updater vive en app-update.yml dentro del paquete, nunca en codigo — T-05-04: si el origen fuese configurable desde el main o el renderer, un renderer comprometido podria apuntar el updater a un exe arbitrario
+- [Phase 05]: El bloque files: del asar usa exclusiones negativas, no una whitelist — Reescribir la lista de lo que SI entra en el paquete es lo que rompe paquetes; sacar lo que sobra (!.claude, !.env*) es el diff minimo
 
 ### Pending Todos
 
@@ -116,6 +119,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-12
+Last session: 2026-07-12T08:50:08.645Z
 Stopped at: Completed 05-03-PLAN.md — siguiente 05-02 (electron-updater, wave 4)
 Resume file: None
