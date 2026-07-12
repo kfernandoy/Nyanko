@@ -335,6 +335,7 @@ class Database:
             self._add_column(connection, "media", "volume_count", "INTEGER")
             self._add_column(connection, "media_titles", "normalized_title", "TEXT")
             self._backfill_normalized_titles(connection)
+            self._backfill_media_types(connection)
             self._add_column(connection, "library_entries", "started_at", "TEXT")
             self._add_column(connection, "library_entries", "completed_at", "TEXT")
             self._add_column(connection, "torrent_sources", "kind", "TEXT NOT NULL DEFAULT 'release'")
@@ -375,6 +376,23 @@ class Database:
                 (normalize_title(row["title"]).casefold(), row["media_id"], row["language"], row["title"])
                 for row in rows
             ),
+        )
+
+    @staticmethod
+    def _backfill_media_types(connection: sqlite3.Connection) -> None:
+        # Repara filas de `media` anteriores a que sync_media_details escribiera
+        # media_type: la ficha cacheada ya sabe si es ANIME o MANGA. Solo toca las
+        # que no cuadran, así que a partir del primer arranque no reescribe nada.
+        connection.execute(
+            "UPDATE media SET media_type = ("
+            "SELECT media_type FROM media_details_cache d "
+            "WHERE d.media_id = media.id AND d.media_type IN ('ANIME', 'MANGA') "
+            "LIMIT 1) "
+            "WHERE id IN ("
+            "SELECT d.media_id FROM media_details_cache d "
+            "JOIN media m ON m.id = d.media_id "
+            "WHERE d.media_type IN ('ANIME', 'MANGA') "
+            "AND (m.media_type IS NULL OR m.media_type != d.media_type))"
         )
 
     @staticmethod
@@ -1286,12 +1304,13 @@ class Database:
                         ),
                     )
                 connection.execute(
-                    "UPDATE media SET episode_count = COALESCE(?, episode_count), "
+                    "UPDATE media SET media_type = ?, episode_count = COALESCE(?, episode_count), "
                     "chapter_count = COALESCE(?, chapter_count), "
                     "volume_count = COALESCE(?, volume_count), "
                     "format = COALESCE(?, format), release_year = COALESCE(?, release_year), "
                     "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                     (
+                        media_type,
                         payload.get("episodes"),
                         payload.get("chapters"),
                         payload.get("volumes"),
@@ -1419,11 +1438,12 @@ class Database:
             else:
                 media_id = int(identity["media_id"])
             connection.execute(
-                "UPDATE media SET format = ?, episode_count = ?, chapter_count = ?, "
+                "UPDATE media SET media_type = ?, format = ?, episode_count = ?, chapter_count = ?, "
                 "volume_count = ?, release_year = COALESCE(?, release_year), "
                 "updated_at = CURRENT_TIMESTAMP "
                 "WHERE id = ?",
                 (
+                    media_type,
                     payload.get("format"),
                     payload.get("episodes"),
                     payload.get("chapters"),
@@ -2031,6 +2051,7 @@ class Database:
         extra_payload: dict | None = None,
     ) -> None:
         with self.connect() as connection:
+            payload = dict(extra_payload or {})
             # Fechas/notas viven en original_payload: fusionarlas mantiene la copia
             # local consistente sin esperar la próxima sincronización del proveedor.
             if extra_payload:
@@ -2039,13 +2060,42 @@ class Database:
                     "WHERE account_id = ? AND media_id = ?",
                     (account_id, media_id),
                 ).fetchone()
+                if payload.get("media_type") in {"ANIME", "MANGA"}:
+                    connection.execute(
+                        "UPDATE media SET media_type = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (payload["media_type"], media_id),
+                    )
                 if row is not None:
                     payload = json.loads(row["original_payload"]) if row["original_payload"] else {}
                     payload.update(extra_payload)
                     connection.execute(
                         "UPDATE remote_library_entries SET original_payload = ? "
                         "WHERE account_id = ? AND media_id = ?",
-                        (json.dumps(payload), account_id, media_id),
+                        (json.dumps(payload, ensure_ascii=False, separators=(",", ":")), account_id, media_id),
+                    )
+                else:
+                    entry_status = status or payload.get("status") or "PLANNING"
+                    entry_progress = progress if progress is not None else int(payload.get("progress") or 0)
+                    entry_score = score if score is not None else payload.get("score")
+                    payload.update({"status": entry_status, "progress": entry_progress})
+                    if entry_score is not None:
+                        payload["score"] = entry_score
+                    connection.execute(
+                        "INSERT INTO remote_library_entries"
+                        "(account_id, media_id, status, progress, score, original_payload) "
+                        "VALUES (?, ?, ?, ?, ?, ?) "
+                        "ON CONFLICT(account_id, media_id) DO UPDATE SET "
+                        "status = excluded.status, progress = excluded.progress, "
+                        "score = excluded.score, original_payload = excluded.original_payload, "
+                        "last_synced_at = CURRENT_TIMESTAMP",
+                        (
+                            account_id,
+                            media_id,
+                            entry_status,
+                            entry_progress,
+                            entry_score,
+                            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                        ),
                     )
             updates: list[str] = []
             parameters: list[object] = []
@@ -2078,14 +2128,19 @@ class Database:
                 and account["is_primary"]
                 and account["provider_id"] == (primary_provider["value"] if primary_provider else "anilist")
             ):
-                local_updates = updates[:]
-                local_parameters = parameters[:-2]
-                local_parameters.extend([media_id])
-                connection.execute(
-                    f"UPDATE library_entries SET {', '.join(local_updates)}, "
-                    "updated_at = CURRENT_TIMESTAMP WHERE media_id = ?",
-                    local_parameters,
-                )
+                current = connection.execute(
+                    "SELECT status, progress, score FROM remote_library_entries "
+                    "WHERE account_id = ? AND media_id = ?",
+                    (account_id, media_id),
+                ).fetchone()
+                if current:
+                    connection.execute(
+                        "INSERT INTO library_entries(media_id, status, progress, score) "
+                        "VALUES (?, ?, ?, ?) ON CONFLICT(media_id) DO UPDATE SET "
+                        "status = excluded.status, progress = excluded.progress, "
+                        "score = excluded.score, updated_at = CURRENT_TIMESTAMP",
+                        (media_id, current["status"], current["progress"], current["score"]),
+                    )
 
     def enrich_provider_library(
         self, provider_id: str, items: list[object]

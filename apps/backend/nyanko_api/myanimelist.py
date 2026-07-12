@@ -278,33 +278,36 @@ class MyAnimeListClient:
         return response.json()
 
     async def edit_entry(
-        self, access_token: str, external_id: int, update: MediaEntryUpdate
+        self, access_token: str, external_id: int, update: MediaEntryUpdate, media_type: str = "ANIME"
     ) -> MediaListEntry:
         headers = {"Authorization": f"Bearer {access_token}"}
+        manga = media_type == "MANGA"
         data: dict[str, object] = {}
         if update.status is not None:
-            data["status"] = from_canonical_status("mal", update.status)
+            status = from_canonical_status("mal", update.status)
+            data["status"] = {"watching": "reading", "plan_to_watch": "plan_to_read"}.get(status, status) if manga else status
         if update.progress is not None:
-            data["num_watched_episodes"] = update.progress
+            data["num_chapters_read" if manga else "num_watched_episodes"] = update.progress
         if update.score is not None:
             score = convert_score(
                 update.score, ScoreFormat.POINT_100, ScoreFormat.POINT_10
             )
             data["score"] = int(score) if score is not None else 0
         if update.repeat is not None:
-            data["num_times_rewatched"] = update.repeat
+            data["num_times_reread" if manga else "num_times_rewatched"] = update.repeat
         if update.notes is not None:
             data["comments"] = update.notes
         if update.started_at is not None:
             data["start_date"] = _fuzzy_to_mal_date(update.started_at)
         if update.completed_at is not None:
             data["finish_date"] = _fuzzy_to_mal_date(update.completed_at)
+        kind = "manga" if manga else "anime"
         response = await self.client.patch(
-            f"{API_URL}/anime/{external_id}/my_list_status",
+            f"{API_URL}/{kind}/{external_id}/my_list_status",
             headers=headers,
             data=data,
         )
-        return self._list_entry(response.json())
+        return self._list_entry(response.json(), manga=manga)
 
     async def delete_entry(self, access_token: str, external_id: int) -> bool:
         headers = {"Authorization": f"Bearer {access_token}"}

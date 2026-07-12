@@ -901,6 +901,33 @@ def _overlay_recent_edits(
     return result
 
 
+def _local_edit_activity(database: Database, provider: str, account: str, limit: int = 10) -> list[ActivityItem]:
+    items: list[ActivityItem] = []
+    for event in database.get_recent_playback_events(limit=limit, source="edit"):
+        if event.get("provider_id") != provider:
+            continue
+        external_id = event.get("media_id")
+        if external_id is None and event.get("canonical_media_id") is not None:
+            external_id = database.external_id_for_account(int(event["canonical_media_id"]), provider)
+        if external_id is None:
+            continue
+        details = _local_media_details(database, provider, account, int(external_id))
+        entry = _list_entry_from_remote(database.get_remote_entry(provider, account, int(event["canonical_media_id"]))) if event.get("canonical_media_id") else None
+        detected = str(event["detected_at"]).replace(" ", "T")
+        created_at = int(datetime.fromisoformat(detected).replace(tzinfo=UTC).timestamp())
+        items.append(ActivityItem(
+            id=-int(event["id"]),
+            status=(entry.status if entry else "UPDATED"),
+            progress=str(event["progress_after"]) if event.get("progress_after") is not None else None,
+            created_at=created_at,
+            media_id=int(external_id),
+            title=(details.title if details else event.get("anime_title") or event["raw_title"]),
+            cover_image=details.cover_image if details else None,
+            media_type=details.media_type if details else "ANIME",
+        ))
+    return items
+
+
 def _get_provider(settings: Settings, provider: str):
     return build_provider_registry(settings).get(provider)
 
@@ -1213,8 +1240,9 @@ async def _send_mutation(settings: Settings, row: dict) -> None:
     media_provider = _get_provider(settings, provider_id)
     payload = json.loads(row["payload"])
     if row["kind"] == "edit_entry":
+        media_type = payload.pop("media_type", "ANIME")
         await media_provider.edit_entry(
-            token, int(row["external_id"]), MediaEntryUpdate(**payload)
+            token, int(row["external_id"]), MediaEntryUpdate(**payload), media_type=media_type
         )
     elif row["kind"] == "update_progress":
         await media_provider.update_progress(token, ProgressUpdate(**payload))
@@ -1839,6 +1867,27 @@ def list_library_folders(
     database: Database = Depends(get_database),
 ) -> list[LibraryFolder]:
     return [LibraryFolder.model_validate(folder) for folder in database.get_library_folders()]
+
+
+@app.get("/api/library/folders/{folder_id}/subfolders", response_model=list[str])
+def list_library_subfolders(
+    folder_id: int,
+    database: Database = Depends(get_database),
+) -> list[str]:
+    folder = next((item for item in database.get_library_folders() if item["id"] == folder_id), None)
+    if folder is None:
+        raise HTTPException(status_code=404, detail="Carpeta no encontrada")
+    if not folder["recursive"]:
+        return []
+    root = Path(folder["path"])
+    if not root.is_dir():
+        return []
+    subfolders: list[str] = []
+    for dirpath, dirs, _files in os.walk(root):
+        dirs.sort()
+        for name in dirs:
+            subfolders.append(str((Path(dirpath) / name).relative_to(root)))
+    return subfolders
 
 
 @app.post("/api/library/folders", response_model=LibraryFolder)
@@ -2499,7 +2548,7 @@ async def activity(
             lambda: media_provider.activity(token, page, per_page),
         )
         response.headers["X-Cache-Status"] = status.value
-        return items
+        return (_local_edit_activity(database, provider, account) + items)[:per_page] if page == 1 else items
     except Exception as error:
         raise_provider_auth_error(error, provider, account)
 
@@ -2780,20 +2829,73 @@ async def edit_media_entry(
     update: MediaEntryUpdate,
     provider: str = "anilist",
     account: str = "default",
+    media_type: str = "ANIME",
     token: str = Depends(require_token),
     settings: Settings = Depends(get_settings),
     database: Database = Depends(get_database),
 ) -> MediaListEntry:
     try:
+        if media_type not in {"ANIME", "MANGA"}:
+            raise HTTPException(status_code=422, detail="Invalid media type")
         media_provider = _get_provider(settings, provider)
-        entry = await media_provider.edit_entry(token, media_id, update)
-        database.invalidate_cache(account_cache_key(provider, account, "list"))
+        if media_type == "MANGA" and not media_provider.capabilities.manga:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{media_provider.display_name} no soporta manga",
+            )
+        entry = await media_provider.edit_entry(token, media_id, update, media_type=media_type)  # type: ignore[arg-type]
+        canonical_id: int | None = None
+        title = f"#{media_id}"
+        account_row = next(
+            (row for row in database.get_accounts() if row["provider"] == provider and row["alias"] == account),
+            None,
+        )
+        if account_row:
+            details = (
+                await media_provider.manga_details(token, media_id)
+                if media_type == "MANGA"
+                else await media_provider.details(token, media_id)
+            )
+            title = details.title
+            canonical_id = database.sync_media_details(provider, media_id, details, media_type=media_type)
+            if canonical_id is not None:
+                payload = _media_item_from_details(details, media_id, provider).model_dump(mode="json", exclude_none=True)
+                payload.update({"status": entry.status, "progress": entry.progress})
+                if entry.score is not None:
+                    payload["score"] = entry.score
+                database.update_remote_library_entry(
+                    account_row["id"], canonical_id,
+                    status=entry.status, progress=entry.progress, score=entry.score,
+                    extra_payload=payload,
+                )
+        event_id = database.insert_playback_event(
+            source="edit",
+            raw_title=title,
+            anime_title=title,
+            episode=entry.progress or None,
+            status="confirmed",
+            provider_id=provider,
+            account_id=account_row["id"] if account_row else None,
+            canonical_media_id=canonical_id,
+        )
+        database.update_playback_event(
+            event_id,
+            status="confirmed",
+            media_id=media_id,
+            progress_after=entry.progress or None,
+            provider_id=provider,
+            account_id=account_row["id"] if account_row else None,
+            canonical_media_id=canonical_id,
+        )
+        database.invalidate_cache(account_cache_key(provider, account, "list:manga" if media_type == "MANGA" else "list"))
         database.invalidate_cache(account_cache_key(provider, account, "activity"))
         database.invalidate_cache(account_cache_key(provider, account, "statistics"))
         database.invalidate_cache(
-            account_cache_key(provider, account, f"media:{media_id}")
+            account_cache_key(provider, account, f"media:manga:{media_id}" if media_type == "MANGA" else f"media:{media_id}")
         )
         return entry
+    except HTTPException:
+        raise
     except Exception as error:
         raise_provider_auth_error(error, provider, account)
 
@@ -2847,12 +2949,24 @@ async def bulk_update_library_entry(
             status_code=404,
             detail=f"El anime no está vinculado a la cuenta de {_provider_display_name(provider_id)}",
         )
+    details = _local_media_details(database, provider_id, alias, int(external_id))
+    media_type = "MANGA" if details and details.media_type == "MANGA" else "ANIME"
     _apply_entry_rules(database, provider_id, alias, media_id, update)
     # Efecto local inmediato + envío al proveedor en cola: la UI no espera a la API.
     if account:
-        extra = update.model_dump(
-            mode="json", exclude_none=True, include={"repeat", "notes", "private"},
+        extra = (
+            _media_item_from_details(details, int(external_id), provider_id).model_dump(mode="json", exclude_none=True)
+            if details else {}
         )
+        extra.update(update.model_dump(
+            mode="json", exclude_none=True, include={"repeat", "notes", "private"},
+        ))
+        if update.status is not None:
+            extra["status"] = update.status
+        if update.progress is not None:
+            extra["progress"] = update.progress
+        if update.score is not None:
+            extra["score"] = update.score
         # Fechas como texto YYYY-MM-DD: es el formato del payload local (el dict
         # FuzzyDate crudo rompía la validación de MediaItem en la vista combinada).
         for field in ("started_at", "completed_at"):
@@ -2864,6 +2978,12 @@ async def bulk_update_library_entry(
             status=update.status, progress=update.progress, score=update.score,
             extra_payload=extra or None,
         )
+    database.invalidate_cache(account_cache_key(provider_id, alias, "list:manga" if media_type == "MANGA" else "list"))
+    database.invalidate_cache(account_cache_key(provider_id, alias, "activity"))
+    database.invalidate_cache(account_cache_key(provider_id, alias, "statistics"))
+    database.invalidate_cache(
+        account_cache_key(provider_id, alias, f"media:manga:{external_id}" if media_type == "MANGA" else f"media:{external_id}")
+    )
     title = database.primary_title(media_id) or f"#{external_id}"
     event_id = database.insert_playback_event(
         source="edit",
@@ -2882,7 +3002,7 @@ async def bulk_update_library_entry(
         )
     database.enqueue_mutation(
         provider_id, alias, "edit_entry", external_id,
-        update.model_dump(mode="json", exclude_none=True),
+        {**update.model_dump(mode="json", exclude_none=True), "media_type": media_type},
         media_id=media_id, event_id=event_id,
     )
     local_updated = bool(account and account["is_primary"])
@@ -3980,6 +4100,8 @@ def _media_item_from_details(
         progress=entry.progress if entry else 0,
         score=entry.score if entry else None,
         episodes=details.episodes,
+        chapters=details.chapters,
+        volumes=details.volumes,
         cover_image=details.cover_image,
         title_romaji=details.title_romaji,
         title_english=details.title_english,
@@ -3988,6 +4110,7 @@ def _media_item_from_details(
         genres=details.genres,
         year=details.season_year,
         format=details.format,
+        media_type=details.media_type,
         site_url=details.site_url,
         canonical_id=None,
         provider=provider,

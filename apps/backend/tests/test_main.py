@@ -1539,6 +1539,37 @@ async def test_refresh_mal_if_needed_no_op_when_valid():
 
 
 @pytest.mark.asyncio
+async def test_mal_edit_entry_manga_uses_manga_endpoint_and_fields():
+    from nyanko_api.models import MediaEntryUpdate
+    from nyanko_api.myanimelist import API_URL, MyAnimeListClient
+
+    seen = {}
+
+    class Response:
+        def json(self):
+            return {"status": "reading", "score": 7, "num_chapters_read": 2, "num_times_reread": 1}
+
+    class FakeHttp:
+        async def patch(self, url, headers, data):
+            seen.update({"url": url, "headers": headers, "data": data})
+            return Response()
+
+    client = MyAnimeListClient(Settings())
+    client.client = FakeHttp()
+
+    entry = await client.edit_entry(
+        "token", 44, MediaEntryUpdate(status="CURRENT", progress=2, repeat=1), "MANGA"
+    )
+
+    assert seen["url"] == f"{API_URL}/manga/44/my_list_status"
+    assert seen["data"]["status"] == "reading"
+    assert seen["data"]["num_chapters_read"] == 2
+    assert seen["data"]["num_times_reread"] == 1
+    assert entry.status == "CURRENT"
+    assert entry.progress == 2
+
+
+@pytest.mark.asyncio
 async def test_refresh_mal_if_needed_refreshes_expired(monkeypatch):
     new_cred = MyAnimeListCredential(
         access_token="new-token",
@@ -1634,6 +1665,120 @@ def test_local_library_endpoint(client):
     resp = client.get("/api/library/local")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
+
+
+def test_library_folder_subfolders_endpoint(client, database, tmp_path):
+    root = tmp_path / "Anime"
+    (root / "Season 1" / "OVA").mkdir(parents=True)
+    folder = database.add_library_folder(str(root), True)
+
+    resp = client.get(f"/api/library/folders/{folder['id']}/subfolders")
+
+    assert resp.status_code == 200
+    assert set(resp.json()) == {"Season 1", str(Path("Season 1") / "OVA")}
+
+
+def test_edit_media_entry_manga_invalidates_manga_cache(client, database, monkeypatch):
+    import nyanko_api.main as main_module
+    from nyanko_api.models import FuzzyDate, MediaListEntry
+
+    seen = {}
+
+    class FakeProvider:
+        name = "anilist"
+        display_name = "AniList"
+        capabilities = ProviderCapabilities(manga=True)
+
+        async def edit_entry(self, credential, external_id, update, media_type="ANIME"):
+            seen["media_type"] = media_type
+            return MediaListEntry(
+                id=1, status=update.status or "CURRENT", score=0, progress=update.progress or 0,
+                repeat=0, private=False, started_at=FuzzyDate(), completed_at=FuzzyDate(),
+            )
+
+        async def manga_details(self, credential, external_id):
+            return MediaDetails(
+                id=external_id, title="Yotsuba", synonyms=[], site_url="x",
+                media_type="MANGA", status="FINISHED", chapters=10, genres=[],
+                studios=[], score_format="POINT_100",
+            )
+
+        async def activity(self, credential, page=1, limit=30):
+            return []
+
+    monkeypatch.setattr(main_module, "_get_provider", lambda settings, provider: FakeProvider())
+    database.ensure_provider("anilist", "AniList")
+    database.ensure_account("anilist", "default")
+    database.set_cache("anilist:default:list:manga", [], 3600)
+
+    resp = client.put("/api/media/123/entry?media_type=MANGA", json={"status": "CURRENT", "progress": 0})
+
+    assert resp.status_code == 200
+    assert seen["media_type"] == "MANGA"
+    assert database.get_cache("anilist:default:list:manga") is None
+    assert database.get_combined_library("MANGA", "anilist", "default")[0]["title"] == "Yotsuba"
+    assert client.get("/api/library/manga").json()[0]["title"] == "Yotsuba"
+    assert client.get("/api/playback/history").json()[0]["raw_title"] == "Yotsuba"
+    activity = client.get("/api/activity").json()
+    assert activity[0]["title"] == "Yotsuba"
+    assert activity[0]["media_type"] == "MANGA"
+
+
+def test_bulk_update_new_manga_entry_is_visible_locally(client, database):
+    database.ensure_provider("anilist", "AniList")
+    database.ensure_account("anilist", "default")
+    canonical = database.sync_media_details("anilist", 321, MediaDetails(
+        id=321, title="Yotsuba", synonyms=[], site_url="x",
+        media_type="MANGA", status="FINISHED", chapters=10, genres=[],
+        studios=[], score_format="POINT_100",
+    ), media_type="MANGA")
+    database.set_cache("anilist:default:list:manga", [], 3600)
+
+    resp = client.post(f"/api/library/bulk-update?media_id={canonical}", json={"status": "CURRENT", "progress": 1})
+
+    assert resp.status_code == 200
+    assert database.get_cache("anilist:default:list:manga") is None
+    item = database.get_combined_library("MANGA", "anilist", "default")[0]
+    assert item["title"] == "Yotsuba"
+    assert item["status"] == "CURRENT"
+    assert item["progress"] == 1
+
+
+def test_sync_media_details_corrects_existing_media_type(database):
+    anime_id = database.sync_media_details("anilist", 777, MediaDetails(
+        id=777, title="Wrong Type", synonyms=[], site_url="x",
+        media_type="ANIME", status="FINISHED", episodes=12, genres=[],
+        studios=[], score_format="POINT_100",
+    ), media_type="ANIME")
+
+    manga_id = database.sync_media_details("anilist", 777, MediaDetails(
+        id=777, title="Wrong Type", synonyms=[], site_url="x",
+        media_type="MANGA", status="FINISHED", chapters=20, genres=[],
+        studios=[], score_format="POINT_100",
+    ), media_type="MANGA")
+
+    assert manga_id == anime_id
+    with database.connect() as connection:
+        media_type = connection.execute("SELECT media_type FROM media WHERE id = ?", (manga_id,)).fetchone()["media_type"]
+    assert media_type == "MANGA"
+
+
+def test_initialize_backfills_media_type_from_details_cache(database):
+    # Fila "vieja": la ficha cacheada dice MANGA pero `media` se quedó en ANIME
+    # (se escribió antes de que sync_media_details persistiera media_type).
+    media_id = database.sync_media_details("anilist", 778, MediaDetails(
+        id=778, title="Legacy Row", synonyms=[], site_url="x",
+        media_type="MANGA", status="FINISHED", chapters=20, genres=[],
+        studios=[], score_format="POINT_100",
+    ), media_type="MANGA")
+    with database.connect() as connection:
+        connection.execute("UPDATE media SET media_type = 'ANIME' WHERE id = ?", (media_id,))
+
+    database.initialize()
+
+    with database.connect() as connection:
+        repaired = connection.execute("SELECT media_type FROM media WHERE id = ?", (media_id,)).fetchone()["media_type"]
+    assert repaired == "MANGA"
 
 
 def test_local_library_enriches_matched_series(client, database):

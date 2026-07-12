@@ -216,6 +216,7 @@ class ActivityItem(BaseModel):
     media_id: int
     title: str
     cover_image: str | None = None
+    media_type: str = "ANIME"
 
 
 class SeasonMedia(BaseModel):

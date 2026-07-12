@@ -72,7 +72,7 @@ class MediaProvider(Protocol):
     async def update_progress(self, credential: str, update: ProgressUpdate) -> dict: ...
 
     async def edit_entry(
-        self, credential: str, external_id: int, update: MediaEntryUpdate
+        self, credential: str, external_id: int, update: MediaEntryUpdate, media_type: MediaType = "ANIME"
     ) -> MediaListEntry: ...
 
     async def delete_entry(self, credential: str, entry_id: int) -> bool: ...
@@ -149,7 +149,7 @@ class AniListProvider:
         return await self.client.update_progress(credential, update)
 
     async def edit_entry(
-        self, credential: str, external_id: int, update: MediaEntryUpdate
+        self, credential: str, external_id: int, update: MediaEntryUpdate, media_type: MediaType = "ANIME"
     ) -> MediaListEntry:
         return await self.client.edit_entry(credential, external_id, update)
 
@@ -238,10 +238,10 @@ class MyAnimeListProvider:
         return await self.client.update_progress(parsed.access_token, update)
 
     async def edit_entry(
-        self, credential: str, external_id: int, update: MediaEntryUpdate
+        self, credential: str, external_id: int, update: MediaEntryUpdate, media_type: MediaType = "ANIME"
     ) -> MediaListEntry:
         parsed = MyAnimeListCredential.loads(credential)
-        return await self.client.edit_entry(parsed.access_token, external_id, update)
+        return await self.client.edit_entry(parsed.access_token, external_id, update, media_type)
 
     async def delete_entry(self, credential: str, entry_id: int) -> bool:
         parsed = MyAnimeListCredential.loads(credential)
@@ -316,7 +316,7 @@ class KitsuProvider:
         parsed = KitsuCredential.loads(credential)
         return await self.client.update_progress(parsed.access_token, update)
 
-    async def edit_entry(self, credential: str, external_id: int, update: MediaEntryUpdate) -> MediaListEntry:
+    async def edit_entry(self, credential: str, external_id: int, update: MediaEntryUpdate, media_type: MediaType = "ANIME") -> MediaListEntry:
         parsed = KitsuCredential.loads(credential)
         return await self.client.edit_entry(parsed.access_token, external_id, update)
 
