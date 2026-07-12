@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { openLogsFolder } from "./logging";
 import { currentWindowPrefs, updateWindowPrefs } from "./window-prefs";
 import { setDiscordActivity, clearDiscordActivity } from "./discord";
+import { checkForUpdate, downloadAndInstallUpdate } from "./updater";
 
 // Whitelist dura: el renderer solo puede leer estos ficheros del userData, nunca
 // una ruta arbitraria (path traversal). El sidecar escribe ambos en NYANKO_DATA_DIR
@@ -102,4 +103,11 @@ export function registerIpc({ onRetry }: { onRetry: () => void }): void {
   ipcMain.handle("autostart:set", (_e, enabled: unknown) => {
     app.setLoginItemSettings({ openAtLogin: Boolean(enabled), args: ["--minimized"] });
   });
+
+  // ── Auto-update (PKG-02, Fase 5) ──
+  // T-05-04/T-05-05: CERO payload en los dos canales. El renderer no aporta URL ni
+  // versión ni ruta — el feed vive en app-update.yml dentro del paquete — y
+  // downloadAndInstallUpdate() rechaza si no hubo un check previo con update.
+  ipcMain.handle("updates:check", () => checkForUpdate());
+  ipcMain.handle("updates:install", () => downloadAndInstallUpdate());
 }
