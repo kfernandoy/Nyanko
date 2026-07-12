@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 05
 current_phase_name: packaging-auto-update
-status: executing
-stopped_at: Completed 05-04-PLAN.md (v0.2.0 publicado; D-01 probado sobre una 0.1.15 real)
-last_updated: "2026-07-12T09:40:00.000Z"
+status: phase_complete
+stopped_at: Completed 05-06-PLAN.md (PKG-02 cerrado; Fase 5 completa; 0.2.1/0.2.2/0.2.3 publicados)
+last_updated: "2026-07-12T21:30:00.000Z"
 last_activity: 2026-07-12
-last_activity_desc: "05-04 completo: release v0.2.0 publicado con los 4 artefactos; una 0.1.15 real migró sola a Electron"
+last_activity_desc: "05-06 completo: una 0.2.0 instalada se auto-actualizó a 0.2.1 (descarga diferencial + SHA512 + killSidecar + instalación silenciosa). PKG-02 CERRADO"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 15
-  completed_plans: 14
-  percent: 93
+  completed_plans: 15
+  percent: 100
 ---
 
 # Project State
@@ -28,28 +28,30 @@ See: .planning/PROJECT.md (updated 2026-07-10)
 
 ## Current Position
 
-Phase: 05 (packaging-auto-update) — EXECUTING
-Plan: 6 of 6
-Status: Ready to execute (siguiente: 05-06, auto-update e2e real con el release 0.2.1 — cierra PKG-02)
-Last activity: 2026-07-12 — 05-04 completo: v0.2.0 publicado; una instalación 0.1.15 real migró sola a Electron
+Phase: 05 (packaging-auto-update) — **COMPLETE** (6/6 plans)
+Status: Fase 5 cerrada. **La migración 0.2 (Tauri → Electron) está completa: 5/5 fases.**
+Last activity: 2026-07-12 — 05-06 completo: auto-update real 0.2.0 → 0.2.1 ejecutado y aprobado
 
-**Nyanko 0.2.0 está PUBLICADO:** https://github.com/kfernandoy/Nyanko/releases/tag/v0.2.0
-(cuatro artefactos: `.exe` + `latest.yml` + `.exe.sig` + `latest.json`).
+**PKG-02 CERRADO — ejecutado, no solo escrito.** Una 0.2.0 instalada detectó la 0.2.1, la descargó
+**diferencialmente** (766 KB de 128 MB, gracias al `.blockmap`), verificó su SHA512, ejecutó
+`killSidecar()` → `quitAndInstall(true, true)`, se reinstaló **sin asistente** y **se relanzó sola**
+como 0.2.1. Biblioteca intacta, cero `nyanko-api.exe` huérfanos. Gate humano aprobado 2026-07-12.
 
-**Estado de la máquina de pruebas: M2** — Nyanko 0.2.0 instalada en
-`%LOCALAPPDATA%\Programs\Nyanko` (llegó ahí **auto-migrando desde una 0.1.15 real**), biblioteca
-intacta, sin restos de Tauri. Es la precondición del checkpoint de 05-06. Backups en
-`C:\Users\kfern\Desktop\nyanko-backup-05-04` (fresco) y `…-05-03`.
+**Releases publicados:** v0.2.0, v0.2.1, v0.2.2, v0.2.3 — los cuatro artefactos cada uno, y ambos
+feeds (`latest.yml` de electron-updater + `latest.json` del puente Tauri) verificados contra la red.
 
-**PKG-02 sigue ABIERTO:** el camino feliz de electron-updater (descargar → SHA512 → matar sidecar →
-instalar → relanzar) necesita un SEGUNDO release y lo prueba el Plan 06 con la 0.2.1. Lo único
-ejercitado hasta ahora es su rama «estás al día».
+**Estado de la máquina de pruebas: M3** — Nyanko **0.2.3** instalada (llegó por auto-update encadenado
+desde la 0.2.0), biblioteca intacta con portadas, backfill en ~1,2 min.
+
+**Dos bugs PREEXISTENTES del backend que el update reveló** (ninguno regresión de la Fase 5), ambos
+tratados: portadas (D-I-02 — datos reparados, diseño a 0.3) y backfill clavado (arreglado y publicado
+como 0.2.2 + 0.2.3). Ver `phases/05-packaging-auto-update/deferred-items.md`.
 
 **Wave order (a ladder, not a fan — see ROADMAP note):**
 05-01 (electron-builder + build chain) → 05-05 (packaged icon) → 05-03 (D-02 migration gate)
 → 05-02 (electron-updater) → 05-04 (publish v0.2.0 + Tauri bridge) → 05-06 (real auto-update e2e)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -82,6 +84,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 05 P03 | ~35 min | 2 tasks | 1 files |
 | Phase 05 P02 | ~35 min | 3 tasks | 6 files |
 | Phase 05 P04 | ~75 min | 3 tasks | 4 files |
+| Phase 05 P06 | ~4 h | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -113,6 +116,11 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-04: **el desinstalador de electron-builder IGNORA `/S`** y abre su asistente, incluso con la `QuietUninstallString` que publica el propio registro. Cualquier automatización que cuente con un uninstall silencioso se colgará ahí (a los usuarios no les afecta: nadie desinstala en el camino de D-01)
 - [Phase 05]: 05-04: la md5 de `nyanko.sqlite3` **cambia con el uso** (SQLite reescribe páginas in situ, el tamaño no se mueve). Como invariante de «no se ha perdido la biblioteca» solo vale entre pasos en los que la app NO corre; el invariante bueno son los **conteos por tabla**
 - [Phase 05]: 05-04 / D-01 PROBADO: una instalación 0.1.15 real arrancó, sondeó `latest.json`, verificó la firma minisign y ejecutó el instalador 0.2.0 SOLA. Que el instalador llegue a arrancar ES la prueba de la firma (Tauri se niega a ejecutar un binario que no verifica)
+- [Phase 05]: 05-06 / **PKG-02 PROBADO**: una 0.2.0 instalada detectó la 0.2.1, la descargó, verificó SHA512, mató su sidecar (`killSidecar()` → `quitAndInstall(true,true)`), se reinstaló SIN asistente y se relanzó sola. Biblioteca intacta, cero sidecars huérfanos. Gate humano aprobado
+- [Phase 05]: 05-06: **el auto-update es DIFERENCIAL** — el `.blockmap` no es un asset de adorno: `main.log` mide `Full: 128,125.5 KB, To download: 766.47 KB (1%)`. Un update de 128 MB cuesta 766 KB
+- [Phase 05]: 05-06 / **CORRIGE AL 05-04**: los DOS BORRADORES con el mismo tag NO vienen de un publish fallido a medias (ese diagnóstico era FALSO). **electron-builder lanza sus publishers en PARALELO**: ambos comprueban «¿existe el release?» antes de que ninguno lo haya creado, y ambos lo crean (`creating GitHub release reason=release doesn't exist` dos veces en su propio log). Reproducido 3 de 3 en publicaciones limpias a la primera (0.2.1, 0.2.2, 0.2.3). La guarda del `publish-bridge` («exactamente UNO o aborta») protege del caso NORMAL, no de uno raro
+- [Phase 05]: 05-06: ni las portadas rotas ni el backfill clavado eran regresiones de la Fase 5 — son bugs PREEXISTENTES del backend que el reinicio del sidecar (inherente a todo update) se limitó a REVELAR
+- [Phase 05]: 05-06: **el timeout del cliente y el coste de la query son UN solo invariante**. El backfill no cambió: **AniList se degradó ~6x** (la misma query que su propio comentario mide en ~3,5 s tarda hoy 17-25 s) y el timeout de 15 s dejó de caber → todos los lotes expiraban y la barra se quedaba en 0/1811 **sin un solo error visible**. Arreglado pidiendo solo lo que la grid pinta (~13 min → ~1,2 min), publicado como 0.2.2 y 0.2.3
 
 ### Pending Todos
 
@@ -129,10 +137,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| Backend (0.3) | **D-I-02** — el backend persiste URLs de assets con el `host:puerto` dentro; si el sidecar cambia de puerto, la biblioteca se queda sin portadas de forma permanente y silenciosa. Datos reparados (3.874 URLs); el fallo de diseño sigue vivo | Deferred | 05-06 |
+| Backend (0.3) | **D-I-03** — `RateLimitedClient(requests_per_minute=90)` pero AniList reporta hoy `X-RateLimit-Limit: 30`. No muerde ahora (backfill secuencial, ~1 req/2 s) pero una ráfaga comería 429s | Deferred | 05-06 |
+
+Detalle completo en `phases/05-packaging-auto-update/deferred-items.md`.
 
 ## Session Continuity
 
-Last session: 2026-07-12T09:40:00.000Z
-Stopped at: Completed 05-04-PLAN.md — siguiente 05-06 (auto-update e2e real con la 0.2.1; cierra PKG-02)
+Last session: 2026-07-12T21:30:00.000Z
+Stopped at: Completed 05-06-PLAN.md — **Fase 5 completa (6/6) y con ella la migración 0.2 entera (5/5 fases)**. PKG-02 cerrado con evidencia. Siguiente: cierre de milestone
 Resume file: None

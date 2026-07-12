@@ -55,7 +55,7 @@ que Tauri hacía", verificable contra el comportamiento 0.1.15.
       `_internal`) y los bundles de extensión (`chromium`/`firefox`) como
       recursos.
 
-- [ ] **PKG-02**: `electron-updater` detecta, descarga e instala updates desde
+- [x] **PKG-02**: `electron-updater` detecta, descarga e instala updates desde
       GitHub Releases (verificando SHA512), deteniendo el sidecar antes de
       instalar.
 
@@ -99,4 +99,4 @@ que Tauri hacía", verificable contra el comportamiento 0.1.15.
 | NATIVE-05 | Phase 4 | Complete |
 | NATIVE-06 | Phase 4 | Complete |
 | PKG-01 | Phase 5 | Complete |
-| PKG-02 | Phase 5 | Pending |
+| PKG-02 | Phase 5 | Complete |

@@ -89,3 +89,31 @@ en orden de preferencia:
    `main.py:401` con `_local_asset_url(...) or ...`) en TODOS los caminos, no solo en algunos.
 3. Como mínimo, que un `cover_image_local` inalcanzable **caiga al `cover_image` remoto** en vez de
    dejar el hueco.
+
+## D-I-03 — El rate limit de AniList que creemos tener (90) ya no es el que nos dan (30)
+
+- **Descubierto en:** Plan 05-06 (2026-07-12), depurando el backfill clavado en 0/1811.
+- **Severidad:** baja **hoy**, trampa latente **mañana**.
+
+`anilist.py:482` construye el cliente así:
+
+```python
+_client = RateLimitedClient(requests_per_minute=90)
+```
+
+Ese 90 era el límite real de AniList cuando se escribió. **Hoy su cabecera `X-RateLimit-Limit`
+responde `30`.** Nuestro limitador cree tener 3x el presupuesto que tiene.
+
+**Por qué no está mordiendo ahora mismo:** el backfill es secuencial y va a ~1 req cada 2 s (≈30
+req/min), justo por debajo del límite real — por pura casualidad, no por diseño. El número que
+gobierna el ritmo no es el `requests_per_minute`, es el ida y vuelta de la red.
+
+**Por qué es una trampa:** en cuanto algo emita **ráfagas** (paralelizar el backfill, un botón de
+«refrescar todo», cualquier concurrencia), el limitador dejará pasar hasta 90 y AniList devolverá
+429 a partir del 31. El limitador existe justo para que eso no pase, y con este valor **no protege
+de nada**.
+
+**Arreglo, a 0.3 con el resto del backend:** o bajar el literal a 30, o —mejor— **leer
+`X-RateLimit-Limit` de la respuesta y ajustarse**, que es lo único que sobrevive al siguiente cambio
+unilateral de AniList. Este plan ya vio a AniList degradar su latencia ~6x sin avisar; el límite es
+igual de suyo y de cambiante.
