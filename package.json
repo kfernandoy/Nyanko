@@ -7,12 +7,11 @@
   "scripts": {
     "dev": "concurrently -k -n backend,desktop -c blue,magenta \"npm:dev:backend\" \"npm:dev:desktop\"",
     "dev:backend": "apps\\backend\\.venv\\Scripts\\python.exe apps/backend/scripts/dev.py",
-    "dev:desktop": "npm run tauri --workspace @nyanko/desktop -- dev",
+    "dev:desktop": "npm run dev --workspace @nyanko/desktop",
     "build:sidecar": "apps\\backend\\.venv\\Scripts\\python.exe apps/backend/scripts/build_sidecar.py",
-    "build:icons": "node apps/desktop/scripts/generate-icons.mjs",
     "build:extension": "npm run build --workspace @nyanko/extension",
     "pack:extension": "npm run pack --workspace @nyanko/extension",
-    "build": "npm run build:icons && npm run build:extension && npm run build:sidecar && npm run tauri --workspace @nyanko/desktop -- build",
+    "build": "npm run build:extension && npm run build:sidecar && npm run dist --workspace @nyanko/desktop",
     "check": "npm run check --workspace @nyanko/desktop",
     "legacy:css": "tailwindcss -i legacy/static/tailwind/tailwind-input.css -o legacy/static/styles/nyanko.css --watch"
   },

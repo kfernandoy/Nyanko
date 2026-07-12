@@ -10,27 +10,8 @@ import urllib.request
 from pathlib import Path
 
 
-def rust_target_triple() -> str:
-    system = platform.system()
-    machine = platform.machine().lower()
-    if system == "Windows":
-        return "x86_64-pc-windows-msvc"
-    if system == "Darwin":
-        return "x86_64-apple-darwin" if machine == "x86_64" else "aarch64-apple-darwin"
-    if system == "Linux":
-        return "x86_64-unknown-linux-gnu"
-    raise RuntimeError(f"Unsupported platform: {system} {machine}")
-
-
 def main() -> int:
     backend_root = Path(__file__).resolve().parent.parent
-    desktop_root = backend_root.parent / "desktop"
-    binary_dir = desktop_root / "src-tauri" / "binaries"
-    binary_dir.mkdir(parents=True, exist_ok=True)
-
-    target = rust_target_triple()
-    binary_name = f"nyanko-api-{target}{'.exe' if platform.system() == 'Windows' else ''}"
-    output_file = binary_dir / binary_name
 
     dist_dir = backend_root / "dist"
     if dist_dir.exists():
@@ -79,24 +60,18 @@ def main() -> int:
 
     if platform.system() == "Windows":
         command.append("--noconsole")
-        icon = desktop_root / "src-tauri" / "icons" / "icon.ico"
-        if icon.exists():
-            command.extend(["--icon", str(icon)])
 
     subprocess.run(command, check=True)
 
+    # El bundle onedir de PyInstaller (nyanko-api.exe + _internal/) ES el artefacto final:
+    # electron-builder lo copia tal cual vía extraResources → resources/nyanko-api/ (D-06/D-07).
+    # Ya no se copia nada al directorio de binarios del crate Rust borrado: aquel mkdir lo
+    # resucitaba en cada build del sidecar.
     bundle_dir = dist_dir / "nyanko-api"
     built = bundle_dir / ("nyanko-api.exe" if platform.system() == "Windows" else "nyanko-api")
     smoke_test(built)
 
-    shutil.copy2(built, output_file)
-    internal_dir = bundle_dir / "_internal"
-    output_internal_dir = binary_dir / "_internal"
-    if output_internal_dir.exists():
-        shutil.rmtree(output_internal_dir)
-    if internal_dir.exists():
-        shutil.copytree(internal_dir, output_internal_dir)
-    print(f"Sidecar built: {output_file}")
+    print(f"Sidecar built: {built}")
     return 0
 
 
