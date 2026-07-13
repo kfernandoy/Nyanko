@@ -26,22 +26,21 @@ Detalle completo (goals, success criteria, waves): [milestones/v0.2-ROADMAP.md](
 
 ### 🚧 v0.3 «Nyanko lee manga»
 
-- [ ] **Fase 1: Fundaciones — limitador, esquema y modelo de progreso** - Nada hace una ráfaga ni escribe una fila hasta que el limitador limita de verdad y el modelo de progreso está decidido y migrado contra la BD real
-- [ ] **Fase 2: Motor de fuentes — contrato, presupuesto y taxonomía de errores** - Existe un contrato de fuente versionado contra el que construir, con el presupuesto de peticiones en el motor y no en sus llamadores
-- [ ] **Fase 3: Page pipe + lectura local — la piedra angular** - Nyanko lee la colección de CBZ del disco: sin red, sin rate limits, sin scraping en la superficie de depuración
-- [ ] **Fase 4: Identidad y vínculo — fuente ↔ entrada del tracker** - El vínculo es explícito, almacenado y confirmado por el usuario; el sync podrá asumirlo o negarse
-- [ ] **Fase 5: Sync de progreso — la tesis del milestone** - Última página → el progreso sube solo al proveedor, con confirmar/deshacer y en el timeline
-- [ ] **Fase 6: Distribución de extensiones — repo, instalación y trust gate** - La app se instala sin catálogo; el usuario pega la URL de un repo y ninguna extensión se ejecuta hasta que acepta su huella
-- [ ] **Fase 7: Lectura online — el camino de la app hasta una fuente instalada** - Buscar, explorar y leer manga online, verificado en build empaquetado (los adapters los escribe el autor, fuera de GSD)
-- [ ] **Fase 8: Cola de descargas** - Lectura offline: lo descargado se lee exactamente como lo local, y una descarga sobrevive a un cierre brusco
-- [ ] **Fase 9: AnimeThemes, deuda de 0.2 y auditoría de costuras** - OP/ED en las cards, la deuda saldada, y el único control que en 0.2 encontró un blocker que todas las fases habían aprobado
+- [ ] **Phase 1: Fundaciones — limitador, esquema y modelo de progreso** - Nada hace una ráfaga ni escribe una fila hasta que el limitador limita de verdad y el modelo de progreso está decidido y migrado contra la BD real
+- [ ] **Phase 2: Motor de fuentes — contrato, presupuesto y taxonomía de errores** - Existe un contrato de fuente versionado contra el que construir, con el presupuesto de peticiones en el motor y no en sus llamadores
+- [ ] **Phase 3: Page pipe + lectura local — la piedra angular** - Nyanko lee la colección de CBZ del disco: sin red, sin rate limits, sin scraping en la superficie de depuración
+- [ ] **Phase 4: Identidad y vínculo — fuente ↔ entrada del tracker** - El vínculo es explícito, almacenado y confirmado por el usuario; el sync podrá asumirlo o negarse
+- [ ] **Phase 5: Sync de progreso — la tesis del milestone** - Última página → el progreso sube solo al proveedor, con confirmar/deshacer y en el timeline
+- [ ] **Phase 6: Distribución de extensiones — repo, instalación y trust gate** - La app se instala sin catálogo; el usuario pega la URL de un repo y ninguna extensión se ejecuta hasta que acepta su huella
+- [ ] **Phase 7: Lectura online — el camino de la app hasta una fuente instalada** - Buscar, explorar y leer manga online, verificado en build empaquetado (los adapters los escribe el autor, fuera de GSD)
+- [ ] **Phase 8: Cola de descargas** - Lectura offline: lo descargado se lee exactamente como lo local, y una descarga sobrevive a un cierre brusco
+- [ ] **Phase 9: AnimeThemes, deuda de 0.2 y auditoría de costuras** - OP/ED en las cards, la deuda saldada, y el único control que en 0.2 encontró un blocker que todas las fases habían aprobado
 
 ## Phase Details
 
-### Fase 1: Fundaciones — limitador, esquema y modelo de progreso
+### Phase 1: Fundaciones — limitador, esquema y modelo de progreso
 
-**Goal**: Nada en el milestone hace una ráfaga ni escribe una fila hasta que el limitador limita de
-verdad y el modelo de progreso está escrito, decidido y migrado contra una copia de la BD real.
+**Goal**: Nada en el milestone hace una ráfaga ni escribe una fila hasta que el limitador limita de verdad y el modelo de progreso está escrito, decidido y migrado contra una copia de la BD real.
 
 **Depends on**: Nada (primera fase)
 
@@ -66,7 +65,7 @@ verdad y el modelo de progreso está escrito, decidido y migrado contra una copi
 
 ---
 
-### Fase 2: Motor de fuentes — contrato, presupuesto y taxonomía de errores
+### Phase 2: Motor de fuentes — contrato, presupuesto y taxonomía de errores
 
 **Goal**: Existe un contrato de fuente versionado contra el que se puede construir, con el presupuesto
 de peticiones **en el motor y no en sus llamadores**, y con los errores tipados antes de que exista un
@@ -94,7 +93,7 @@ solo consumidor.
 
 ---
 
-### Fase 3: Page pipe + lectura local — la piedra angular
+### Phase 3: Page pipe + lectura local — la piedra angular
 
 **Goal**: «Nyanko lee mi colección de CBZ.» Aquí la arquitectura de entrega de páginas se vuelve
 verdadera o falsa, y se prueba con **cero red, cero rate limits y cero fragilidad de scraping** en la
@@ -126,7 +125,7 @@ se enchufa a un pipe que ya corre.
 
 ---
 
-### Fase 4: Identidad y vínculo — fuente ↔ entrada del tracker
+### Phase 4: Identidad y vínculo — fuente ↔ entrada del tracker
 
 **Goal**: Existe un vínculo **explícito, almacenado y confirmado por el usuario** entre una serie de una
 fuente y una entrada del tracker — para que el sync pueda asumirlo, y **negarse** cuando no lo hay.
@@ -151,7 +150,7 @@ fuente y una entrada del tracker — para que el sync pueda asumirlo, y **negars
 
 ---
 
-### Fase 5: Sync de progreso — la tesis del milestone
+### Phase 5: Sync de progreso — la tesis del milestone
 
 **Goal**: Leo la última página de un capítulo y el progreso **sube solo** al proveedor, con
 confirmar/deshacer y apareciendo en el timeline — el mismo trato que la detección de reproducción ya
@@ -178,7 +177,7 @@ le da al anime. Aquí el core value queda **probado**, antes de que empiecen los
 
 ---
 
-### Fase 6: Distribución de extensiones — repo, instalación y trust gate
+### Phase 6: Distribución de extensiones — repo, instalación y trust gate
 
 **Goal**: Nyanko se instala **sin catálogo**. El usuario pega la URL de un repo de extensiones, ve sus
 fuentes, y **ninguna se ejecuta** hasta que acepta su huella explícitamente.
@@ -206,7 +205,7 @@ fuentes, y **ninguna se ejecuta** hasta que acepta su huella explícitamente.
 
 ---
 
-### Fase 7: Lectura online — el camino de la app hasta una fuente instalada
+### Phase 7: Lectura online — el camino de la app hasta una fuente instalada
 
 **Goal**: El usuario busca, explora y **lee manga online** desde fuentes instaladas — con el reader, el
 pipe, el esquema y el sync ya hechos y sin tocar. Esto es «solo adapters», y es donde aparece la
@@ -245,7 +244,7 @@ instalable — el criterio 5 (build empaquetado, `file://`, hotlink) solo es ver
 
 ---
 
-### Fase 8: Cola de descargas
+### Phase 8: Cola de descargas
 
 **Goal**: El usuario descarga capítulos y los lee offline — y **lo descargado se lee exactamente igual
 que lo local**, porque el pipe no puede distinguirlos.
@@ -272,7 +271,7 @@ que lo local**, porque el pipe no puede distinguirlos.
 
 ---
 
-### Fase 9: AnimeThemes, deuda de 0.2 y auditoría de costuras
+### Phase 9: AnimeThemes, deuda de 0.2 y auditoría de costuras
 
 **Goal**: Los OP/ED suenan desde la card, la deuda de 0.2 queda saldada, y el milestone **no se cierra
 hasta que la auditoría cruzada de costuras pasa** — con el milestone entero en el árbol, no fase a
