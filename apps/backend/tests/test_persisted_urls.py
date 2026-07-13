@@ -1,4 +1,11 @@
-"""Guardia FND-05: ninguna columna persistida puede empezar por `http` sin justificación.
+"""Guardia FND-05: nada persistido apunta al sidecar, y ninguna columna empieza por `http`.
+
+Son DOS comprobaciones (`assert_no_persisted_urls`), y solo una es exentable:
+
+  1. NO EXENTABLE — ningún valor, en ninguna columna, puede apuntar al propio sidecar
+     (`//127.0.0.1`, `//localhost`, `//[::1]`). Ni siquiera en una columna de la lista blanca:
+     la exención es de la COLUMNA, y el veneno es una propiedad del VALOR.
+  2. Exentable — ninguna columna fuera de `REMOTE_URL_ALLOWLIST` empieza por `http`.
 
 Este proyecto ya perdió TODAS las portadas de la biblioteca por esto. El backend guardaba
 `cover_image_local` como URL absoluta con el puerto del sidecar dentro
@@ -75,16 +82,19 @@ REMOTE_URL_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
 
 _URL_PREFIX = "http"
 
+# El host del PROPIO sidecar, en las tres formas en que un cliente puede escribirlo. Un valor
+# que apunte aquí es veneno viva en la columna que viva: la exención de arriba es de la
+# COLUMNA, y el bug es del VALOR. `//` delante para no acertar la palabra suelta en una
+# sinopsis; sin esquema delante para cubrir `http`, `https` y lo que venga.
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 
-def find_persisted_urls(connection: sqlite3.Connection) -> list[tuple[str, str, int]]:
-    """Toda columna de toda tabla cuyo valor empiece por `http`: (tabla, columna, filas).
 
-    El esquema se descubre en runtime. Cero listas escritas a mano: por construcción, esto
-    cubre las columnas del esquema v8 y las que llegue a añadir cualquier fase futura.
+def _columns(connection: sqlite3.Connection) -> list[tuple[str, str]]:
+    """El esquema, descubierto EN RUNTIME: (tabla, columna) de toda la BD.
 
-    Devuelve TODOS los aciertos, incluidos los de la lista blanca — el script los imprime con
-    sus recuentos, que es como un humano ve que la guardia está mirando de verdad y no
-    pasando en vacío sobre tablas sin filas.
+    Cero listas escritas a mano: por construcción, esto cubre las columnas del esquema v8 y
+    las que llegue a añadir cualquier fase futura. La guardia que hay que actualizar a mano
+    es la guardia que un día no se actualiza.
     """
     tables = [
         row[0]
@@ -93,27 +103,86 @@ def find_persisted_urls(connection: sqlite3.Connection) -> list[tuple[str, str, 
             "AND name NOT LIKE 'sqlite_%' ORDER BY name"
         )
     ]
-    hits: list[tuple[str, str, int]] = []
-    for table in tables:
-        columns = [row[1] for row in connection.execute(f'PRAGMA table_info("{table}")')]
-        for column in columns:
-            # SQLite convierte el operando de LIKE a texto: una columna INTEGER o REAL no
-            # puede casar con 'http%', así que no hace falta filtrar por tipo declarado (y
-            # filtrar por él sería un error: el tipo es una sugerencia, no una restricción).
-            rows = connection.execute(
-                f'SELECT COUNT(*) FROM "{table}" WHERE "{column}" LIKE ?', (f"{_URL_PREFIX}%",)
-            ).fetchone()[0]
-            if rows:
-                hits.append((table, column, rows))
+    return [
+        (table, row[1])
+        for table in tables
+        for row in connection.execute(f'PRAGMA table_info("{table}")')
+    ]
+
+
+def _count_matching(
+    connection: sqlite3.Connection, table: str, column: str, patterns: tuple[str, ...]
+) -> int:
+    """Filas de `table.column` que casan con cualquiera de los patrones LIKE."""
+    # SQLite convierte el operando de LIKE a texto: una columna INTEGER o REAL no puede casar
+    # con 'http%', así que no hace falta filtrar por tipo declarado (y filtrar por él sería un
+    # error: el tipo es una sugerencia, no una restricción).
+    where = " OR ".join(f'"{column}" LIKE ?' for _ in patterns)
+    return connection.execute(
+        f'SELECT COUNT(*) FROM "{table}" WHERE {where}', patterns
+    ).fetchone()[0]
+
+
+def find_persisted_urls(connection: sqlite3.Connection) -> list[tuple[str, str, int]]:
+    """Toda columna de toda tabla cuyo valor empiece por `http`: (tabla, columna, filas).
+
+    Devuelve TODOS los aciertos, incluidos los de la lista blanca — el script los imprime con
+    sus recuentos, que es como un humano ve que la guardia está mirando de verdad y no
+    pasando en vacío sobre tablas sin filas.
+    """
+    hits = [
+        (table, column, rows)
+        for table, column in _columns(connection)
+        if (rows := _count_matching(connection, table, column, (f"{_URL_PREFIX}%",)))
+    ]
     return hits
 
 
+def find_loopback_urls(connection: sqlite3.Connection) -> list[tuple[str, str, int]]:
+    """Toda columna cuyo valor apunte al PROPIO sidecar: (tabla, columna, filas).
+
+    Se busca el host DENTRO del valor, no solo al principio: la portada envenenada llega
+    también embutida en un payload JSON (`cache.payload` empieza por `{`, y un `LIKE 'http%'`
+    no la ve). Esto no tiene lista blanca y no puede tenerla: ver `assert_no_persisted_urls`.
+    """
+    patterns = tuple(f"%//{host}%" for host in _LOOPBACK_HOSTS)
+    return [
+        (table, column, rows)
+        for table, column in _columns(connection)
+        if (rows := _count_matching(connection, table, column, patterns))
+    ]
+
+
 def assert_no_persisted_urls(connection: sqlite3.Connection) -> None:
-    """Falla si alguna columna NO exenta guarda un valor que empieza por `http`.
+    """Falla si algo persistido apunta al sidecar, o si una columna NO exenta empieza por `http`.
+
+    DOS comprobaciones, y la primera NO ES EXENTABLE:
+
+    1. Ningún valor, en ninguna columna —exenta o no—, puede apuntar al propio sidecar
+       (`//127.0.0.1`, `//localhost`, `//[::1]`). La lista blanca exime de `LIKE 'http%'`;
+       de esto no exime a nadie. Es la columna exenta la que abre la puerta: el renderer
+       prefija cada `/assets/...` con `http://127.0.0.1:<puerto>` (api.ts:204) y el cliente
+       reenvía esa URL de vuelta al backend, que la guarda tan contento.
+    2. Ninguna columna fuera de `REMOTE_URL_ALLOWLIST` empieza por `http`.
 
     El helper que las Fases 3/7/8 deben llamar TRAS SUS PROPIAS ESCRITURAS. Ver el docstring
     del módulo: sobre datos que no existen, esta comprobación pasa en vacío.
     """
+    loopback = find_loopback_urls(connection)
+    if loopback:
+        detail = "\n".join(
+            f"  {table}.{column}: {rows} fila(s) apuntan al sidecar"
+            for table, column, rows in loopback
+        )
+        raise AssertionError(
+            "Persistido algo que apunta al PROPIO sidecar (host loopback + puerto):\n"
+            f"{detail}\n"
+            "LA LISTA BLANCA NO EXIME DE ESTO. Exime de empezar por 'http' (una URL remota "
+            "del proveedor es legítima); no de guardar una URL nuestra, que muere en cuanto "
+            "el sidecar arranca en otro puerto — y no se cura sola. Guarda la ruta RELATIVA "
+            "('/assets/...') y deja que el cliente la resuelva al renderizar."
+        )
+
     violations = [
         (table, column, rows)
         for table, column, rows in find_persisted_urls(connection)

@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tests.test_persisted_urls import (  # noqa: E402
     REMOTE_URL_ALLOWLIST,
+    find_loopback_urls,
     find_persisted_urls,
 )
 
@@ -46,12 +47,23 @@ def main() -> int:
     try:
         version = connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
         hits = find_persisted_urls(connection)
+        loopback = find_loopback_urls(connection)
     finally:
         connection.close()
     print(f"schema: v{version}\n")
 
     allowed = [hit for hit in hits if (hit[0], hit[1]) in REMOTE_URL_ALLOWLIST]
     violations = [hit for hit in hits if (hit[0], hit[1]) not in REMOTE_URL_ALLOWLIST]
+
+    # Sin lista blanca que valga: apuntar al propio sidecar no lo exime ninguna columna.
+    if loopback:
+        print("FALLO: hay filas que apuntan al PROPIO sidecar (host loopback + puerto):")
+        for table, column, rows in loopback:
+            exenta = " (columna EXENTA -- la lista blanca NO exime de esto)" if (table, column) in REMOTE_URL_ALLOWLIST else ""
+            print(f"  {table}.{column}: {rows} filas{exenta}")
+        print("\nUna URL nuestra con el puerto dentro muere en el siguiente arranque del")
+        print("sidecar. Guarda la ruta RELATIVA ('/assets/...') y resuelvela al renderizar.")
+        return 1
 
     # Imprimir los aciertos EXENTOS con sus recuentos no es ruido: es la prueba de que la
     # guardia esta mirando filas de verdad. Una guardia sobre tablas vacias pasa en vacio, y
