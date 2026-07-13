@@ -47,6 +47,7 @@ Detalle completo (goals, success criteria, waves): [milestones/v0.2-ROADMAP.md](
 **Requirements**: FND-01, FND-02, FND-03, FND-04, FND-05, FND-06
 
 **Success Criteria** (qué tiene que ser VERDAD):
+
   1. Una ráfaga de 50 peticiones concurrentes lanzada **desde los dos event loops** (el de uvicorn y el de `MutationWorker`) no produce `RuntimeError` ni se cuelga, y el ritmo observado respeta el `X-RateLimit-Limit` **que devolvió el proveedor** — no un número horneado en el código.
   2. Tras un 429, el limitador se adapta al presupuesto degradado (AniList: 30/min) y vuelve al normal (90/min) cuando el proveedor lo anuncia. Ningún test pasa por el hecho de haber hardcodeado ninguno de los dos números.
   3. La migración a schema v8 corre contra una **copia de la BD de producción real** (2.761 `library_entries`, 25.727 `episodes`) y sale con `integrity_check: ok` y los mismos recuentos por tabla; el backup pre-migración se dispara (es el único rollback que existe).
@@ -62,9 +63,13 @@ Detalle completo (goals, success criteria, waves): [milestones/v0.2-ROADMAP.md](
 **Research pass**: No. Precedente en el árbol, citado: `_clients` ya está keyed por event loop y con el comentario que explica por qué — el semáforo nunca recibió el mismo trato. `_backup_before_migration` ya existe.
 
 **Plans**: 3 plans
+**Wave 1**
 
 - [ ] 01-01-PLAN.md — Limitador: los tres bugs a la vez (presupuesto de la cabecera, sleep fuera del semáforo, estado por event loop) — FND-01, FND-02, FND-03 — wave 1
 - [ ] 01-02-PLAN.md — Modelo de progreso escrito + esquema v8 aditivo, migrado contra copia de la BD real — FND-04, FND-06 — wave 1
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 01-03-PLAN.md — Guardia de URLs persistidas, genérica por `PRAGMA table_info` — FND-05 — wave 2
 
 ---
@@ -80,6 +85,7 @@ solo consumidor.
 **Requirements**: SRC-04, SRC-05, SRC-06, SRC-07
 
 **Success Criteria** (qué tiene que ser VERDAD):
+
   1. Una fuente que declara una versión de API distinta de `SOURCE_API_VERSION` se **rechaza al registrar** y se reporta en la UI; el sidecar arranca igual. Una fuente rota no tumba la app.
   2. Un test de conformidad **parametrizado sobre todas las fuentes registradas** pasa (incluida `LocalArchiveSource`); añadir una fuente que no cumple el Protocol rompe el test. Eso es lo que convierte «API versionada» de docstring en gate.
   3. Un parseo que encuentra 0 resultados **lanza** (`ParseError`), nunca devuelve `[]`; y un fallo de fuente **no pisa** una lista de capítulos buena ya cacheada (test: cachear lista → simular reto de Cloudflare con HTTP 200 y cuerpo HTML → la lista cacheada sigue intacta).
@@ -109,6 +115,7 @@ se enchufa a un pipe que ya corre.
 **Requirements**: RD-01, RD-02, RD-03, RD-04, RD-05, RD-06, RD-07, RD-08, RD-09
 
 **Success Criteria** (qué tiene que ser VERDAD):
+
   1. Un CBZ / ZIP / carpeta con `2.jpg … 10.jpg` se lee en **orden natural** (`2` antes que `10`). Si trae `ComicInfo.xml`, sus metadatos mandan sobre el nombre del fichero.
   2. Los tres modos funcionan — paginado **RTL por defecto** (abrir un manga L→R está roto de nacimiento), paginado LTR, y continuo vertical / webtoon — y el modo elegido **se recuerda por serie** y sobrevive a reiniciar la app. Doble página con offset manual ajustable.
   3. Navegación de escritorio completa: teclado (←/→, AvPág/RePág, Espacio, Inicio/Fin), rueda, zonas de click, pantalla completa, contador de página, modos de ajuste, zoom y paneo. Se reanuda por la página donde se dejó.
@@ -139,6 +146,7 @@ fuente y una entrada del tracker — para que el sync pueda asumirlo, y **negars
 **Requirements**: LNK-01, LNK-02, LNK-03, LNK-04
 
 **Success Criteria** (qué tiene que ser VERDAD):
+
   1. `matcher.py` **propone** un vínculo con un score de confianza; nada queda vinculado sin que el usuario lo confirme; la corrección del usuario se guarda y manda sobre la propuesta.
   2. El vínculo se **almacena** (mirror de `media_mappings`, con su `chapter_offset`, igual que el `episode_offset` que ya está enviado) — nunca se calcula en el momento del sync.
   3. `ChapterRecognition` es un componente **propio, puro y unitariamente testeable**, con su tabla de casos escrita **antes** que el código (`extra` = .99, `omake` = .98, `12a` → 12.1) y en verde. Si no se le pone nombre, se embadurna entre el motor y el sync y no se testea en ninguno de los dos.
@@ -165,6 +173,7 @@ le da al anime. Aquí el core value queda **probado**, antes de que empiecen los
 **Requirements**: SYN-01, SYN-02, SYN-03, SYN-04, SYN-05
 
 **Success Criteria** (qué tiene que ser VERDAD):
+
   1. Llegar a la última página del capítulo encola una mutación por el **camino existente** (`enqueue_mutation` → `MutationWorker` → `providers.edit_entry(media_type="MANGA")`). **No hay un segundo camino de sync en el árbol** — verificable por grep, porque construirlo es el anti-patrón nº1 de esta fase.
   2. El capítulo 10.5 sube como `10`; la guarda monotónica compara contra el valor **del tracker**, no contra el local; `progress_before` queda grabado en cada sync.
   3. Una entrada `COMPLETED` cuyo capítulo leído es menor que el progreso ofrece `REPEATING` — **jamás** empuja un `1` encima de una serie terminada.
@@ -191,6 +200,7 @@ fuentes, y **ninguna se ejecuta** hasta que acepta su huella explícitamente.
 **Requirements**: SRC-01, SRC-02, SRC-03
 
 **Success Criteria** (qué tiene que ser VERDAD):
+
   1. Una instalación limpia trae **cero** fuentes de manga (D-1). La pantalla de extensiones está vacía y explica cómo añadir un repo.
   2. El usuario pega la URL de un repo, la app resuelve su `index.json` y lista las fuentes con nombre, versión y estado (no instalada / instalada / actualizable).
   3. Instalar, actualizar y desinstalar una fuente funciona. El bundle descargado se verifica contra el `sha256` fijado en el índice, y **una huella que no cuadra aborta la instalación** en vez de continuar.
@@ -231,6 +241,7 @@ sitio cambie su HTML.
 instalable — el criterio 5 (build empaquetado, `file://`, hotlink) solo es verdad contra una fuente viva.
 
 **Success Criteria** (qué tiene que ser VERDAD):
+
   1. El camino app→fuente funciona contra cualquier adapter que cumpla el contrato de la Fase 2: se instala por el flujo de la Fase 6 y queda utilizable sin tocar código de la app.
   2. El usuario busca, explora (popular / recientes) y abre una serie de una fuente online.
   3. Lista de capítulos con número, **scanlator**, idioma, fecha de subida, estado de lectura y estado de descarga; ordenar/filtrar; «marcar anteriores como leídos».
@@ -258,6 +269,7 @@ que lo local**, porque el pipe no puede distinguirlos.
 **Requirements**: DL-01, DL-02, DL-03, DL-04, DL-05, DL-06
 
 **Success Criteria** (qué tiene que ser VERDAD):
+
   1. Encolar en lote, pausar, reanudar y cancelar; el progreso se observa **por polling** de `GET /api/manga/downloads`, como el backfill ya hace. Ni SSE, ni WebSocket, ni librería de jobs.
   2. **Serie por fuente, paralelo entre fuentes**, verificado con dos fuentes descargando a la vez. Restricción dura para no comerse un baneo de IP — no una perilla de ajuste.
   3. Las URLs de página se resuelven **al descargar, no al encolar**. Test: un capítulo que espera en cola más que la caducidad de la URL firmada **aun así descarga** (encolar las URLs es el diseño obvio, y es el que devuelve 404s).
@@ -286,6 +298,7 @@ fase.
 **Requirements**: AT-01, AT-02, AT-03, DBT-01, DBT-02, DBT-03
 
 **Success Criteria** (qué tiene que ser VERDAD):
+
   1. Las cards listan sus openings/endings y se reproducen desde la card, con **un solo `<audio>` global**: así «solo suena uno a la vez» es verdad **por construcción**, y son menos líneas que uno por card.
   2. La búsqueda es **por ID directo** contra `external_identities` (AniList/MAL/Kitsu — los tres `filter[site]` verificados en vivo): **cero matching difuso**. Se cachea el metadato, **nunca la URL del CDN**. La consulta ocurre al **abrir la card**, no al renderizar la biblioteca.
   3. Se respetan las banderas `spoiler` y `nsfw` que la API devuelve. (Y las trampas ya resueltas: nada de `HEAD` — devuelve 403 y haría parecer que **ningún** tema existe; nada de `crossOrigin`, Web Audio ni `fetch()` — la API **no manda cabeceras CORS**; el `.ogg` de 3,7 MB sobre el `.webm` de 30 MB.)
@@ -326,17 +339,22 @@ Violar cualquiera de estas es cómo este milestone envía su propio B-1.
 1. **El limitador (Fase 1) antes del reader, las descargas y el sync.** Estaba archivado como «deuda de
    0.2»; es un **prerrequisito**. Son tres bugs, y arreglar solo el número (90→30) es lo que *arma* los
    otros dos. (Seam A)
+
 2. **Las decisiones de esquema y modelo de progreso (Fase 1) antes de que nada escriba una fila.**
    Cambiar la semántica de `progress` después de que los usuarios hayan escrito filas es migrar una
    biblioteca real de 2.761 entradas.
+
 3. **El motor con su presupuesto y su taxonomía de errores (Fase 2) antes del reader online y de la
    cola de descargas.** Retrofittear un presupuesto compartido cuando la cola ya existe significa
    reescribir todos los adapters. (Seam F)
+
 4. **El vínculo (Fase 4) antes del sync (Fase 5).** Fase propia, no «paso 1 del sync» — que es
    exactamente como acaba siendo ansioso e implícito. (Seam D)
+
 5. **La lectura local (Fase 3) antes de las fuentes online (Fase 7).** El pipe de páginas es la piedra
    angular y es más barato probarlo sin red, sin rate limits y sin scraping en la superficie de
    depuración. Además envía una porción útil por sí sola.
+
 6. **El sync (Fase 5) pronto, no al final.** Son ~15 líneas y es la tesis del milestone: probar el core
    value **antes** de que empiecen los dos trozos caros (fuentes online y descargas) es el punto.
 
