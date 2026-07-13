@@ -54,6 +54,16 @@ export async function downloadAndInstallUpdate(): Promise<void> {
     throw new Error("No hay ninguna actualización confirmada por un check previo.");
   }
   await autoUpdater.downloadUpdate();
+  // W-2: a partir de la línea siguiente no hay vuelta atrás. quitAndInstall NO lanza
+  // (electron-updater despacha 'error' y devuelve void), y el sidecar ya está muerto sin
+  // camino de respawn — startSidecar solo corre en runStartup. Una instalación fallida
+  // dejaría la app viva contra un backend muerto: todo falla hasta reiniciar a mano.
+  // Cerrar es la única salida honesta; al relanzar, arranca todo. Los fallos de check y
+  // descarga NO pasan por aquí (esos sí rechazan su promesa y los ve el renderer).
+  autoUpdater.once("error", (reason) => {
+    log.error("La instalación falló con el sidecar ya muerto; cerrando la app.", reason);
+    app.quit();
+  });
   // D-05: el sidecar mantiene bloqueados _internal\* y su propio exe; si sobrevive
   // a la instalación, el copiado falla. Se reusa la MISMA killSidecar del
   // before-quit (es idempotente, así que su segunda llamada es un no-op).

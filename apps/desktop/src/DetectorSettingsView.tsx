@@ -361,14 +361,14 @@ export function DetectorSettingsView({ authenticated, activeAccount, capabilitie
             {updateState === "checking" ? t("about.checking") : updateState === "downloading" ? t("about.downloading") : t("about.checkUpdates")}
           </button>
         </article>
-        {"nyanko" in window && window.nyanko?.openLogsFolder && (
+        {isNative && (
           <article>
             <div><strong>{t("about.logs")}</strong><span>{t("about.logs.d")}</span></div>
             <button
               className="small"
               onClick={() => {
                 setError(null);
-                void window.nyanko?.openLogsFolder?.().catch((reason: unknown) =>
+                void native.openLogsFolder().catch((reason: unknown) =>
                   setError(reason instanceof Error ? reason.message : String(reason)),
                 );
               }}

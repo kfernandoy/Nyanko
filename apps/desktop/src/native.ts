@@ -51,6 +51,10 @@ export const native = {
   readAppDataFile(name: string): Promise<string | null> {
     return window.nyanko?.readAppDataFile(name) ?? Promise.resolve(null);
   },
+  // OBS-01: en web no hay carpeta de logs que abrir → no-op silencioso.
+  openLogsFolder(): Promise<string> {
+    return window.nyanko?.openLogsFolder() ?? Promise.resolve("");
+  },
 
   // ── Autostart (NATIVE-06) — op cableada; en web no hay item de inicio → false/no-op.
   getAutostart(): Promise<boolean> {
@@ -117,6 +121,7 @@ export const NATIVE_OPS: string[] = [
   "notify",
   "onDetectionPaused",
   "readAppDataFile",
+  "openLogsFolder",
   "getAutostart",
   "setAutostart",
   "getWindowPrefs",
