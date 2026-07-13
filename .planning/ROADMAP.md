@@ -61,7 +61,11 @@ Detalle completo (goals, success criteria, waves): [milestones/v0.2-ROADMAP.md](
 
 **Research pass**: No. Precedente en el árbol, citado: `_clients` ya está keyed por event loop y con el comentario que explica por qué — el semáforo nunca recibió el mismo trato. `_backup_before_migration` ya existe.
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+- [ ] 01-01-PLAN.md — Limitador: los tres bugs a la vez (presupuesto de la cabecera, sleep fuera del semáforo, estado por event loop) — FND-01, FND-02, FND-03 — wave 1
+- [ ] 01-02-PLAN.md — Modelo de progreso escrito + esquema v8 aditivo, migrado contra copia de la BD real — FND-04, FND-06 — wave 1
+- [ ] 01-03-PLAN.md — Guardia de URLs persistidas, genérica por `PRAGMA table_info` — FND-05 — wave 2
 
 ---
 
