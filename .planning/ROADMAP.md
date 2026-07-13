@@ -374,7 +374,7 @@ backend, el cliente HTTP, la verificación sha256, el gate de seguridad y una UI
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Electron shell scaffold + data-dir lock | v0.2 | 4/4 | Complete   | 2026-07-13 |
+| 1. Electron shell scaffold + data-dir lock | v0.2 | 4/4 | Complete    | 2026-07-13 |
 | 2. Main core — sidecar lifecycle + logging | v0.2 | 2/2 | Complete | 2026-07-10 |
 | 3. Native boundary + Tauri removal | v0.2 | 2/2 | Complete | 2026-07-11 |
 | 4. Native feature parity | v0.2 | 3/3 | Complete | 2026-07-11 |
