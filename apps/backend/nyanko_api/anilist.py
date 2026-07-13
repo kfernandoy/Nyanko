@@ -479,6 +479,9 @@ class AniListError(RuntimeError):
         self.status_code = status_code
 
 
+# 90 es el valor INICIAL y el TECHO, no el presupuesto: AniList anuncia el suyo real en
+# X-RateLimit-Limit (hoy dice 30) y el limitador lo sigue, degradándose y recuperándose
+# solo. El techo es lo que impide que una cabecera absurda desactive el limitador.
 _client = RateLimitedClient(requests_per_minute=90)
 
 # Los 15 s por defecto del RateLimitedClient valen para las peticiones normales (una

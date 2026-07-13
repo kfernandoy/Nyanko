@@ -104,6 +104,8 @@ class KitsuCredential:
         return self.expires_at <= int(time.time()) + 60
 
 
+# Valor inicial y techo. Kitsu no manda X-RateLimit-Limit: sin cabecera el presupuesto no
+# se toca y el ritmo sigue siendo exactamente este.
 _client = RateLimitedClient(requests_per_minute=50)
 
 
