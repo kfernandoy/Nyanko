@@ -37,8 +37,15 @@ Last activity: 2026-07-12 — quick 260712-q61: primeras features de 0.3 commite
 `killSidecar()` → `quitAndInstall(true, true)`, se reinstaló **sin asistente** y **se relanzó sola**
 como 0.2.1. Biblioteca intacta, cero `nyanko-api.exe` huérfanos. Gate humano aprobado 2026-07-12.
 
-**Releases publicados:** v0.2.0, v0.2.1, v0.2.2, v0.2.3 — los cuatro artefactos cada uno, y ambos
+**Releases publicados:** v0.2.0, v0.2.1, v0.2.2 y v0.2.3 — los cuatro artefactos cada uno, y ambos
 feeds (`latest.yml` de electron-updater + `latest.json` del puente Tauri) verificados contra la red.
+
+**Vivas HOY en GitHub: solo v0.2.0 y v0.2.3.** Las intermedias v0.2.1 y v0.2.2 se **borraron
+deliberadamente** una vez sirvieron su propósito (cada una era el eslabón de un salto de auto-update
+ya probado); sus tags siguen en el remoto, sus releases devuelven 404. El canal vivo es correcto —
+`releases/latest` → **v0.2.3**, cinco artefactos, ambos feeds verificados — y los arreglos de la
+0.2.2 van dentro de la 0.2.3. **Consecuencia:** la evidencia del salto 0.2.0→0.2.1 ya NO es
+reproducible desde el set de releases actual; la prueba vive en `05-06-SUMMARY.md`, no en la red.
 
 **Estado de la máquina de pruebas: M3** — Nyanko **0.2.3** instalada (llegó por auto-update encadenado
 desde la 0.2.0), biblioteca intacta con portadas, backfill en ~1,2 min.
@@ -143,7 +150,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Backend (0.3) | **D-I-02** — el backend persiste URLs de assets con el `host:puerto` dentro; si el sidecar cambia de puerto, la biblioteca se queda sin portadas de forma permanente y silenciosa. Datos reparados (3.874 URLs); el fallo de diseño sigue vivo | Deferred | 05-06 |
+| Backend (0.3) | **D-I-02** — el backend persistía URLs de assets con el `host:puerto` dentro; si el sidecar cambiaba de puerto, la biblioteca se quedaba sin portadas de forma permanente y silenciosa. **RESUELTO** (quick 260712-q62, commit `9174180`): `_asset_url()` devuelve rutas relativas y `_migrate_asset_urls_to_relative()` reescribe las persistidas en `initialize()` | **Resolved** | 05-06 |
 | Backend (0.3) | **D-I-03** — `RateLimitedClient(requests_per_minute=90)` pero AniList reporta hoy `X-RateLimit-Limit: 30`. No muerde ahora (backfill secuencial, ~1 req/2 s) pero una ráfaga comería 429s | Deferred | 05-06 |
 
 Detalle completo en `phases/05-packaging-auto-update/deferred-items.md`.

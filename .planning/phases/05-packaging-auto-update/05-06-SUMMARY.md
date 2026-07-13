@@ -10,7 +10,7 @@ requires:
   - "05-02 (electron-updater cableado: downloadAndInstallUpdate → killSidecar → quitAndInstall)"
   - "05-04 (release v0.2.0 PUBLICADO + publish-bridge.mjs + máquina en estado M2)"
 provides:
-  - "Releases v0.2.1, v0.2.2 y v0.2.3 publicados, los cuatro artefactos cada uno"
+  - "Releases v0.2.1, v0.2.2 y v0.2.3 publicados, los cuatro artefactos cada uno (las intermedias v0.2.1 y v0.2.2 se borraron después, a propósito, una vez probado el salto que cada una servía: hoy solo v0.2.0 y v0.2.3 responden en GitHub)"
   - "PKG-02 CERRADO: el camino feliz de electron-updater ejecutado sobre una instalación real"
   - "Prueba empírica de la cadena detectar → descargar (diferencial) → SHA512 → killSidecar() → quitAndInstall(true,true) → relanzar"
   - "Corrección del diagnóstico que dio el 05-04 sobre los borradores duplicados (era falso)"
