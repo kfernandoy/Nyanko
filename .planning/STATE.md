@@ -6,14 +6,14 @@ current_phase: 01
 current_phase_name: fundaciones-limitador-esquema-y-modelo-de-progreso
 status: executing
 stopped_at: "Completed 01-01-PLAN.md (limitador: FND-01/02/03)"
-last_updated: "2026-07-13T17:19:44.158Z"
+last_updated: "2026-07-13T17:33:15.120Z"
 last_activity: 2026-07-13
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -31,7 +31,7 @@ al anime.
 ## Current Position
 
 Phase: 01 (fundaciones-limitador-esquema-y-modelo-de-progreso) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-07-13 — Phase 01 execution started
 
@@ -102,7 +102,7 @@ cuenta vinculada, iconos de proveedores). No bloquean la 0.3.
 
 ## Session Continuity
 
-**Last session:** 2026-07-13T17:19:44.147Z
+**Last session:** 2026-07-13T17:32:35.233Z
 **Stopped at:** Completed 01-01-PLAN.md (limitador: FND-01/02/03)
 
 Roadmap de v0.3 creado el 2026-07-13. Nada ejecutado todavía. El siguiente paso es
@@ -113,8 +113,13 @@ Roadmap de v0.3 creado el 2026-07-13. Nada ejecutado todavía. El siguiente paso
 | Phase | Plan | Duration | Notes |
 |-------|------|----------|-------|
 | Phase 01 P01 | 50min | 3 tasks | 6 files |
+| Phase 01 P02 | ~50 min | 3 tasks | 7 files |
 
 ## Decisions
 
 - [Phase 01]: Limitador: el número del constructor (90/50/60) es valor inicial y TECHO; el presupuesto real lo anuncia X-RateLimit-Limit, acotado a [1, techo] para que una cabecera hostil no lo desactive — FND-01: hornear el presupuesto es lo que nos mantuvo pegándole a AniList a 90 req/min mucho después de que bajara a 30
 - [Phase 01]: Limitador: el semáforo pasa a ser tope de peticiones EN VUELO (max_concurrency=8); el ritmo lo lleva un reloj de salidas por event loop, durmiendo fuera del semáforo — FND-02/FND-03: dormir con el semáforo retenido no limitaba nada, y los primitivos de asyncio en __init__ se ataban al loop del import (MutationWorker usa asyncio.run() en otro hilo)
+- [Phase 01]: Schema v8: columna aditiva chapter_progress REAL en vez de rebuild de library_entries — SQLite no tiene ALTER COLUMN TYPE; el rebuild sobre 2.774 filas vivas devolveria 10.0 donde la API hoy devuelve 10, y un ADD COLUMN no puede alterar los recuentos por tabla
+- [Phase 01]: progress (INTEGER) es autoritativo; chapter_progress se reconcilia AL LEER — chapter_progress solo vale si floor(chapter_progress) == progress. progress tiene cuatro escritores que no lo tocaran: un invariante mantenido en cuatro sitios se rompe, uno derivado al leer (progress.effective_chapter) no
+- [Phase 01]: La ventana transitoria de effective_chapter queda ACEPTADA, no es un bug pendiente — Sync del tracker con valor viejo mientras la mutacion esta encolada: transitoria y autocurativa. Evitarla exigiria el diseno rechazado. Escrita en progress-model.md para que la Fase 5 no la parchee
+- [Phase 01]: next_progress falla cerrado y progress_before graba el valor DEL TRACKER — Sin valor del tracker devuelve None. progress_before se captura antes de update_remote_library_entry o acabaria siendo progress_after; un 0 de relleno pondria a cero el AniList real via undo_playback

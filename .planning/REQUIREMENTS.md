@@ -80,7 +80,7 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
       `_clients` ya hace. Hoy es un singleton compartido entre el loop de uvicorn y el de
       `MutationWorker`; sobrevive solo porque nunca contiende.
 
-- [ ] **FND-04**: El modelo de progreso está escrito y es a prueba de decimales — número de capítulo
+- [x] **FND-04**: El modelo de progreso está escrito y es a prueba de decimales — número de capítulo
       `REAL` en local, `floor()` al enviarlo al proveedor, guarda monotónica contra el valor *del
       tracker*, y `progress_before` grabado en cada sync.
 
@@ -88,7 +88,7 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
       opacos, resueltos al renderizar. Con test de guardia que falla si alguna columna persistida
       empieza por `http`.
 
-- [ ] **FND-06**: La migración de esquema se ejercita contra una **copia de la base de datos real**
+- [x] **FND-06**: La migración de esquema se ejercita contra una **copia de la base de datos real**
       (`integrity_check` + recuento de filas), no contra un fixture.
 
 > FND-01/02/03 son la deuda D-I-03 de 0.2, **promovida de limpieza a prerrequisito**: son tres bugs,
@@ -273,9 +273,9 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
 | FND-01 | Fase 1 — Fundaciones | Complete |
 | FND-02 | Fase 1 — Fundaciones | Complete |
 | FND-03 | Fase 1 — Fundaciones | Complete |
-| FND-04 | Fase 1 — Fundaciones | Pending |
+| FND-04 | Fase 1 — Fundaciones | Complete |
 | FND-05 | Fase 1 — Fundaciones | Pending |
-| FND-06 | Fase 1 — Fundaciones | Pending |
+| FND-06 | Fase 1 — Fundaciones | Complete |
 | SRC-01 | Fase 6 — Distribución de extensiones | Pending |
 | SRC-02 | Fase 6 — Distribución de extensiones | Pending |
 | SRC-03 | Fase 6 — Distribución de extensiones | Pending |
