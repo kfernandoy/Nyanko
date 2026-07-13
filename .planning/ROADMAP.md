@@ -32,7 +32,7 @@ Detalle completo (goals, success criteria, waves): [milestones/v0.2-ROADMAP.md](
 - [ ] **Fase 4: Identidad y vínculo — fuente ↔ entrada del tracker** - El vínculo es explícito, almacenado y confirmado por el usuario; el sync podrá asumirlo o negarse
 - [ ] **Fase 5: Sync de progreso — la tesis del milestone** - Última página → el progreso sube solo al proveedor, con confirmar/deshacer y en el timeline
 - [ ] **Fase 6: Distribución de extensiones — repo, instalación y trust gate** - La app se instala sin catálogo; el usuario pega la URL de un repo y ninguna extensión se ejecuta hasta que acepta su huella
-- [ ] **Fase 7: Fuentes online — 2-3 fuentes propias en `nyanko-extensions`** - Buscar, explorar y leer manga online, verificado en build empaquetado
+- [ ] **Fase 7: Lectura online — el camino de la app hasta una fuente instalada** - Buscar, explorar y leer manga online, verificado en build empaquetado (los adapters los escribe el autor, fuera de GSD)
 - [ ] **Fase 8: Cola de descargas** - Lectura offline: lo descargado se lee exactamente como lo local, y una descarga sobrevive a un cierre brusco
 - [ ] **Fase 9: AnimeThemes, deuda de 0.2 y auditoría de costuras** - OP/ED en las cards, la deuda saldada, y el único control que en 0.2 encontró un blocker que todas las fases habían aprobado
 
@@ -206,7 +206,7 @@ fuentes, y **ninguna se ejecuta** hasta que acepta su huella explícitamente.
 
 ---
 
-### Fase 7: Fuentes online — 2-3 fuentes propias en `nyanko-extensions`
+### Fase 7: Lectura online — el camino de la app hasta una fuente instalada
 
 **Goal**: El usuario busca, explora y **lee manga online** desde fuentes instaladas — con el reader, el
 pipe, el esquema y el sync ya hechos y sin tocar. Esto es «solo adapters», y es donde aparece la
@@ -216,8 +216,19 @@ fragilidad real (HTML que cambia, Cloudflare, headers de hotlink).
 
 **Requirements**: ON-01, ON-02, ON-03, ON-04, ON-05
 
+**Entrada humana — no la produce esta fase (D-4)**: los adapters los **escribe el autor a mano**, en el
+repo `nyanko-extensions`, fuera del flujo GSD. Portar una extensión de Mihon es reescribirla (Kotlin/APK
+→ Python), no convertirla. Esta fase entrega el **lado app**: el camino completo hasta una fuente ya
+instalada, y su verificación. **Un ejecutor no escribe adapters de catálogos reales.** Lo que sí produce
+la fase es la fuente de conformidad (fixture, servida por un servidor local) contra la que se testea el
+camino sin depender de un sitio vivo — que es también lo que hace que estos tests no se rompan cuando un
+sitio cambie su HTML.
+
+**Gate**: la fase no puede cerrar su verificación hasta que exista **al menos un adapter real del autor**
+instalable — el criterio 5 (build empaquetado, `file://`, hotlink) solo es verdad contra una fuente viva.
+
 **Success Criteria** (qué tiene que ser VERDAD):
-  1. 2-3 fuentes propias, publicadas en el repo separado `nyanko-extensions` (D-2, escritas a mano — D-4: portar una extensión de Mihon es reescribirla, no convertirla), instalables desde la app por el flujo de la Fase 6.
+  1. El camino app→fuente funciona contra cualquier adapter que cumpla el contrato de la Fase 2: se instala por el flujo de la Fase 6 y queda utilizable sin tocar código de la app.
   2. El usuario busca, explora (popular / recientes) y abre una serie de una fuente online.
   3. Lista de capítulos con número, **scanlator**, idioma, fecha de subida, estado de lectura y estado de descarga; ordenar/filtrar; «marcar anteriores como leídos».
   4. Lectura online con prefetch **acotado** (±2-3 páginas, nunca «el capítulo entero»), bebiendo del mismo cubo de presupuesto que posee el motor (Fase 2).
@@ -226,7 +237,7 @@ fragilidad real (HTML que cambia, Cloudflare, headers de hotlink).
 
 **Cierra**: Pitfall 2 (el origen `file://` en producción).
 
-**Research pass**: **SÍ — `/gsd-plan-phase 7 --research-phase 7`.** Qué 2-3 fuentes sigue sin decidir por nadie, y la postura por sitio (Cloudflare, hotlink/`Referer`, forma del HTML, ToS) es exactamente la clase de cosa que hay que comprobar contra el sitio vivo, no inferir. MangaDex es la candidata obvia y verificada (JSON, sin auth, sin necesidad de `beautifulsoup4`).
+**Research pass**: **Ligero.** La pregunta que el research dejaba abierta («qué 2-3 fuentes», y la postura por sitio: Cloudflare, hotlink/`Referer`, forma del HTML, ToS) **deja de ser de esta fase**: la resuelve el autor al escribir los adapters. Lo que queda para la app es la costura `file://` en build empaquetado, que ya está documentada y no necesita investigación.
 
 **Plans**: TBD
 

@@ -58,6 +58,10 @@ Las extensiones de Mihon son Kotlin compilado a APK. **No hay conversión, ni pa
 repo de keiyoushi» no existe como operación: existe reescribir fuentes una a una. v0.3 estrena 2-3
 propias; el formato queda público para que la comunidad añada más.
 
+**Quién las escribe:** el autor, a mano, en `nyanko-extensions`, **fuera del flujo GSD**. Ningún
+ejecutor escribe adapters de catálogos reales. Lo que la app tiene que entregar es el *camino* hasta
+una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07).
+
 ---
 
 ## v0.3 Requirements
@@ -152,7 +156,12 @@ propias; el formato queda público para que la comunidad añada más.
 
 ### Fuentes online (ON)
 
-- [ ] **ON-01**: 2-3 fuentes propias, publicadas en el repo separado `nyanko-extensions` (D-2).
+- [ ] **ON-01**: El camino app→fuente funciona contra cualquier adapter que cumpla el contrato: se
+      instala por el flujo de SRC-01/02/03 y queda utilizable **sin tocar código de la app**. Los
+      adapters de catálogos reales los **escribe el autor a mano** en el repo separado
+      `nyanko-extensions` (D-2, D-4) — están **fuera del scope de GSD**; un ejecutor no los escribe. La
+      fase sí produce una fuente de conformidad (fixture local) contra la que testear el camino sin
+      depender de un sitio vivo.
 - [ ] **ON-02**: El usuario busca, explora (popular / recientes) y abre una serie de una fuente online.
 - [ ] **ON-03**: Lista de capítulos con número, **scanlator**, idioma, fecha de subida, estado de
       lectura y estado de descarga — más ordenar/filtrar y «marcar anteriores como leídos».
