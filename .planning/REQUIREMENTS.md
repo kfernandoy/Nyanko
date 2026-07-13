@@ -68,21 +68,26 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
 
 ### Fundaciones (FND) — antes de que nada escriba una fila
 
-- [ ] **FND-01**: El limitador de peticiones respeta el presupuesto real del proveedor — lee
+- [x] **FND-01**: El limitador de peticiones respeta el presupuesto real del proveedor — lee
       `X-RateLimit-Limit` de la respuesta en vez de hardcodear un número (AniList: 90/min normal,
       30/min es un estado degradado *temporal*; hardcodear cualquiera de los dos está mal).
-- [ ] **FND-02**: El limitador limita de verdad — suelta el semáforo *antes* de dormir el intervalo,
+
+- [x] **FND-02**: El limitador limita de verdad — suelta el semáforo *antes* de dormir el intervalo,
       en vez de retenerlo durante la espera (hoy `value=90` admite 90 peticiones simultáneas sin
       ritmo alguno).
-- [ ] **FND-03**: El limitador es seguro entre bucles de eventos — semáforo por *event loop*, como
+
+- [x] **FND-03**: El limitador es seguro entre bucles de eventos — semáforo por *event loop*, como
       `_clients` ya hace. Hoy es un singleton compartido entre el loop de uvicorn y el de
       `MutationWorker`; sobrevive solo porque nunca contiende.
+
 - [ ] **FND-04**: El modelo de progreso está escrito y es a prueba de decimales — número de capítulo
       `REAL` en local, `floor()` al enviarlo al proveedor, guarda monotónica contra el valor *del
       tracker*, y `progress_before` grabado en cada sync.
+
 - [ ] **FND-05**: Nada que contenga host o puerto se persiste jamás — solo rutas relativas o IDs
       opacos, resueltos al renderizar. Con test de guardia que falla si alguna columna persistida
       empieza por `http`.
+
 - [ ] **FND-06**: La migración de esquema se ejercita contra una **copia de la base de datos real**
       (`integrity_check` + recuento de filas), no contra un fixture.
 
@@ -95,13 +100,17 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
 - [ ] **SRC-02**: El usuario puede instalar, actualizar y desinstalar una fuente desde un repo añadido.
 - [ ] **SRC-03**: Una extensión sin confiar **no se carga**: se muestra su huella y el usuario la
       acepta explícitamente antes de que su código llegue a ejecutarse (D-3).
+
 - [ ] **SRC-04**: Una fuente rota o maliciosa no tumba el sidecar — versión de API comprobada al
       registrar, y una fuente rechazada se reporta en la UI en vez de reventar el arranque.
+
 - [ ] **SRC-05**: Cada fuente declara los headers (`Referer`/UA) que su CDN exige, **como dato**, para
       que el fetcher siga siendo genérico y el conocimiento de la fuente no se filtre fuera de ella.
+
 - [ ] **SRC-06**: El presupuesto de peticiones lo posee el motor, **no sus llamadores** — el prefetch
       del reader y la cola de descargas beben del *mismo* cubo (dos limitadores individualmente
       correctos dan el doble de ritmo y un baneo de IP).
+
 - [ ] **SRC-07**: Un parseo que encuentra 0 resultados **falla**, nunca devuelve lista vacía — y un
       fallo nunca pisa una lista de capítulos buena ya cacheada (así es como una página de reto de
       Cloudflare, que responde HTTP 200, se convierte en «este capítulo tiene 0 páginas» y se cachea).
@@ -110,18 +119,24 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
 
 - [ ] **RD-01**: El usuario lee CBZ / ZIP / carpeta de imágenes de su disco, con **orden natural**
       (`2.jpg` antes que `10.jpg` — el bug nº1 de los lectores locales).
+
 - [ ] **RD-02**: Modos de lectura: paginado RTL (el defecto del manga), paginado LTR, y continuo
       vertical / webtoon.
+
 - [ ] **RD-03**: El modo de lectura se recuerda **por serie** (una biblioteca tiene manga y webtoon a
       la vez; retrofittearlo obliga a adivinar el defecto de los usuarios existentes).
+
 - [ ] **RD-04**: Navegación de escritorio: teclado (←/→, AvPág/RePág, Espacio, Inicio/Fin), rueda,
       zonas de click, pantalla completa, contador de página, modos de ajuste, zoom y paneo.
+
 - [ ] **RD-05**: El usuario reanuda un capítulo por la página donde lo dejó.
 - [ ] **RD-06**: Encadenado siguiente/anterior capítulo con pantalla de transición — **aquí es donde
       nace el evento «capítulo terminado»**.
+
 - [ ] **RD-07**: Doble página con offset manual ajustable.
 - [ ] **RD-08**: Si el CBZ trae `ComicInfo.xml`, se usan sus metadatos en vez de adivinar el número de
       capítulo desde el nombre del fichero.
+
 - [ ] **RD-09**: La memoria del reader tiene techo — ventana de decodificación acotada, con un número
       de RSS en los criterios de aceptación (una página es un JPEG de 200 KB en disco y un bitmap de
       24 MB en RAM).
@@ -130,9 +145,11 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
 
 - [ ] **LNK-01**: El vínculo fuente↔entrada del tracker es **explícito, almacenado y confirmado por el
       usuario** — nunca calculado en el momento del sync.
+
 - [ ] **LNK-02**: `matcher.py` **propone** el vínculo con un score de confianza; el usuario confirma.
 - [ ] **LNK-03**: El reconocimiento de número de capítulo es un componente propio, puro y testeable
       (`extra` = .99, `omake` = .98, `12a` → 12.1) — con su tabla de casos escrita *antes* que el código.
+
 - [ ] **LNK-04**: El sync **falla cerrado** si no hay vínculo confirmado. Nunca escribe a ciegas.
 
 > Este es el peor fallo posible del milestone y se trata como corrupción de datos, no como UX: leo el
@@ -145,11 +162,14 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
 
 - [ ] **SYN-01**: Al llegar a la última página de un capítulo, el progreso sube solo al proveedor
       (AniList/MAL/Kitsu) — la regla de Mihon, literal.
+
 - [ ] **SYN-02**: Se propone, se confirma y se puede deshacer — el mismo trato que la detección de
       reproducción ya da al anime, y la lectura aparece en el timeline de actividad.
+
 - [ ] **SYN-03**: Sync de una sola dirección (Nyanko → tracker). Nunca bidireccional.
 - [ ] **SYN-04**: Releer se detecta: si la entrada está `COMPLETED` y el capítulo es menor que el
       progreso, se ofrece `REPEATING` — jamás se empuja un `1` encima de una serie terminada.
+
 - [ ] **SYN-05**: El sync reutiliza la cola de mutaciones existente (`enqueue_mutation` →
       `MutationWorker`), lo que da sync-al-reconectar e inmunidad a ráfagas **gratis**. No se
       construye un segundo camino de sync.
@@ -162,9 +182,11 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
       `nyanko-extensions` (D-2, D-4) — están **fuera del scope de GSD**; un ejecutor no los escribe. La
       fase sí produce una fuente de conformidad (fixture local) contra la que testear el camino sin
       depender de un sitio vivo.
+
 - [ ] **ON-02**: El usuario busca, explora (popular / recientes) y abre una serie de una fuente online.
 - [ ] **ON-03**: Lista de capítulos con número, **scanlator**, idioma, fecha de subida, estado de
       lectura y estado de descarga — más ordenar/filtrar y «marcar anteriores como leídos».
+
 - [ ] **ON-04**: Lectura online con prefetch **acotado** (±2-3 páginas, nunca «el capítulo entero»).
 - [ ] **ON-05**: Ninguna petición sale nunca del renderer — todo byte de página va renderer → sidecar →
       fuente. Verificado **en build empaquetado**, no en dev (en dev el renderer tiene origen real; en
@@ -176,13 +198,17 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
 - [ ] **DL-01**: El usuario encola capítulos, y pausa / reanuda / cancela la cola.
 - [ ] **DL-02**: **Serie por fuente, paralelo entre fuentes** — restricción dura para no comerse un
       baneo de IP, no una perilla de ajuste.
+
 - [ ] **DL-03**: Lo descargado se lee **igual que lo local** — mismo pipe, mismo endpoint, mismo
       código (no es una feature: es la ausencia de una).
+
 - [ ] **DL-04**: Una descarga sobrevive a un cierre brusco — `.part` + rename atómico, y
       reconciliación al arrancar (cualquier fila en `downloading` al inicio se resetea). Un capítulo a
       medias **nunca** parece legible.
+
 - [ ] **DL-05**: Las URLs de página se resuelven **al descargar, no al encolar** (las URLs firmadas
       caducan: un capítulo que espera 20 minutos en cola descarga 404s).
+
 - [ ] **DL-06**: El updater avisa y reanuda en vez de destruir — «3 capítulos descargando; seguirán
       tras la actualización» (`killSidecar()` es `taskkill /T /F`: cero oportunidad de vaciar buffers).
 
@@ -191,6 +217,7 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
 - [ ] **AT-01**: Las cards listan sus openings/endings y se pueden reproducir desde la card.
 - [ ] **AT-02**: Búsqueda **por ID directo** (AniList/MAL/Kitsu ya están en `external_identities`) —
       cero matching difuso.
+
 - [ ] **AT-03**: Se respetan las banderas `spoiler` y `nsfw` que la API devuelve.
 
 ### Deuda de 0.2 (DBT)
@@ -198,6 +225,7 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
 - [ ] **DBT-01**: W-3 — el tray refleja el estado real cuando la detección se pausa desde la UI.
 - [ ] **DBT-02**: `RELEASING.md` deja de vivir solo en la máquina del autor (`docs/extra/` está
       gitignorado).
+
 - [ ] **DBT-03**: Auditoría de costuras entre fases antes de cerrar el milestone.
 
 > DBT-03 no es sobrecoste: es **el único control que funcionó**. El audit cruzado de 0.2 es lo único
@@ -212,6 +240,7 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
   PyInstaller), no técnica. De momento: detectar la extensión y decir «conviértelo a CBZ». Se escala
   como ítem propio y con presupuesto para `THIRD-PARTY-NOTICES`, no se cuela dentro de una fase del
   reader.
+
 - EPUB / PDF (es otro renderizador entero).
 - Playlists de temas, mini-reproductor que sobrevive a la navegación.
 - Upscaling con IA, auto-división de páginas anchas.
@@ -224,10 +253,12 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
 
 - **Umbral de «% leído» para marcar completado** — ambiguo, genera falsos positivos y por tanto
   *corrompe el tracker*; y en tira larga el % no significa nada. El evento es «última página», punto.
+
 - **Sync bidireccional** — obliga a resolver conflictos en cada capítulo de cada manga.
 - **Progreso por página al tracker** — los trackers físicamente no pueden guardarlo (`$progress: Int!`).
 - **Descargas en paralelo dentro de una misma fuente** — la forma más rápida de que a todos los
   usuarios les baneen la IP.
+
 - **Copiar la pantalla de ajustes móvil de Mihon** (teclas de volumen, bloqueo de rotación) — cargo cult.
 - **Catálogo propio precargado** — ver D-1. Es la línea que mató a Tachiyomi.
 
@@ -239,9 +270,9 @@ una fuente instalada (ON-01) y el contrato contra el que se escriben (SRC-04..07
 
 | REQ | Phase | Status |
 |-----|-------|--------|
-| FND-01 | Fase 1 — Fundaciones | Pending |
-| FND-02 | Fase 1 — Fundaciones | Pending |
-| FND-03 | Fase 1 — Fundaciones | Pending |
+| FND-01 | Fase 1 — Fundaciones | Complete |
+| FND-02 | Fase 1 — Fundaciones | Complete |
+| FND-03 | Fase 1 — Fundaciones | Complete |
 | FND-04 | Fase 1 — Fundaciones | Pending |
 | FND-05 | Fase 1 — Fundaciones | Pending |
 | FND-06 | Fase 1 — Fundaciones | Pending |

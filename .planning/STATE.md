@@ -1,15 +1,19 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.3
-milestone_name: Nyanko lee manga
-status: ready
-last_updated: "2026-07-13T00:00:00.000Z"
+milestone_name: «Nyanko lee manga»
+current_phase: 01
+current_phase_name: fundaciones-limitador-esquema-y-modelo-de-progreso
+status: executing
+stopped_at: "Completed 01-01-PLAN.md (limitador: FND-01/02/03)"
+last_updated: "2026-07-13T17:19:44.158Z"
 last_activity: 2026-07-13
+last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 9
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
   percent: 0
 ---
 
@@ -22,14 +26,14 @@ See: .planning/PROJECT.md (updated 2026-07-13)
 **Core value:** Nyanko deja de ser solo un tracker y pasa a ser **donde consumes**: el manga se lee
 dentro de la app, y el tracking ocurre solo — el mismo trato que la detección de reproducción ya le da
 al anime.
-**Current focus:** Fase 1 — Fundaciones (limitador, esquema y modelo de progreso).
+**Current focus:** Phase 01 — fundaciones-limitador-esquema-y-modelo-de-progreso
 
 ## Current Position
 
-Phase: 1 — Fundaciones — limitador, esquema y modelo de progreso (siguiente)
-Plan: —
-Status: Ready — roadmap escrito, 48/48 requisitos mapeados
-Last activity: 2026-07-13 — ROADMAP.md de v0.3 creado (9 fases)
+Phase: 01 (fundaciones-limitador-esquema-y-modelo-de-progreso) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-07-13 — Phase 01 execution started
 
 Siguiente comando: `/gsd-plan-phase 1`
 
@@ -75,9 +79,11 @@ y (b) DBT-03 presupuesta la auditoría cruzada explícita antes de cerrar el mil
 - El limitador son **tres** bugs; arreglar solo el 90→30 arma los otros dos. → Fase 1.
 - Este proyecto **ya perdió todas las portadas** persistiendo el puerto efímero dentro de una URL. El
   reader es una superficie diez veces mayor. → Fase 1 (test de guardia) + Fase 3 (URLs relativas).
+
 - En producción el renderer es `file://` (origen `null`); en dev tiene origen real. Un reader perfecto
   durante todo el desarrollo devuelve imágenes rotas el día que se empaqueta. → Fase 7, verificado en
   build empaquetado.
+
 - `killSidecar()` es `taskkill /T /F`: cero oportunidad de vaciar buffers. → Fase 8.
 
 ### Deuda de 0.2 — dónde acabó
@@ -96,5 +102,19 @@ cuenta vinculada, iconos de proveedores). No bloquean la 0.3.
 
 ## Session Continuity
 
+**Last session:** 2026-07-13T17:19:44.147Z
+**Stopped at:** Completed 01-01-PLAN.md (limitador: FND-01/02/03)
+
 Roadmap de v0.3 creado el 2026-07-13. Nada ejecutado todavía. El siguiente paso es
 `/gsd-plan-phase 1`; las fases 7 y 8 llevan `--research-phase` cuando les toque.
+
+## Performance Metrics
+
+| Phase | Plan | Duration | Notes |
+|-------|------|----------|-------|
+| Phase 01 P01 | 50min | 3 tasks | 6 files |
+
+## Decisions
+
+- [Phase 01]: Limitador: el número del constructor (90/50/60) es valor inicial y TECHO; el presupuesto real lo anuncia X-RateLimit-Limit, acotado a [1, techo] para que una cabecera hostil no lo desactive — FND-01: hornear el presupuesto es lo que nos mantuvo pegándole a AniList a 90 req/min mucho después de que bajara a 30
+- [Phase 01]: Limitador: el semáforo pasa a ser tope de peticiones EN VUELO (max_concurrency=8); el ritmo lo lleva un reloj de salidas por event loop, durmiendo fuera del semáforo — FND-02/FND-03: dormir con el semáforo retenido no limitaba nada, y los primitivos de asyncio en __init__ se ataban al loop del import (MutationWorker usa asyncio.run() en otro hilo)
