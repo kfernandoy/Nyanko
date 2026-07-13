@@ -29,6 +29,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from nyanko_api.database import Database  # noqa: E402
@@ -291,6 +293,82 @@ def test_json_payloads_are_not_flagged(tmp_path):
         hits = {(table, column) for table, column, _ in find_persisted_urls(connection)}
         assert ("media_details_cache", "relations_json") not in hits
         assert ("cache", "payload") not in hits
+    finally:
+        connection.close()
+
+
+@pytest.mark.parametrize(
+    "poisoned",
+    [
+        "http://127.0.0.1:8765/assets/anilist/99/cover.jpg",
+        "http://localhost:8765/assets/anilist/99/cover.jpg",
+        "http://[::1]:8765/assets/anilist/99/cover.jpg",
+        "https://127.0.0.1:8765/assets/anilist/99/cover.jpg",
+    ],
+)
+def test_loopback_url_fails_even_in_an_allowlisted_column(tmp_path, poisoned):
+    """LOS DIENTES: la lista blanca exime de `http%`. De apuntar al sidecar NO exime a nadie.
+
+    `wont_watch.cover_image` está EXENTA, y hoy con razón: guarda la portada del CDN remoto.
+    Pero el renderer prefija cada `/assets/...` con `http://127.0.0.1:<puerto>` (api.ts:204) y
+    `addWontWatch` reenvía esa URL tal cual a `add_wont_watch` (main.py:3992), que la guarda.
+    Con una guardia que exime por COLUMNA, ese veneno entra sin que salte nada — la exención
+    es de la columna, y el bug es del VALOR. Este test es la única razón de que eso no pase.
+    """
+    connection = _seeded_database(tmp_path)
+    try:
+        assert ("wont_watch", "cover_image") in REMOTE_URL_ALLOWLIST, (
+            "este test pierde todo el sentido si la columna deja de estar exenta"
+        )
+        connection.execute("UPDATE wont_watch SET cover_image = ?", (poisoned,))
+        connection.commit()
+
+        try:
+            assert_no_persisted_urls(connection)
+        except AssertionError as error:
+            message = str(error)
+        else:
+            raise AssertionError(
+                "la guardia dejó pasar una URL al PROPIO sidecar por estar en una columna exenta"
+            )
+
+        assert "wont_watch" in message
+        assert "cover_image" in message
+    finally:
+        connection.close()
+
+
+def test_loopback_check_does_not_flag_remote_cdn_urls(tmp_path):
+    """Y no muerde a quien no debe: la portada del CDN remoto sigue siendo legítima."""
+    connection = _seeded_database(tmp_path)
+    try:
+        assert find_loopback_urls(connection) == []
+    finally:
+        connection.close()
+
+
+def test_loopback_url_hidden_inside_a_json_payload_is_caught(tmp_path):
+    """El veneno no siempre va al principio del valor: en `cache.payload` va DENTRO del JSON.
+
+    `cache.payload` no está exenta — no le hace falta: no *empieza* por `http`, empieza por `{`.
+    Un `LIKE 'http%'` no lo ve. Pero esa portada la sirve el backend igual, y muere con el
+    puerto igual. Se busca el host, esté donde esté dentro del valor.
+    """
+    connection = _seeded_database(tmp_path)
+    try:
+        connection.execute(
+            "UPDATE cache SET payload = ?",
+            ('{"coverImage": "http://127.0.0.1:8765/assets/x.jpg"}',),
+        )
+        connection.commit()
+
+        try:
+            assert_no_persisted_urls(connection)
+        except AssertionError as error:
+            assert "cache" in str(error)
+            assert "payload" in str(error)
+        else:
+            raise AssertionError("la guardia no mira dentro del valor: solo su primer carácter")
     finally:
         connection.close()
 
