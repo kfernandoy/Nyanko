@@ -84,7 +84,26 @@ def find_persisted_urls(connection: sqlite3.Connection) -> list[tuple[str, str, 
     sus recuentos, que es como un humano ve que la guardia está mirando de verdad y no
     pasando en vacío sobre tablas sin filas.
     """
-    raise NotImplementedError
+    tables = [
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        )
+    ]
+    hits: list[tuple[str, str, int]] = []
+    for table in tables:
+        columns = [row[1] for row in connection.execute(f'PRAGMA table_info("{table}")')]
+        for column in columns:
+            # SQLite convierte el operando de LIKE a texto: una columna INTEGER o REAL no
+            # puede casar con 'http%', así que no hace falta filtrar por tipo declarado (y
+            # filtrar por él sería un error: el tipo es una sugerencia, no una restricción).
+            rows = connection.execute(
+                f'SELECT COUNT(*) FROM "{table}" WHERE "{column}" LIKE ?', (f"{_URL_PREFIX}%",)
+            ).fetchone()[0]
+            if rows:
+                hits.append((table, column, rows))
+    return hits
 
 
 def assert_no_persisted_urls(connection: sqlite3.Connection) -> None:
@@ -93,7 +112,22 @@ def assert_no_persisted_urls(connection: sqlite3.Connection) -> None:
     El helper que las Fases 3/7/8 deben llamar TRAS SUS PROPIAS ESCRITURAS. Ver el docstring
     del módulo: sobre datos que no existen, esta comprobación pasa en vacío.
     """
-    raise NotImplementedError
+    violations = [
+        (table, column, rows)
+        for table, column, rows in find_persisted_urls(connection)
+        if (table, column) not in REMOTE_URL_ALLOWLIST
+    ]
+    if violations:
+        detail = "\n".join(
+            f"  {table}.{column}: {rows} fila(s) empiezan por '{_URL_PREFIX}'"
+            for table, column, rows in violations
+        )
+        raise AssertionError(
+            "URLs absolutas persistidas (el bug que dejó la biblioteca sin portadas):\n"
+            f"{detail}\n"
+            "Guarda una ruta RELATIVA ('/assets/...'). Una URL con host:puerto dentro muere "
+            "en cuanto el sidecar arranca en otro puerto, y no se cura sola."
+        )
 
 
 def _seed(connection: sqlite3.Connection) -> None:
