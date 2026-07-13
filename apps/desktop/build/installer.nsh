@@ -10,8 +10,31 @@
 ; y hace fallar el copiado: exactamente el fallo que D-05 previene. customCheckAppRunning corre
 ; justo antes de la extracción — es el análogo real del NSIS_HOOK_PREINSTALL de Tauri. (T-05-05)
 ; No "normalizar" esto a customInit: reabre la ventana.
+;
+; PERO customCheckAppRunning NO ES ADITIVA: es la rama !else del check del propio
+; electron-builder (app-builder-lib/templates/nsis/include/allowOnlyOneInstallerInstance.nsh:36-42).
+; Definirla DESACTIVA _CHECK_APP_RUNNING, que es quien encuentra, avisa y mata Nyanko.exe
+; antes de extraer — incluida su rama ${isUpdated} (Sleep 300 -> FIND -> Sleep 1000 -> KILL),
+; que existe EXACTAMENTE para sincronizar con un auto-update: quitAndInstall() lanza el
+; instalador ANTES de que la app termine de cerrarse. Sin ella, la extracción corre una carrera
+; contra un Nyanko.exe todavía vivo que mantiene bloqueado app.asar. En máquina rápida la
+; ganamos y parece que funciona; por eso ningún gate por fase lo vio. (B-1, audit v0.2)
+;
+; Así que la reconstruimos a mano: matamos el sidecar (lo nuestro) Y volvemos a llamar al check
+; del framework (lo que la macro había desactivado).
+;
+; El !include y el Var pid son OBLIGATORIOS y no sobran: allowOnlyOneInstallerInstance.nsh:5
+; los mete bajo `!ifmacrondef customCheckAppRunning`, es decir, SOLO si esta macro NO existe.
+; Como sí existe, ese include no ocurre y _CHECK_APP_RUNNING se quedaría sin ${GetProcessInfo}
+; ni $pid. Nuestro installer.nsh se inyecta en la cabecera del script (NsisTarget.js:600),
+; antes de esa guarda, así que los proveemos nosotros.
+!include "getProcessInfo.nsh"
+Var pid
+
 !macro customCheckAppRunning
   nsExec::Exec 'taskkill /F /IM nyanko-api.exe /T'
+  !insertmacro IS_POWERSHELL_AVAILABLE
+  !insertmacro _CHECK_APP_RUNNING
 !macroend
 
 ; ---------------------------------------------------------------------------

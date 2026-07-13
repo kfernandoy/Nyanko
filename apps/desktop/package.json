@@ -1,14 +1,14 @@
 {
   "name": "@nyanko/desktop",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "dist": "electron-vite build && electron-builder --publish never",
-    "dist:publish": "electron-vite build && electron-builder --publish always",
+    "dist:publish": "electron-vite build && electron-builder --publish always && node scripts/publish-bridge.mjs",
     "preview": "electron-vite preview",
     "check": "tsc --noEmit",
     "test:datadir": "node --import tsx --test electron/main/compat-paths.test.ts",
@@ -22,8 +22,7 @@
     "electron-log": "^5.4.4",
     "electron-updater": "^6.6.2",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "sharp": "^0.35.2"
+    "react-dom": "^19.1.1"
   },
   "devDependencies": {
     "@types/react": "^19.1.12",
@@ -32,6 +31,7 @@
     "electron": "43.1.0",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
+    "sharp": "^0.35.2",
     "tsx": "^4.23.0",
     "typescript": "^5.9.2",
     "vite": "^7.1.4"
