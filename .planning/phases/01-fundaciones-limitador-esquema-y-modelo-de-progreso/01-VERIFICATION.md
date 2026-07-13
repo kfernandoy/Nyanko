@@ -1,223 +1,214 @@
 ---
 phase: 01-fundaciones-limitador-esquema-y-modelo-de-progreso
-verified: 2026-07-13T14:05:00Z
+verified: 2026-07-13T15:10:00Z
 status: passed
 score: 5/5 must-haves verified
+plans_covered: [01-01, 01-02, 01-03, 01-04]
+requirements: [FND-01, FND-02, FND-03, FND-04, FND-05, FND-06]
 behavior_unverified: 0
 overrides_applied: 0
-warnings:
-  - id: W-1
-    severity: warning
-    title: "La lista blanca de FND-05 exime por COLUMNA, pero el bug es una propiedad del VALOR"
+re_verification:
+  previous_status: passed
+  previous_score: 5/5
+  previous_warnings: [W-1, W-2, W-3]
+  gaps_closed:
+    - "W-1 — la lista blanca de FND-05 eximía por COLUMNA mientras el bug es del VALOR. Cerrada por 01-04 con una segunda capa NO EXENTABLE (find_loopback_urls). Dientes verificados por mutación."
+    - "W-2 — next_progress declaraba tracker_status y nunca lo leía. Parámetro eliminado (dbc194e); is_reread lo conserva y sí lo lee. Spec corregida."
+    - "W-3 — FND-05 marcado [x] en REQUIREMENTS.md (línea 87 y tabla, línea 277). Verificado que el check está GANADO, no puesto a mano."
+  gaps_remaining: []
+  regressions: []
+notes:
+  - id: N-1
+    severity: info
+    title: "La BD de producción REAL tiene 4.719 filas envenenadas AHORA MISMO — pero se auto-curan"
     detail: >
-      REMOTE_URL_ALLOWLIST exime 6 (tabla, columna). Dentro de una columna exenta, la guardia no
-      distingue 'https://s4.anilist.co/...' (legítimo) de 'http://127.0.0.1:8765/assets/...' (el bug
-      que se llevó las portadas). `wont_watch.cover_image` es la ÚNICA entrada exenta alimentada por
-      el CLIENTE: normalizeAssetUrls (apps/desktop/src/api.ts:204) reescribe todo '/assets/...' a
-      '${apiUrl}/assets/...' — es decir, fabrica exactamente la URL con puerto dentro — y
-      addWontWatch (api.ts:446) reenvía ese valor tal cual a add_wont_watch (main.py:3992), que lo
-      guarda verbatim. Hoy es seguro SOLO porque /api/search/media sirve portadas del CDN remoto y
-      nunca '/assets/...'. Esa propiedad no está enforced en ninguna parte.
-    recommendation: >
-      ~3 líneas en find_persisted_urls: las columnas exentas siguen exentas de LIKE 'http%', pero NO
-      de un chequeo de loopback/puerto (http://127.0.0.1, http://localhost, o '://host:puerto').
-      Cierra el hueco para las 6 entradas, no solo wont_watch, y deja verdes las 12.610 filas de CDN
-      legítimo. Momento natural: al planificar la Fase 3 (el reader empieza a persistir URLs de página).
-  - id: W-2
-    severity: warning
-    title: "next_progress declara un parámetro que su cuerpo nunca lee"
+      Corriendo la nueva find_loopback_urls contra la BD de producción CRUDA (no la copia migrada):
+      media_details_cache.cover_image_local = 2.784 filas y banner_image_local = 1.935 filas, todas
+      con la forma 'http://127.0.0.1:8765/assets/...'. Muestreé los valores: NO son falsos positivos,
+      es el bug original, vivo en disco. Se curan solas: _migrate_asset_urls_to_relative
+      (database.py:404) corre INCONDICIONAL e idempotente en cada initialize(), y por eso la copia
+      migrada a v8 sale limpia. No es una regresión de 01-04: la guardia de prefijo de 01-03 también
+      las habría marcado (cover_image_local empieza por http y NO está exenta) — es exactamente el
+      motivo por el que el plan 01-03 mandaba correr el script contra la copia migrada, no contra la
+      v7 cruda.
+    consequence: >
+      `python scripts/check_persisted_urls.py` SIN argumento apunta por defecto a la BD de producción
+      cruda y sale 1 con esas 4.719 filas. Es un verdadero positivo sobre datos sin curar, pero a
+      quien lo corra a pelo le parecerá un fallo. Pásale siempre la copia migrada que imprime
+      verify_real_db_migration.py, como dice su propio docstring.
+  - id: N-2
+    severity: info
+    title: "El techo del chequeo loopback: hosts loopback, no cualquier host:puerto"
     detail: >
-      progress.py:21 — `next_progress(chapter, tracker_progress, tracker_status=None)`. El cuerpo
-      (líneas 35-43) NO usa `tracker_status` en ningún momento. La firma promete una sensibilidad al
-      estado que la implementación no tiene: un llamador de la Fase 5 que pase tracker_status="COMPLETED"
-      esperando otro resultado se llevará una sorpresa silenciosa. Ruff no lo detecta (ARG002 desactivada).
-    recommendation: "O se usa, o se quita de la firma. Decidirlo antes de que la Fase 5 tenga llamadores."
-  - id: W-3
-    severity: bookkeeping
-    title: "REQUIREMENTS.md sigue marcando FND-05 como pendiente"
-    detail: "FND-01..04 y FND-06 están [x]; FND-05 sigue [ ] pese a estar implementado y verificado."
-    recommendation: "Marcar FND-05 como [x] en .planning/REQUIREMENTS.md."
-deferred:
-  - truth: "El capítulo 10.5 se envía floor()eado (10) al proveedor (cláusula de SC-4, extremo a extremo)"
-    addressed_in: "Phase 5"
-    evidence: >
-      Hoy NINGÚN camino de producción envía un capítulo de manga a un proveedor — no existe el reader
-      (Fase 3) ni el sync de progreso (Fase 5). El modelo (to_provider/next_progress/effective_chapter)
-      está escrito, es puro y está testeado; la columna chapter_progress REAL está migrada. El objetivo
-      de esta fase es exactamente ese: que el modelo esté «escrito, decidido y migrado» ANTES de que
-      exista un consumidor. Phase 5 goal: «Última página → el progreso sube solo al proveedor».
-  - truth: "next_progress / is_reread / effective_chapter tienen cero call sites de producción"
-    addressed_in: "Phase 3 y Phase 5"
-    evidence: >
-      Por diseño: son el contrato contra el que la Fase 3 (reader) y la Fase 5 (sync) construyen. Único
-      símbolo ya cableado: to_provider, usado por Database.set_chapter_progress (database.py:2614).
+      _LOOPBACK_HOSTS = ('127.0.0.1', 'localhost', '[::1]'). Una URL a la LAN
+      ('http://192.168.1.5:8765/assets/...') o a 0.0.0.0 NO se caza. Hoy es correcto — el sidecar
+      liga a 127.0.0.1 — y ampliarlo a «cualquier host con puerto» arriesga falsos positivos sobre
+      CDNs remotos legítimos, que es justo lo que apagaría la guardia. Techo deliberado y bien elegido.
+  - id: N-3
+    severity: info
+    title: "La guardia DETECTA, no PREVIENE, en el camino de escritura"
+    detail: >
+      add_wont_watch (main.py:3992) sigue guardando body.cover_image verbatim: un cliente que POSTee
+      una URL loopback la persiste, y la guardia solo la caza después (en tests, o al correr el
+      script contra datos reales). FND-05 pide literalmente «con test de guardia que falla si...» —
+      define el mecanismo como un test, y ese test existe y tiene dientes. El check está ganado. Se
+      anota el residuo para que nadie crea que el camino de escritura está cerrado con llave.
 ---
 
 # Phase 1: Fundaciones — limitador, esquema y modelo de progreso — Verification Report
 
 **Phase Goal:** Nada en el milestone hace una ráfaga ni escribe una fila hasta que el limitador limita de verdad y el modelo de progreso está escrito, decidido y migrado contra una copia de la BD real.
-**Verified:** 2026-07-13
-**Status:** passed (5/5) — con 2 warnings y 1 corrección de contabilidad
-**Re-verification:** No — initial verification
+**Verified:** 2026-07-13 (re-verificación tras el cierre de lagunas 01-04)
+**Status:** ✅ **passed — 5/5 criterios, 6/6 requisitos FND. Sin lagunas pendientes.**
+**Plans covered:** 01-01, 01-02, 01-03, 01-04
+
+## Veredicto
+
+**La Fase 01 está completa.** Los seis requisitos FND se cumplen con evidencia en el código, y las dos
+lagunas que levantó la verificación anterior están cerradas de verdad — no declaradas cerradas: las
+verifiqué por mutación y contra la BD real.
 
 ## Método
 
-No se dio por buena ninguna afirmación de los SUMMARY. Cada criterio se comprobó contra el código, y
-los tres del limitador se sometieron a **mutación**: se rompió a propósito el arreglo y se comprobó
-que los tests se ponen ROJOS. Un test que no falla contra el bug no prueba nada, y esa es justamente
-la trampa que este plan existía para evitar. `http.py` quedó restaurado byte a byte (`git diff` vacío).
+Ninguna afirmación de los SUMMARY se dio por buena. Los tres bugs del limitador y la nueva capa
+loopback se sometieron a **mutación**: se rompió el arreglo a propósito y se comprobó que los tests se
+ponen ROJOS. El chequeo de falsos positivos se ejecutó **contra la BD real**, no contra el fixture.
+Todos los ficheros quedaron restaurados byte a byte (`git status` limpio).
 
 ## Goal Achievement
 
-### Observable Truths (Success Criteria del ROADMAP)
+| # | Success Criterion | Status | Evidence |
+|---|-------------------|--------|----------|
+| 1 | Ráfaga de 50 desde los DOS event loops sin `RuntimeError` ni cuelgue; ritmo del header | ✓ VERIFIED | Mutación C (estado compartido) → `test_burst_from_two_event_loops` + poda en ROJO |
+| 2 | Tras 429 se degrada y se recupera; ningún test pasa por hardcodear 90/30 | ✓ VERIFIED | `_observe_budget` en `http.py:207`, ANTES de `raise_for_status` (208). Pacing sobre `[120, 45, 12]`. Mutación A → 10 ROJOS |
+| 3 | Migración v8 contra copia de la BD real: integridad, recuentos, backup | ✓ VERIFIED | Ejecutado: `integrity_check: ok -> ok`, 7→8, recuentos idénticos en 25 tablas, backup, original intacta |
+| 4 | 10.5 REAL en local, floor() al proveedor, guarda contra el TRACKER, `progress_before` en cada sync | ✓ VERIFIED | Columna REAL migrada. `progress_before` en todos los caminos confirmados; `test_progress.py` afirma el valor **del tracker** (7), no el local (3). `undo_playback` falla cerrado |
+| 5 | Un test de guardia falla si CUALQUIER columna persistida empieza por `http` | ✓ VERIFIED + **REFORZADO por 01-04** | Guardia genérica por `PRAGMA table_info` + **segunda capa NO EXENTABLE**. Dientes por mutación. 0 falsos positivos contra la BD real |
 
-| # | Truth | Status | Evidence |
-|---|-------|--------|----------|
-| 1 | Ráfaga de 50 concurrentes desde los DOS event loops sin `RuntimeError` ni cuelgue; el ritmo sale del `X-RateLimit-Limit` del proveedor | ✓ VERIFIED | `test_burst_from_two_event_loops` (hilo + `asyncio.run()`, re-lanza la excepción del hilo, `join(timeout)`). **Mutación C** (estado compartido entre loops) → ROJO en `test_burst_from_two_event_loops` y `test_loop_state_prunes_closed_loops`. |
-| 2 | Tras un 429 se adapta al presupuesto degradado y vuelve al normal cuando el proveedor lo anuncia; ningún test pasa por hardcodear 90 ni 30 | ✓ VERIFIED | `_observe_budget` se llama en `http.py:207` **ANTES** de `raise_for_status()` (208) — el 429 es la única respuesta que trae el presupuesto degradado. Pacing parametrizado sobre `[120, 45, 12]`: ninguno es 90 ni 30. **Mutación A** (ignorar la cabecera) → 10 tests ROJOS. |
-| 3 | La migración a v8 corre contra copia de la BD real, `integrity_check: ok`, mismos recuentos, backup pre-migración | ✓ VERIFIED | **Ejecutado por el verificador**: `integrity_check: ok -> ok`, `schema_migrations: 7 -> 8`, recuentos idénticos en las 25 tablas, `library_entries.chapter_progress: REAL`, backup creado, «BD original intacta (tamaño y mtime): sí». |
-| 4 | 10.5 se guarda REAL en local y floor()eado al proveedor; guarda monotónica contra el valor DEL TRACKER; `progress_before` en cada sync | ✓ VERIFIED | Columna REAL migrada (verificado en la BD real). `set_chapter_progress` escribe la pareja coherente vía `to_provider`. `progress_before` cableado en TODOS los caminos confirmados; `test_progress.py:195` (parametrizado sobre 3 endpoints) afirma que graba el valor **del tracker** (7), no el local (3), ni 0, ni `progress_after`. Envío end-to-end al proveedor → deferred a Fase 5 (ver frontmatter). |
-| 5 | Un test de guardia falla si CUALQUIER columna persistida empieza por `http`, incluidas las nuevas de v8 | ✓ VERIFIED | Guardia genérica por `sqlite_master` + `PRAGMA table_info` (cero listas escritas a mano). `test_guard_covers_columns_it_never_names` añade una columna en runtime y la guardia la caza sin ser editada. **Ejecutado por el verificador contra la copia v8 real de 31,9 MB**: exit 0, 12.610 filas de URL remota inspeccionadas → no pasa en vacío. Ver W-1. |
+**Score:** 5/5 · **Requisitos:** FND-01 ✓ FND-02 ✓ FND-03 ✓ FND-04 ✓ FND-05 ✓ FND-06 ✓
 
-**Score:** 5/5 truths verified (0 behavior-unverified)
+## El delta de 01-04, auditado
 
-### Prueba de dientes (mutation testing ejecutado por el verificador)
+### 1. El ensanchamiento a substring — **SÓLIDO. No es scope creep: cierra un agujero que el prefijo no puede ver**
 
-| Mutación | Bug reintroducido | Resultado esperado | Resultado real |
-|----------|-------------------|--------------------|----------------|
-| A | `_observe_budget` ignora la cabecera (presupuesto horneado) | pacing + degrade en ROJO | **10 failed, 10 passed** ✓ |
-| B | `sleep(self._interval)` de vuelta DENTRO del semáforo (la forma original) | `test_concurrent_requests_get_distinct_deadlines` en ROJO | **4 failed** — cae el de deadlines distintos y los 3 de pacing ✓ |
-| C | Un solo `_LoopState` compartido entre todos los loops | `test_burst_from_two_event_loops` en ROJO | **5 failed** — cae el burst (AssertionError del hilo) y la poda ✓ |
+Era la preocupación principal, y la respuesta es que el ejecutor tiene razón.
 
-Los tres bugs de FND-01/02/03 están genuinamente cubiertos: ninguno puede volver en silencio.
+**El argumento del JSON es correcto, y lo comprobé.** `cache.payload` empieza por `{`, así que
+`LIKE 'http%'` **es estructuralmente ciego** a una portada envenenada embutida dentro del JSON — y esa
+portada la sirve el backend igual, y muere con el puerto igual. Un chequeo de *prefijo* no puede cubrir
+esa clase de veneno, por mucho que se afine. La única forma de verlo es mirar dentro del valor. El
+ensanchamiento no es «más de lo pedido»: es lo mínimo que cierra el hueco.
 
-### Requirements Coverage
+**Verifiqué yo mismo la afirmación de cero falsos positivos** (no la acepté de palabra), contra la copia
+v8 real de 31,9 MB — el objetivo canónico que el plan 01-03 fijó:
 
-| Requirement | Status | Evidence |
-|-------------|--------|----------|
-| FND-01 (presupuesto de la cabecera) | ✓ SATISFIED | `RATE_LIMIT_HEADER` + `_observe_budget` con clamp `[1, ceiling]`; `999999/0/-5/""/abc/30.5` no desactivan el limitador. |
-| FND-02 (soltar antes de dormir) | ✓ SATISFIED | `http.py:197-200`: reserva bajo `state.lock`, sale, duerme; `async with state.semaphore` (202) es solo tope EN VUELO. Ningún `sleep` léxicamente dentro del semáforo. |
-| FND-03 (estado por event loop) | ✓ SATISFIED | `_loop_state: dict[AbstractEventLoop, _LoopState]`, gemelo de `_clients`, con poda de loops cerrados. Ningún primitivo asyncio en `__init__`. |
-| FND-04 (modelo de progreso) | ✓ SATISFIED | `progress.py` puro (único import: `math`), 4 funciones, `docs/specs/progress-model.md` (105 líneas). `progress_before` cableado y testeado. |
-| FND-05 (nada con host/puerto persistido) | ✓ SATISFIED (ver W-1) | Guardia genérica + script contra la BD real. **Sigue marcado `[ ]` en REQUIREMENTS.md → W-3.** |
-| FND-06 (migración contra BD real) | ✓ SATISFIED | `verify_real_db_migration.py` ejecutado por el verificador contra los 31,9 MB reales. |
-
-## Las tres desviaciones, auditadas
-
-### 1. `01-01` — snapshot `list(...)` + `pop(stale, None)` en vez de replicar `_client_for` tal cual → **SÓLIDA, y mejor que el plan**
-
-El ejecutor tenía razón. El `_client_for` original (`git show 8f4efc4^`) hacía:
-
-```python
-for stale in [known for known in self._clients if known.is_closed()]:
-    del self._clients[stale]
+```
+214 columnas inspeccionadas · 421.688 valores no nulos barridos
+find_loopback_urls -> ZERO hits
+12.610 filas de URL remota legítima (CDN de AniList, nyaa.si) -> ninguna marcada
+exit 0
 ```
 
-La comprensión itera **el dict** ejecutando bytecode Python en el predicado (`known.is_closed()`), así que
-el GIL puede ceder entre elementos: si el hilo del `MutationWorker` inserta su loop en ese hueco →
-`RuntimeError: dictionary changed size during iteration`. `list(self._clients)` sí es atómico (copia en C,
-sin bytecode intermedio). El arreglo:
+**Cero falsos positivos, confirmado de forma independiente.** Lo que hace segura la ampliación es el `//`
+delante del host (`%//127.0.0.1%`, no `%127.0.0.1%`): la palabra «localhost» suelta en una sinopsis no
+puede acertar. El fallo que temía el SUMMARY de 01-03 —«una guardia que le grita a datos legítimos es una
+guardia que alguien apaga»— **no se materializa**: la guardia no le grita a nada legítimo.
 
-- Se aplicó a **los DOS dicts**: `_loop_state` (`http.py:143`) y `_clients` (`http.py:178`). Verificado leyendo el fichero.
-- No queda **ninguna** iteración de dict sin snapshot en `http.py`.
-- `pop(stale, None)` además elimina la carrera del `del` (dos hilos podando el mismo loop muerto → `KeyError`).
+Techo, correctamente elegido (N-2): caza hosts *loopback*, no «cualquier host con puerto». Una URL a la
+LAN no se caza. Ampliarlo más sí arriesgaría falsos positivos sobre CDNs remotos — que es exactamente lo
+que apagaría la guardia. El techo está donde debe.
 
-El plan pedía replicar un precedente que estaba sutilmente roto. El ejecutor arregló el precedente en vez
-de copiarlo. Correcto.
+### 2. Los dientes — **CONFIRMADOS por mutación**
 
-### 2. `01-02` — `is_reread` añadido fuera del artifact list → **SÓLIDA, con un defecto colateral (W-2)**
+Neutralicé `find_loopback_urls` (vuelta al comportamiento de 01-03):
 
-- **¿`progress.py` sigue puro?** Sí. Único import: `math` (línea 9). Sin BD, sin HTTP, sin imports del proyecto.
-- **¿Es `is_reread` código muerto?** Está testeado (`test_progress.py:60-64`) y su justificación se sostiene:
-  `next_progress` devuelve `int | None`, y desde `None` un llamador **no puede** distinguir «relectura de una
-  serie terminada» de «sin valor del tracker». Sin `is_reread`, la Fase 5 reimplementaría la comprobación
-  dentro de un endpoint — exactamente lo que el módulo existe para impedir.
-- Sin call site de producción hoy, igual que `next_progress` y `effective_chapter`. Eso **es el objetivo de la
-  fase** («el modelo está escrito… antes de que nada escriba una fila»), no un descuido. Deferred, no gap.
-- ⚠️ **Defecto encontrado de paso (W-2):** `next_progress` declara `tracker_status` y **nunca lo lee**. La firma
-  promete algo que el cuerpo no hace.
-
-### 3. `01-03` — regla `_path` → `path` ensanchada, y `wont_watch.cover_image` en la lista blanca sin filas → **la regla, SÓLIDA; la entrada, JUSTIFICADA HOY pero con un hueco latente real (W-1)**
-
-**La regla ensanchada es un acierto claro.** El plan decía «ninguna entrada acaba en `_local` ni `_path`».
-`"path".endswith("_path")` es `False`, y las dos columnas de ruta local que existen se llaman `local_files.path`
-y `library_folders.path`. La regla literal del plan habría dejado fuera **justo lo que tiene que cubrir**. El
-test comprueba `endswith("path")` a secas (`test_persisted_urls.py:312`). Bien visto.
-
-**`wont_watch.cover_image` — lo escruté a fondo, como se pidió. Es correcta hoy:**
-
-Trazé la cadena completa. `/api/search/media` (`main.py:3905`) devuelve los resultados **crudos del proveedor**
-(`media_provider.discover(...)`), sin sustitución de portadas locales — el `cover_image` es la URL del CDN remoto
-(`https://s4.anilist.co/...`). `DiscoveryView` lo renderiza y `toggleWontWatch` reenvía ese mismo valor. Luego
-la columna guarda URLs remotas legítimas, y la exención es correcta. Confirmado además que la tabla está vacía
-en la BD real (`wont_watch: 0 filas`) — la honestidad del ejecutor es visible en la propia salida del script
-(`-- wont_watch.cover_image  0 filas (exenta, pero vacía)`).
-
-**Pero la entrada abre un hueco latente, y es exactamente el que se temía (W-1):**
-
-`wont_watch.cover_image` es la **única** columna exenta alimentada por el **cliente**. Y el cliente tiene un
-normalizador que fabrica precisamente la URL envenenada:
-
-```typescript
-// apps/desktop/src/api.ts:202-204 — corre sobre TODAS las respuestas (api.ts:249)
-function normalizeAssetUrls<T>(value: T, apiUrl: string): T {
-  if (typeof value === "string") {
-    return (value.startsWith("/assets/") ? `${apiUrl}${value}` : value) as T;
-  }
+```
+FAILED test_loopback_url_fails_even_in_an_allowlisted_column[http://127.0.0.1:8765/...]
+FAILED test_loopback_url_fails_even_in_an_allowlisted_column[http://localhost:8765/...]
+FAILED test_loopback_url_fails_even_in_an_allowlisted_column[http://[::1]:8765/...]
+FAILED test_loopback_url_fails_even_in_an_allowlisted_column[https://127.0.0.1:8765/...]
+FAILED test_loopback_url_hidden_inside_a_json_payload_is_caught
+5 failed, 7 passed
 ```
 
-`${apiUrl}` es `http://127.0.0.1:<puerto>`. Si un día `/api/search/media` sirviera portadas locales
-`/assets/...` — que es exactamente lo que `_local_library_items` (`main.py:781`) ya hace para la biblioteca —
-el renderer las convertiría en `http://127.0.0.1:8765/assets/...`, `addWontWatch` (api.ts:446) las reenviaría
-tal cual, `add_wont_watch` (main.py:3992) las guardaría verbatim, y **la guardia no las vería jamás**: la
-columna está exenta por `(tabla, columna)`.
+La guardia **puede fallar**, y falla exactamente donde debe. El RED-before-GREEN que reclama el SUMMARY
+es real.
 
-La exención es por columna; el bug es una propiedad del **valor**. Hoy sólo nos salva una propiedad de otro
-módulo (que discover no localice portadas) que no está enforced en ningún sitio. Es el bug de las portadas,
-esperando un cambio razonable en la Fase 3/7.
+### 3. `test_allowlist_never_covers_local_columns` — **INTACTO, byte por byte**
 
-**No es un blocker** — la guardia existe, tiene dientes, cubre las columnas que nadie nombró, y corre contra
-datos reales. Es una **oportunidad de endurecimiento de 3 líneas** en una frontera de confianza que este
-proyecto **ya perdió una vez**. Recomendación concreta en el frontmatter (W-1).
+`git diff 43c45ab..HEAD` no toca ni una línea de la regla dura (`endswith("_local")` / `endswith("path")`).
+No se debilitó nada para que pasaran los tests nuevos.
 
-## Anti-Patterns Found
+Detalle que además la refuerza: el test de dientes nuevo **afirma** que `("wont_watch","cover_image")`
+sigue en la lista blanca — si alguien «arreglara» el problema quitando la exención, el test se rompería.
+Eso mantiene la exención honesta en vez de taparla.
 
-| File | Line | Pattern | Severity | Impact |
-|------|------|---------|----------|--------|
-| — | — | Ninguno | — | Sin `TODO`/`FIXME`/`XXX`/`TBD`/`HACK`/`PLACEHOLDER` en los ficheros de la fase. Los `ponytail:` presentes son deliberados y nombran su techo (concurrencia 8, clamp del presupuesto). |
+### 4. El `[x]` de FND-05 — **GANADO**
 
-## Behavioral Spot-Checks (ejecutados)
+Cláusula uno («nada que contenga host o puerto se persiste jamás»), enforced por cuatro piezas reales:
 
-| Behavior | Command | Result | Status |
-|----------|---------|--------|--------|
-| Suites de la fase | `pytest tests/test_http.py tests/test_progress.py tests/test_persisted_urls.py -q` | 44 passed in 3.83s | ✓ PASS |
-| Ritmo no duerme de verdad | idem (`3.83s`) | Los tests de ritmo afirman los sleeps *solicitados*, no una carrera de reloj de pared | ✓ PASS |
-| Migración v8 contra BD real | `python scripts/verify_real_db_migration.py` | `integrity_check: ok -> ok`; 7→8; recuentos idénticos; backup creado; original intacta | ✓ PASS |
-| Guardia FND-05 contra BD real v8 | `python scripts/check_persisted_urls.py <copia-v8>` | exit 0; 12.610 filas remotas legítimas inspeccionadas; 0 violaciones | ✓ PASS |
+- `_asset_url` (main.py:317) devuelve rutas **relativas** — el origen del bug, cerrado.
+- `_migrate_asset_urls_to_relative` (database.py:404) **cura** lo ya escrito, incondicional e idempotente.
+- La capa loopback **no exentable**: ninguna columna, exenta o no, puede apuntar al sidecar.
+- El script contra datos reales, que mira **dentro** del valor.
 
-Nota sobre SC-3: el ROADMAP cita 2.761 `library_entries` / 25.727 `episodes`; la BD viva tiene hoy 2.774 /
-25.740 (creció 13 filas desde que se escribió el roadmap). El invariante que importa — **mismos recuentos
-antes y después de migrar** — se cumple exactamente. No es un defecto; se anota para que nadie lo confunda
-con uno más adelante.
+Residuo honesto (N-3): la guardia **detecta**, no **previene** — `add_wont_watch` sigue guardando lo que
+el cliente le manda. Pero FND-05 define su propio mecanismo como «con test de guardia que falla si…», y
+ese test existe, tiene dientes y no es exentable. El check está ganado.
+
+### 5. `tracker_status` (W-2) — **cerrado limpiamente**
+
+Parámetro eliminado de `next_progress`. `is_reread` lo conserva **y sí lo lee** (`progress.py:57`), que
+era el punto. `docs/specs/progress-model.md:68` corregida. `progress.py` sigue puro (único import: `math`).
+
+## Hallazgo del verificador (N-1) — no es un defecto de la fase, pero hay que saberlo
+
+Corriendo la nueva guardia contra la BD de producción **cruda** encontré **4.719 filas envenenadas
+ahora mismo**:
+
+```
+media_details_cache.cover_image_local : 2.784 filas
+media_details_cache.banner_image_local: 1.935 filas
+  → 'http://127.0.0.1:8765/assets/anilist/21/cover.jpg'   (valores muestreados: reales)
+```
+
+Es el bug original, vivo en disco. **No es un falso positivo y no es una regresión de 01-04** — la
+guardia de prefijo de 01-03 también las marcaba (`cover_image_local` empieza por `http` y no está
+exenta). **Se curan solas** en el siguiente arranque de la app, porque
+`_migrate_asset_urls_to_relative` corre incondicional en cada `initialize()`; por eso la copia migrada
+a v8 sale limpia y el script sale 0 contra ella.
+
+Consecuencia práctica: `check_persisted_urls.py` **sin argumento** apunta a la BD cruda y sale 1. Es un
+verdadero positivo, pero parece un fallo. Pásale siempre la copia migrada, como dice su docstring.
+
+## Behavioral Spot-Checks (ejecutados por el verificador)
+
+| Check | Command | Result |
+|-------|---------|--------|
+| Suites de la fase | `pytest test_persisted_urls test_progress test_http -q` | **50 passed** in 4.05s (eran 44 → +6 de 01-04) |
+| Migración v8 vs BD real | `python scripts/verify_real_db_migration.py` | integridad ok, 7→8, recuentos idénticos, backup, original intacta |
+| Guardia (2 capas) vs copia v8 | `python scripts/check_persisted_urls.py <copia-v8>` | **exit 0**, 12.610 filas remotas legítimas, 0 violaciones, 0 loopback |
+| Falsos positivos del substring | `find_loopback_urls` vs BD real migrada | **0 hits / 421.688 valores** |
+| Dientes de la capa loopback | mutación: `find_loopback_urls -> []` | **5 failed** ✓ |
+
+## Anti-Patterns
+
+Ninguno. Sin `TODO`/`FIXME`/`XXX`/`TBD`/`HACK` en los ficheros de la fase. Los `ponytail:` presentes
+nombran su techo (concurrencia 8, clamp del presupuesto, hosts loopback) — deuda declarada, no oculta.
 
 ## Gaps Summary
 
-**Ninguna laguna bloqueante. El objetivo de la fase se alcanza.**
+**Ninguna. La fase cierra.**
 
-El limitador limita de verdad (y los tres bugs están cubiertos por tests con dientes probados por mutación),
-el esquema v8 está migrado y verificado contra los 31,9 MB reales del usuario con backup e integridad, el
-modelo de progreso está escrito, es puro y está testeado, y la guardia de URLs corre contra datos reales sin
-pasar en vacío.
+El limitador limita de verdad y sus tres bugs no pueden volver en silencio (probado por mutación). El
+esquema v8 está migrado contra los 31,9 MB reales con integridad, recuentos y backup. El modelo de
+progreso está escrito, es puro y está testeado, sin parámetros que mientan. Y la guardia de URLs tiene
+ahora dos capas, la crítica de las cuales **no se puede eximir** — cerrando el agujero por el que el bug
+que se llevó las portadas podía volver a entrar.
 
-Quedan tres cosas para el siguiente ciclo, ninguna de las cuales invalida la fase:
-
-1. **W-1 (la que importa):** endurecer la lista blanca con un chequeo de loopback/puerto a nivel de **valor**.
-   El momento natural es planificar la Fase 3, que es cuando el reader empieza a persistir URLs de página —
-   la superficie que multiplica por diez el bug que ya ocurrió.
-2. **W-2:** decidir `next_progress(tracker_status)` — usarlo o quitarlo — **antes** de que la Fase 5 tenga llamadores.
-3. **W-3:** marcar FND-05 como `[x]` en REQUIREMENTS.md.
+Las tres notas (N-1, N-2, N-3) son informativas: ninguna bloquea, ninguna requiere plan de cierre.
 
 ---
 
-_Verified: 2026-07-13_
-_Verifier: Claude (gsd-verifier) — goal-backward, con mutation testing y ejecución contra la BD real_
+_Verified: 2026-07-13 — goal-backward, con mutation testing y ejecución contra la BD real de producción_
+_Verifier: Claude (gsd-verifier)_
