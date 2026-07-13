@@ -2494,6 +2494,14 @@ async def update_progress(
         (a for a in accounts if a["provider"] == provider and a["alias"] == account), None
     )
     canonical = database.canonical_media_id(provider, update.media_id)
+    # ANTES de update_remote_library_entry: esa llamada sobrescribe el espejo del tracker
+    # con el valor NUEVO. Leerlo después daría progress_before == progress_after, que es un
+    # deshacer que no deshace nada. Ver docs/specs/progress-model.md.
+    progress_before = (
+        database.tracker_progress(canonical, account_row["id"])
+        if account_row and canonical
+        else None
+    )
     if account_row and canonical:
         database.update_remote_library_entry(
             account_row["id"], canonical,
@@ -2512,7 +2520,8 @@ async def update_progress(
     )
     database.update_playback_event(
         event_id, status="pending",
-        media_id=update.media_id, progress_after=update.progress,
+        media_id=update.media_id,
+        progress_before=progress_before, progress_after=update.progress,
     )
     database.enqueue_mutation(
         provider, account, "update_progress", update.media_id,
@@ -2848,6 +2857,17 @@ async def edit_media_entry(
             (row for row in database.get_accounts() if row["provider"] == provider and row["alias"] == account),
             None,
         )
+        # El evento de este endpoint nace `confirmed`, que es justo el estado que exige
+        # `undo_playback`: es elegible para deshacer. Y el deshacer ESCRIBE progress_before
+        # de vuelta en el proveedor, así que aquí tiene que ir el valor que el tracker
+        # tenía — capturado antes de que update_remote_library_entry lo pise. Un 0 de
+        # relleno pondría a cero el AniList real. Ver docs/specs/progress-model.md.
+        existing_canonical = database.canonical_media_id(provider, media_id)
+        progress_before = (
+            database.tracker_progress(existing_canonical, account_row["id"])
+            if account_row and existing_canonical
+            else None
+        )
         if account_row:
             details = (
                 await media_provider.manga_details(token, media_id)
@@ -2880,6 +2900,7 @@ async def edit_media_entry(
             event_id,
             status="confirmed",
             media_id=media_id,
+            progress_before=progress_before,
             progress_after=entry.progress or None,
             provider_id=provider,
             account_id=account_row["id"] if account_row else None,
@@ -2950,6 +2971,9 @@ async def bulk_update_library_entry(
     details = _local_media_details(database, provider_id, alias, int(external_id))
     media_type = "MANGA" if details and details.media_type == "MANGA" else "ANIME"
     _apply_entry_rules(database, provider_id, alias, media_id, update)
+    # ANTES de update_remote_library_entry, que pisa el espejo del tracker con el valor
+    # nuevo: es el valor que el undo escribirá de vuelta. Ver docs/specs/progress-model.md.
+    progress_before = database.tracker_progress(media_id, account["id"]) if account else None
     # Efecto local inmediato + envío al proveedor en cola: la UI no espera a la API.
     if account:
         extra = (
@@ -2996,7 +3020,8 @@ async def bulk_update_library_entry(
     if update.progress is not None:
         database.update_playback_event(
             event_id, status="pending",
-            media_id=int(external_id), progress_after=update.progress,
+            media_id=int(external_id),
+            progress_before=progress_before, progress_after=update.progress,
         )
     database.enqueue_mutation(
         provider_id, alias, "edit_entry", external_id,

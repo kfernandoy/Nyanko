@@ -1,5 +1,4 @@
 import json
-import math
 import sqlite3
 import time
 from collections import Counter
@@ -10,6 +9,7 @@ from pathlib import Path
 
 from .normalizer import normalize_title
 from .models import MediaDetails, MediaStatistics, StatisticGroup, StatisticsResponse
+from .progress import to_provider
 
 
 SCHEMA = """
@@ -2611,7 +2611,7 @@ class Database:
             connection.execute(
                 "UPDATE library_entries SET chapter_progress = ?, progress = ?, "
                 "updated_at = CURRENT_TIMESTAMP WHERE media_id = ?",
-                (float(chapter), math.floor(chapter), media_id),
+                (float(chapter), to_provider(chapter), media_id),
             )
 
     def update_account_progress(
