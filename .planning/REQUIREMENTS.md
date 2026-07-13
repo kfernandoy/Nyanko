@@ -226,6 +226,55 @@ propias; el formato queda público para que la comunidad añada más.
 
 ## Traceability
 
+**48/48 requisitos mapeados. Cero huérfanos, cero duplicados.**
+
 | REQ | Phase | Status |
 |-----|-------|--------|
-| _(rellenado por el roadmap)_ | | |
+| FND-01 | Fase 1 — Fundaciones | Pending |
+| FND-02 | Fase 1 — Fundaciones | Pending |
+| FND-03 | Fase 1 — Fundaciones | Pending |
+| FND-04 | Fase 1 — Fundaciones | Pending |
+| FND-05 | Fase 1 — Fundaciones | Pending |
+| FND-06 | Fase 1 — Fundaciones | Pending |
+| SRC-01 | Fase 6 — Distribución de extensiones | Pending |
+| SRC-02 | Fase 6 — Distribución de extensiones | Pending |
+| SRC-03 | Fase 6 — Distribución de extensiones | Pending |
+| SRC-04 | Fase 2 — Motor de fuentes (contrato) | Pending |
+| SRC-05 | Fase 2 — Motor de fuentes (contrato) | Pending |
+| SRC-06 | Fase 2 — Motor de fuentes (contrato) | Pending |
+| SRC-07 | Fase 2 — Motor de fuentes (contrato) | Pending |
+| RD-01 | Fase 3 — Page pipe + lectura local | Pending |
+| RD-02 | Fase 3 — Page pipe + lectura local | Pending |
+| RD-03 | Fase 3 — Page pipe + lectura local | Pending |
+| RD-04 | Fase 3 — Page pipe + lectura local | Pending |
+| RD-05 | Fase 3 — Page pipe + lectura local | Pending |
+| RD-06 | Fase 3 — Page pipe + lectura local | Pending |
+| RD-07 | Fase 3 — Page pipe + lectura local | Pending |
+| RD-08 | Fase 3 — Page pipe + lectura local | Pending |
+| RD-09 | Fase 3 — Page pipe + lectura local | Pending |
+| LNK-01 | Fase 4 — Identidad y vínculo | Pending |
+| LNK-02 | Fase 4 — Identidad y vínculo | Pending |
+| LNK-03 | Fase 4 — Identidad y vínculo | Pending |
+| LNK-04 | Fase 4 — Identidad y vínculo | Pending |
+| SYN-01 | Fase 5 — Sync de progreso | Pending |
+| SYN-02 | Fase 5 — Sync de progreso | Pending |
+| SYN-03 | Fase 5 — Sync de progreso | Pending |
+| SYN-04 | Fase 5 — Sync de progreso | Pending |
+| SYN-05 | Fase 5 — Sync de progreso | Pending |
+| ON-01 | Fase 7 — Fuentes online | Pending |
+| ON-02 | Fase 7 — Fuentes online | Pending |
+| ON-03 | Fase 7 — Fuentes online | Pending |
+| ON-04 | Fase 7 — Fuentes online | Pending |
+| ON-05 | Fase 7 — Fuentes online | Pending |
+| DL-01 | Fase 8 — Cola de descargas | Pending |
+| DL-02 | Fase 8 — Cola de descargas | Pending |
+| DL-03 | Fase 8 — Cola de descargas | Pending |
+| DL-04 | Fase 8 — Cola de descargas | Pending |
+| DL-05 | Fase 8 — Cola de descargas | Pending |
+| DL-06 | Fase 8 — Cola de descargas | Pending |
+| AT-01 | Fase 9 — AnimeThemes + deuda + audit | Pending |
+| AT-02 | Fase 9 — AnimeThemes + deuda + audit | Pending |
+| AT-03 | Fase 9 — AnimeThemes + deuda + audit | Pending |
+| DBT-01 | Fase 9 — AnimeThemes + deuda + audit | Pending |
+| DBT-02 | Fase 9 — AnimeThemes + deuda + audit | Pending |
+| DBT-03 | Fase 9 — AnimeThemes + deuda + audit | Pending |
