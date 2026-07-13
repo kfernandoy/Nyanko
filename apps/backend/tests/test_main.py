@@ -110,13 +110,15 @@ def test_local_asset_helpers_prefer_downloaded_files(monkeypatch):
 
     monkeypatch.setattr("nyanko_api.main._find_local_asset_filename", fake_find)
 
-    assert _local_asset_url(settings, "anilist", 42, "cover") == "http://127.0.0.1:8765/assets/anilist/42/cover.jpg"
+    # D-I-02: RELATIVAS, sin host:puerto. Se persisten en media_details_cache, y una URL con
+    # el puerto dentro deja la biblioteca sin portadas en cuanto el sidecar cambia de puerto.
+    assert _local_asset_url(settings, "anilist", 42, "cover") == "/assets/anilist/42/cover.jpg"
     localized_details = _localize_media_details_assets(settings, "anilist", details)
 
-    assert localized_details.cover_image == "http://127.0.0.1:8765/assets/anilist/42/cover.jpg"
-    assert localized_details.banner_image == "http://127.0.0.1:8765/assets/anilist/42/banner.png"
-    assert localized_details.relations[0].cover_image == "http://127.0.0.1:8765/assets/anilist/7/cover.jpg"
-    assert localized_details.recommendations[0].cover_image == "http://127.0.0.1:8765/assets/anilist/8/cover.jpg"
+    assert localized_details.cover_image == "/assets/anilist/42/cover.jpg"
+    assert localized_details.banner_image == "/assets/anilist/42/banner.png"
+    assert localized_details.relations[0].cover_image == "/assets/anilist/7/cover.jpg"
+    assert localized_details.recommendations[0].cover_image == "/assets/anilist/8/cover.jpg"
 
     monkeypatch.setattr(
         "nyanko_api.main._find_local_asset_filename",
@@ -1779,6 +1781,42 @@ def test_initialize_backfills_media_type_from_details_cache(database):
     with database.connect() as connection:
         repaired = connection.execute("SELECT media_type FROM media WHERE id = ?", (media_id,)).fetchone()["media_type"]
     assert repaired == "MANGA"
+
+
+def test_initialize_rewrites_absolute_asset_urls_as_relative(database):
+    # D-I-02: filas escritas antes de 0.3 llevan el puerto dentro. Un puerto muerto = biblioteca
+    # sin portadas, permanente y en silencio (COALESCE impide que se auto-curen al reingestar).
+    media_id = database.sync_media_details("anilist", 900, MediaDetails(
+        id=900, title="Stale Covers", synonyms=[], site_url="x",
+        media_type="ANIME", status="FINISHED", episodes=12, genres=[],
+        studios=[], score_format="POINT_100",
+    ), media_type="ANIME")
+    with database.connect() as connection:
+        connection.execute(
+            "UPDATE media_details_cache SET "
+            "cover_image_local = 'http://127.0.0.1:56181/assets/anilist/900/cover.jpg', "
+            "banner_image_local = 'http://127.0.0.1:56181/assets/anilist/900/banner.png' "
+            "WHERE media_id = ?",
+            (media_id,),
+        )
+
+    database.initialize()
+
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT cover_image_local, banner_image_local FROM media_details_cache WHERE media_id = ?",
+            (media_id,),
+        ).fetchone()
+    assert row["cover_image_local"] == "/assets/anilist/900/cover.jpg"
+    assert row["banner_image_local"] == "/assets/anilist/900/banner.png"
+
+    # Idempotente: una segunda pasada no vuelve a recortar.
+    database.initialize()
+    with database.connect() as connection:
+        again = connection.execute(
+            "SELECT cover_image_local FROM media_details_cache WHERE media_id = ?", (media_id,)
+        ).fetchone()["cover_image_local"]
+    assert again == "/assets/anilist/900/cover.jpg"
 
 
 def test_local_library_enriches_matched_series(client, database):

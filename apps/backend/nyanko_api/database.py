@@ -336,6 +336,7 @@ class Database:
             self._add_column(connection, "media_titles", "normalized_title", "TEXT")
             self._backfill_normalized_titles(connection)
             self._backfill_media_types(connection)
+            self._migrate_asset_urls_to_relative(connection)
             self._add_column(connection, "library_entries", "started_at", "TEXT")
             self._add_column(connection, "library_entries", "completed_at", "TEXT")
             self._add_column(connection, "torrent_sources", "kind", "TEXT NOT NULL DEFAULT 'release'")
@@ -394,6 +395,20 @@ class Database:
             "WHERE d.media_type IN ('ANIME', 'MANGA') "
             "AND (m.media_type IS NULL OR m.media_type != d.media_type))"
         )
+
+    @staticmethod
+    def _migrate_asset_urls_to_relative(connection: sqlite3.Connection) -> None:
+        # D-I-02: hasta 0.3 estas URLs se persistían absolutas, con el host:puerto dentro
+        # (`http://127.0.0.1:8765/assets/...`). Cuando el sidecar arrancaba en otro puerto,
+        # la biblioteca se quedaba sin portadas para siempre. Ahora se guardan relativas;
+        # esto recorta las que ya están escritas. Idempotente: tras pasar una vez, ninguna
+        # empieza por http y el LIKE no vuelve a casar.
+        for column in ("cover_image_local", "banner_image_local"):
+            connection.execute(
+                f"UPDATE media_details_cache "
+                f"SET {column} = substr({column}, instr({column}, '/assets/')) "
+                f"WHERE {column} LIKE 'http%/assets/%'"
+            )
 
     @staticmethod
     def _loads_json_or_default(value: str | None, default):

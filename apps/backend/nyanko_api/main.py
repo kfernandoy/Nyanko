@@ -314,15 +314,13 @@ def _asset_dir(settings: Settings, provider: str, external_id: int | str) -> Pat
     return settings.assets_dir / provider / str(external_id)
 
 
-def _api_base_url(settings: Settings) -> str:
-    host = settings.api_host if settings.api_host not in {"", "0.0.0.0", "::"} else "127.0.0.1"
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
-    return f"http://{host}:{settings.api_port}"
-
-
 def _asset_url(settings: Settings, provider: str, external_id: int | str, filename: str) -> str:
-    return f"{_api_base_url(settings)}/assets/{provider}/{external_id}/{filename}"
+    # RELATIVA a propósito, y esto es el arreglo de D-I-02: estas URLs se PERSISTEN en
+    # media_details_cache. Si llevan el host:puerto dentro, el día que el sidecar arranca en
+    # otro puerto (basta que algo ocupe el 8765) la biblioteca se queda sin una sola portada,
+    # de forma permanente y silenciosa. El renderer la compone contra la base de API que ya
+    # resuelve en vivo (`normalizeAssetUrls` en api.ts), así que una ruta relativa no caduca.
+    return f"/assets/{provider}/{external_id}/{filename}"
 
 
 def _find_local_asset_filename(
