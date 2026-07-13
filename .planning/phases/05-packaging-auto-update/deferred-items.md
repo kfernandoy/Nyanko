@@ -37,6 +37,34 @@ Hallazgos fuera del alcance del plan en el que se descubrieron.
   **antes** de la verificación humana del Plan 02, así que el humano validó exactamente el paquete
   que se va a publicar.
 
+## ~~D-I-02 — El backend persiste URLs de assets con el puerto dentro → biblioteca sin portadas~~ → **RESUELTO** en 0.3 (quick 260712-q62)
+
+**Se aplicó la opción 1** (la preferida de las tres de abajo): no persistir el host:puerto.
+
+- `main.py:_asset_url()` devuelve ahora **rutas relativas** (`/assets/{provider}/{id}/{file}`).
+  `_api_base_url()` se borró: no lo usaba nadie más.
+- La mitad frontend **ya existía**: `api.ts:normalizeAssetUrls()` compone cualquier string que
+  empiece por `/assets/` contra la base de API que ya resuelve en vivo (releyendo el `port` file).
+  No hubo que tocar el renderer.
+- `database.py:_migrate_asset_urls_to_relative()` recorta en `initialize()` las URLs ya escritas.
+  Idempotente. El `COALESCE` de la línea ~1523 deja de importar: una ruta relativa no caduca.
+- El `api_port` sigue absoluto donde debe (el `redirect_uri` de OAuth, `config.py:99/105`). Intacto.
+
+**Probado empíricamente, no solo con tests:** con el backend levantado en el puerto **9931**, una
+portada cacheada (`/assets/anilist/14833/cover.png`) se sirve con **HTTP 200** mientras el 8765 está
+muerto. Antes esa fila habría apuntado a `http://127.0.0.1:8765/...` y la portada no habría vuelto
+nunca. Tests: `test_initialize_rewrites_absolute_asset_urls_as_relative` (incluye idempotencia) y el
+test de `_local_asset_url` invertido para exigir la relativa.
+
+**Sigue pendiente (menor, otra clase de bug):** el punto 3 de abajo — que un `cover_image_local`
+inalcanzable **por fichero borrado** caiga al `cover_image` remoto. El cambio de puerto ya no puede
+causarlo; queda solo el caso raro del fichero que desaparece.
+
+---
+
+<details>
+<summary>Diagnóstico original (histórico)</summary>
+
 ## D-I-02 — El backend persiste URLs de assets con el puerto dentro → biblioteca sin portadas
 
 - **Descubierto en:** Plan 05-06 (UAT), tras el auto-update 0.2.0 → 0.2.1. Síntoma reportado:
@@ -89,6 +117,8 @@ en orden de preferencia:
    `main.py:401` con `_local_asset_url(...) or ...`) en TODOS los caminos, no solo en algunos.
 3. Como mínimo, que un `cover_image_local` inalcanzable **caiga al `cover_image` remoto** en vez de
    dejar el hueco.
+
+</details>
 
 ## D-I-03 — El rate limit de AniList que creemos tener (90) ya no es el que nos dan (30)
 
