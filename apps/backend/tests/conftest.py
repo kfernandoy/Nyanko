@@ -34,6 +34,27 @@ def _fast_rate_limit_sleep(monkeypatch):
     yield
 
 
+@pytest.fixture
+def real_rate_limit_sleep(monkeypatch):
+    """Anula el noop autouse de _fast_rate_limit_sleep con un GRABADOR.
+
+    Un test de ritmo con el noop puesto es verde y vacío: el limitador nunca duerme, así
+    que no hay nada que medir. Y medirlo a reloj de pared sería una carrera lenta. En vez
+    de eso grabamos lo que el limitador *pide* dormir (sin dormirlo): determinista,
+    instantáneo, y afirma exactamente lo que queremos afirmar.
+
+    Devuelve la lista de duraciones grabadas — incluye también los sleeps del backoff, que
+    en los tests de ritmo no ocurren."""
+    recorded: list[float] = []
+
+    async def _record_sleep(delay: float = 0.0, *args, **kwargs):
+        recorded.append(delay)
+        return None
+
+    monkeypatch.setattr("nyanko_api.http.asyncio.sleep", _record_sleep)
+    return recorded
+
+
 @pytest.fixture(autouse=True)
 def _no_background_workers(monkeypatch):
     # TestClient(app) dispara el lifespan: los workers reales usarían la base de
