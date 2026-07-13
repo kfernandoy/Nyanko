@@ -26,7 +26,7 @@ Detalle completo (goals, success criteria, waves): [milestones/v0.2-ROADMAP.md](
 
 ### 🚧 v0.3 «Nyanko lee manga»
 
-- [ ] **Phase 1: Fundaciones — limitador, esquema y modelo de progreso** - Nada hace una ráfaga ni escribe una fila hasta que el limitador limita de verdad y el modelo de progreso está decidido y migrado contra la BD real
+- [x] **Phase 1: Fundaciones — limitador, esquema y modelo de progreso** - Nada hace una ráfaga ni escribe una fila hasta que el limitador limita de verdad y el modelo de progreso está decidido y migrado contra la BD real (completed 2026-07-13)
 - [ ] **Phase 2: Motor de fuentes — contrato, presupuesto y taxonomía de errores** - Existe un contrato de fuente versionado contra el que construir, con el presupuesto de peticiones en el motor y no en sus llamadores
 - [ ] **Phase 3: Page pipe + lectura local — la piedra angular** - Nyanko lee la colección de CBZ del disco: sin red, sin rate limits, sin scraping en la superficie de depuración
 - [ ] **Phase 4: Identidad y vínculo — fuente ↔ entrada del tracker** - El vínculo es explícito, almacenado y confirmado por el usuario; el sync podrá asumirlo o negarse
@@ -62,7 +62,7 @@ Detalle completo (goals, success criteria, waves): [milestones/v0.2-ROADMAP.md](
 
 **Research pass**: No. Precedente en el árbol, citado: `_clients` ya está keyed por event loop y con el comentario que explica por qué — el semáforo nunca recibió el mismo trato. `_backup_before_migration` ya existe.
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans complete
 **Wave 1**
 
 - [x] 01-01-PLAN.md — Limitador: los tres bugs a la vez (presupuesto de la cabecera, sleep fuera del semáforo, estado por event loop) — FND-01, FND-02, FND-03 — wave 1
@@ -70,7 +70,7 @@ Detalle completo (goals, success criteria, waves): [milestones/v0.2-ROADMAP.md](
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-03-PLAN.md — Guardia de URLs persistidas, genérica por `PRAGMA table_info` — FND-05 — wave 2
+- [x] 01-03-PLAN.md — Guardia de URLs persistidas, genérica por `PRAGMA table_info` — FND-05 — wave 2
 
 ---
 
@@ -371,7 +371,7 @@ backend, el cliente HTTP, la verificación sha256, el gate de seguridad y una UI
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Electron shell scaffold + data-dir lock | v0.2 | 2/3 | In Progress|  |
+| 1. Electron shell scaffold + data-dir lock | v0.2 | 3/3 | Complete   | 2026-07-13 |
 | 2. Main core — sidecar lifecycle + logging | v0.2 | 2/2 | Complete | 2026-07-10 |
 | 3. Native boundary + Tauri removal | v0.2 | 2/2 | Complete | 2026-07-11 |
 | 4. Native feature parity | v0.2 | 3/3 | Complete | 2026-07-11 |

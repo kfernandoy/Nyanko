@@ -4,17 +4,17 @@ milestone: v0.3
 milestone_name: «Nyanko lee manga»
 current_phase: 01
 current_phase_name: fundaciones-limitador-esquema-y-modelo-de-progreso
-status: executing
+status: verifying
 stopped_at: "Completed 01-01-PLAN.md (limitador: FND-01/02/03)"
-last_updated: "2026-07-13T17:33:15.120Z"
+last_updated: "2026-07-13T17:44:13.831Z"
 last_activity: 2026-07-13
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 9
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 0
+  completed_plans: 3
+  percent: 11
 ---
 
 # Project State
@@ -32,7 +32,7 @@ al anime.
 
 Phase: 01 (fundaciones-limitador-esquema-y-modelo-de-progreso) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-13 — Phase 01 execution started
 
 Siguiente comando: `/gsd-plan-phase 1`
@@ -102,7 +102,7 @@ cuenta vinculada, iconos de proveedores). No bloquean la 0.3.
 
 ## Session Continuity
 
-**Last session:** 2026-07-13T17:32:35.233Z
+**Last session:** 2026-07-13T17:43:27.653Z
 **Stopped at:** Completed 01-01-PLAN.md (limitador: FND-01/02/03)
 
 Roadmap de v0.3 creado el 2026-07-13. Nada ejecutado todavía. El siguiente paso es
@@ -114,6 +114,7 @@ Roadmap de v0.3 creado el 2026-07-13. Nada ejecutado todavía. El siguiente paso
 |-------|------|----------|-------|
 | Phase 01 P01 | 50min | 3 tasks | 6 files |
 | Phase 01 P02 | ~50 min | 3 tasks | 7 files |
+| Phase 01 P03 | ~25 min | 2 tasks | 2 files |
 
 ## Decisions
 
@@ -123,3 +124,6 @@ Roadmap de v0.3 creado el 2026-07-13. Nada ejecutado todavía. El siguiente paso
 - [Phase 01]: progress (INTEGER) es autoritativo; chapter_progress se reconcilia AL LEER — chapter_progress solo vale si floor(chapter_progress) == progress. progress tiene cuatro escritores que no lo tocaran: un invariante mantenido en cuatro sitios se rompe, uno derivado al leer (progress.effective_chapter) no
 - [Phase 01]: La ventana transitoria de effective_chapter queda ACEPTADA, no es un bug pendiente — Sync del tracker con valor viejo mientras la mutacion esta encolada: transitoria y autocurativa. Evitarla exigiria el diseno rechazado. Escrita en progress-model.md para que la Fase 5 no la parchee
 - [Phase 01]: next_progress falla cerrado y progress_before graba el valor DEL TRACKER — Sin valor del tracker devuelve None. progress_before se captura antes de update_remote_library_entry o acabaria siendo progress_after; un 0 de relleno pondria a cero el AniList real via undo_playback
+- [Phase 01]: Guardia FND-05 por introspeccion del esquema (sqlite_master + PRAGMA table_info): cero listas de columnas que mantener — Una lista de columnas escrita a mano es una lista que un dia no se actualiza; la guardia cubre el esquema v8 y lo que traiga la Fase 3 por construccion
+- [Phase 01]: assert_no_persisted_urls es un helper importable, no logica enterrada en un test — Es un control sobre DATOS: sobre tablas vacias pasa en vacio. Las Fases 3/7/8 deben llamarlo tras SUS escrituras
+- [Phase 01]: La regla dura de la lista blanca comprueba el sufijo 'path', no '_path' — local_files.path y library_folders.path no acaban en _path: la regla del plan no habria cubierto las unicas dos columnas de ruta local que existen
