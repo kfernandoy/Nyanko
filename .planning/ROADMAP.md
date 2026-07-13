@@ -62,7 +62,10 @@ Detalle completo (goals, success criteria, waves): [milestones/v0.2-ROADMAP.md](
 
 **Research pass**: No. Precedente en el árbol, citado: `_clients` ya está keyed por event loop y con el comentario que explica por qué — el semáforo nunca recibió el mismo trato. `_backup_before_migration` ya existe.
 
-**Plans**: 3/3 plans complete
+**Plans**: 4/4 plans complete
+
+- [x] 01-04-PLAN.md
+
 **Wave 1**
 
 - [x] 01-01-PLAN.md — Limitador: los tres bugs a la vez (presupuesto de la cabecera, sleep fuera del semáforo, estado por event loop) — FND-01, FND-02, FND-03 — wave 1
@@ -371,7 +374,7 @@ backend, el cliente HTTP, la verificación sha256, el gate de seguridad y una UI
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Electron shell scaffold + data-dir lock | v0.2 | 3/3 | Complete   | 2026-07-13 |
+| 1. Electron shell scaffold + data-dir lock | v0.2 | 4/4 | Complete   | 2026-07-13 |
 | 2. Main core — sidecar lifecycle + logging | v0.2 | 2/2 | Complete | 2026-07-10 |
 | 3. Native boundary + Tauri removal | v0.2 | 2/2 | Complete | 2026-07-11 |
 | 4. Native feature parity | v0.2 | 3/3 | Complete | 2026-07-11 |

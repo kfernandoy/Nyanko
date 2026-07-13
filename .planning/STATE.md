@@ -6,14 +6,14 @@ current_phase: 01
 current_phase_name: fundaciones-limitador-esquema-y-modelo-de-progreso
 status: verifying
 stopped_at: "Completed 01-01-PLAN.md (limitador: FND-01/02/03)"
-last_updated: "2026-07-13T17:44:13.831Z"
+last_updated: "2026-07-13T19:21:52.867Z"
 last_activity: 2026-07-13
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 9
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 4
+  completed_plans: 4
   percent: 11
 ---
 
@@ -102,7 +102,7 @@ cuenta vinculada, iconos de proveedores). No bloquean la 0.3.
 
 ## Session Continuity
 
-**Last session:** 2026-07-13T17:43:27.653Z
+**Last session:** 2026-07-13T19:21:40.638Z
 **Stopped at:** Completed 01-01-PLAN.md (limitador: FND-01/02/03)
 
 Roadmap de v0.3 creado el 2026-07-13. Nada ejecutado todavía. El siguiente paso es
@@ -115,6 +115,7 @@ Roadmap de v0.3 creado el 2026-07-13. Nada ejecutado todavía. El siguiente paso
 | Phase 01 P01 | 50min | 3 tasks | 6 files |
 | Phase 01 P02 | ~50 min | 3 tasks | 7 files |
 | Phase 01 P03 | ~25 min | 2 tasks | 2 files |
+| Phase 01 P04 | 35m | 2 tasks | 6 files |
 
 ## Decisions
 
@@ -127,3 +128,4 @@ Roadmap de v0.3 creado el 2026-07-13. Nada ejecutado todavía. El siguiente paso
 - [Phase 01]: Guardia FND-05 por introspeccion del esquema (sqlite_master + PRAGMA table_info): cero listas de columnas que mantener — Una lista de columnas escrita a mano es una lista que un dia no se actualiza; la guardia cubre el esquema v8 y lo que traiga la Fase 3 por construccion
 - [Phase 01]: assert_no_persisted_urls es un helper importable, no logica enterrada en un test — Es un control sobre DATOS: sobre tablas vacias pasa en vacio. Las Fases 3/7/8 deben llamarlo tras SUS escrituras
 - [Phase 01]: La regla dura de la lista blanca comprueba el sufijo 'path', no '_path' — local_files.path y library_folders.path no acaban en _path: la regla del plan no habria cubierto las unicas dos columnas de ruta local que existen
+- [Phase 1]: FND-05: la guardia de URLs persistidas tiene dos capas — la lista blanca exime del prefijo http, pero NADA exime de guardar una URL al propio sidecar (//127.0.0.1, //localhost, //[::1]), esté donde esté dentro del valor
