@@ -18,11 +18,7 @@ def to_provider(chapter: float) -> int:
     return math.floor(chapter)
 
 
-def next_progress(
-    chapter: float,
-    tracker_progress: int | None,
-    tracker_status: str | None = None,
-) -> int | None:
+def next_progress(chapter: float, tracker_progress: int | None) -> int | None:
     """El valor a enviar al tracker, o `None` si no hay nada que enviar.
 
     `None` no es un error: «no hay que subir nada» es un resultado normal, y el llamador lo
@@ -31,6 +27,10 @@ def next_progress(
     movió de forma optimista.
 
     Sin valor del tracker, falla cerrado: no se escribe a ciegas en la lista real del usuario.
+
+    No recibe el estado del tracker a propósito: la guarda monotónica ya cubre la relectura,
+    y una firma que pide un estado que el cuerpo no lee promete una consciencia que no tiene.
+    Quien necesite esa señal llama a `is_reread`, que sí la lee.
     """
     if tracker_progress is None:
         return None

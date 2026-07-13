@@ -65,8 +65,9 @@ nada. Un `0` de relleno convertiría el botón de deshacer en «pon a cero mi An
 | `database.py:2639` | `UPDATE library_entries SET progress = ?` en `update_account_progress` — **el sync del tracker** |
 
 (`database.py:2666`, en `update_account_status`, **no** es un escritor de `progress`: escribe
-`status` y `updated_at`. Es relevante para el `tracker_status` que consume `next_progress` — el caso
-`COMPLETED` → relectura —, pero no para esta pareja.)
+`status` y `updated_at`. Es relevante para el `tracker_status` que consume `is_reread` — el caso
+`COMPLETED` → relectura —, pero no para esta pareja. `next_progress` no lee el estado: la guarda
+monotónica ya cubre la relectura, y no declara un parámetro que no use.)
 
 En cuanto el usuario edite su progreso en la web de AniList, o desde otro dispositivo, el sync
 moverá `progress` y `chapter_progress` quedará obsoleto. Escribir «`set_chapter_progress` es el

@@ -32,29 +32,30 @@ def test_to_provider_floors_to_the_int_the_provider_accepts(chapter, expected):
 
 
 @pytest.mark.parametrize(
-    ("chapter", "tracker_progress", "tracker_status", "expected"),
+    ("chapter", "tracker_progress", "expected"),
     [
         # Sube: el capítulo cruza al proveedor floored.
-        (10.5, 9, "CURRENT", 10),
-        (11.0, 10, "CURRENT", 11),
+        (10.5, 9, 10),
+        (11.0, 10, 11),
         # Nada que subir: el floor ya es lo que el tracker tiene. Reenviarlo es ruido.
-        (10.5, 10, "CURRENT", None),
-        (0.5, 0, "CURRENT", None),
+        (10.5, 10, None),
+        (0.5, 0, None),
         # Regresión: la guarda monotónica muerde. Esto es lo que salva el progreso real.
-        (9.0, 12, "CURRENT", None),
+        (9.0, 12, None),
         # Sin valor del tracker: FALLA CERRADO. No se escribe a ciegas en la lista real.
-        (10.5, None, "CURRENT", None),
-        # Relectura de una serie terminada: no se empuja un 1 encima de un 24.
-        (1.0, 24, "COMPLETED", None),
+        (10.5, None, None),
+        # Relectura de una serie terminada: no se empuja un 1 encima de un 24. Sin necesidad
+        # de saber el estado: la guarda monotónica basta. El estado lo lee `is_reread`.
+        (1.0, 24, None),
     ],
 )
-def test_next_progress_case_table(chapter, tracker_progress, tracker_status, expected):
-    assert next_progress(chapter, tracker_progress, tracker_status) == expected
+def test_next_progress_case_table(chapter, tracker_progress, expected):
+    assert next_progress(chapter, tracker_progress) == expected
 
 
 def test_next_progress_fails_closed_without_a_tracker_value():
     # Explícito aparte de la tabla: es la garantía de seguridad del módulo.
-    assert next_progress(10.5, None, "CURRENT") is None
+    assert next_progress(10.5, None) is None
 
 
 def test_is_reread_signals_a_completed_series_being_read_again():
