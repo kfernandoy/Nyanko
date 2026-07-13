@@ -1,4 +1,5 @@
 import json
+import math
 import sqlite3
 import time
 from collections import Counter
@@ -157,6 +158,7 @@ CREATE TABLE IF NOT EXISTS library_entries (
     media_id INTEGER NOT NULL UNIQUE REFERENCES media(id) ON DELETE CASCADE,
     status TEXT NOT NULL,
     progress INTEGER NOT NULL DEFAULT 0,
+    chapter_progress REAL,
     score REAL,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -270,7 +272,7 @@ CREATE TABLE IF NOT EXISTS pending_mutations (
 );
 """
 
-CANONICAL_SCHEMA_VERSION = 7
+CANONICAL_SCHEMA_VERSION = 8
 # media: alto a propósito — los detalles guardados en local son lo que hace que
 # reabrir/editar una card sea instantáneo (estilo Taiga); son JSON pequeños.
 CACHE_RESOURCE_LIMITS = {"media:": 500, "season:": 24, "discover:": 80}
@@ -339,6 +341,9 @@ class Database:
             self._migrate_asset_urls_to_relative(connection)
             self._add_column(connection, "library_entries", "started_at", "TEXT")
             self._add_column(connection, "library_entries", "completed_at", "TEXT")
+            # v8: el capítulo con decimal (10.5). NULL para anime y para el manga que
+            # nunca pasó por el reader. Ver docs/specs/progress-model.md.
+            self._add_column(connection, "library_entries", "chapter_progress", "REAL")
             self._add_column(connection, "torrent_sources", "kind", "TEXT NOT NULL DEFAULT 'release'")
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_media_titles_normalized "
@@ -2578,6 +2583,36 @@ class Database:
 
     def dismiss_conflict(self, conflict_id: int) -> bool:
         return self.resolve_conflict(conflict_id, "dismissed")
+
+    def tracker_progress(self, media_id: int, account_id: int) -> int | None:
+        """El progreso que el TRACKER tiene (el espejo del proveedor), no el local.
+
+        Es lo que alimenta la guarda monotónica de `progress.next_progress`: comparar
+        contra `library_entries.progress` (que la UI ya movió optimistamente) es cómo se
+        empuja un valor inferior encima del progreso real del usuario en su AniList.
+        `None` = desconocido, y la guarda falla cerrado. Ver docs/specs/progress-model.md.
+        """
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT progress FROM remote_library_entries "
+                "WHERE account_id = ? AND media_id = ?",
+                (account_id, media_id),
+            ).fetchone()
+            return int(row["progress"]) if row else None
+
+    def set_chapter_progress(self, media_id: int, chapter: float) -> None:
+        """Escribe la pareja coherente: `chapter_progress` (10.5) y `progress` (10).
+
+        Único escritor que mantiene la pareja coherente — pero NO el único escritor de
+        `progress` (hay cuatro más). Por eso la reconciliación se evalúa al leer, en
+        `progress.effective_chapter`. Ver docs/specs/progress-model.md.
+        """
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE library_entries SET chapter_progress = ?, progress = ?, "
+                "updated_at = CURRENT_TIMESTAMP WHERE media_id = ?",
+                (float(chapter), math.floor(chapter), media_id),
+            )
 
     def update_account_progress(
         self, account_id: int, media_id: int, progress: int

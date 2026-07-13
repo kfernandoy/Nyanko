@@ -78,7 +78,7 @@ def test_initialize_creates_canonical_provider_schema(monkeypatch):
         "episodes",
         "extension_clients",
     }.issubset(tables)
-    assert version == 7
+    assert version == 8
     assert provider["display_name"] == "AniList"
 
 
@@ -1019,3 +1019,126 @@ def test_backfill_ligero_no_borra_los_personajes_ya_cacheados(monkeypatch):
         "el backfill ligero borró las relaciones cacheadas: pérdida de datos"
     )
     assert tras_backfill.description == "texto refrescado por el backfill"
+
+
+# --- Schema v8: chapter_progress (docs/specs/progress-model.md) ---
+
+
+def _degrade_to_v7(path: Path) -> None:
+    """Convierte una BD v8 recién creada en una v7 realista: quita la columna nueva y
+    baja la versión. Es la única forma honesta de probar la migración — un fixture
+    escrito a mano no comparte el esquema con el de producción."""
+    connection = sqlite3.connect(path)
+    connection.execute("ALTER TABLE library_entries DROP COLUMN chapter_progress")
+    connection.execute("DELETE FROM schema_migrations")
+    connection.execute("INSERT INTO schema_migrations(version) VALUES (7)")
+    connection.commit()
+    connection.close()
+
+
+def test_canonical_schema_version_is_8():
+    from nyanko_api.database import CANONICAL_SCHEMA_VERSION
+
+    assert CANONICAL_SCHEMA_VERSION == 8
+
+
+def test_new_database_has_chapter_progress_as_real(monkeypatch):
+    database = memory_database(monkeypatch)
+    with database.connect() as connection:
+        columns = {
+            row["name"]: row["type"]
+            for row in connection.execute("PRAGMA table_info(library_entries)").fetchall()
+        }
+    assert columns["chapter_progress"] == "REAL"
+    # progress sigue siendo el entero que el proveedor acepta: v8 es ADITIVA.
+    assert columns["progress"] == "INTEGER"
+
+
+def test_v7_database_migrates_additively_without_losing_rows(tmp_path):
+    path = tmp_path / "nyanko.sqlite3"
+    Database(path).initialize()
+    _degrade_to_v7(path)
+
+    connection = sqlite3.connect(path)
+    connection.execute("INSERT INTO media(id) VALUES (1), (2)")
+    connection.execute(
+        "INSERT INTO library_entries(media_id, status, progress) "
+        "VALUES (1, 'CURRENT', 10), (2, 'COMPLETED', 24)"
+    )
+    connection.commit()
+    connection.close()
+
+    Database(path).initialize()
+
+    connection = sqlite3.connect(path)
+    connection.row_factory = sqlite3.Row
+    try:
+        columns = {
+            row["name"]: row["type"]
+            for row in connection.execute("PRAGMA table_info(library_entries)").fetchall()
+        }
+        assert columns["chapter_progress"] == "REAL"
+        rows = connection.execute(
+            "SELECT progress, chapter_progress FROM library_entries ORDER BY media_id"
+        ).fetchall()
+        # Las filas viejas siguen ahí, con su progress intacto y chapter_progress a NULL.
+        assert len(rows) == 2
+        assert [row["progress"] for row in rows] == [10, 24]
+        assert all(row["chapter_progress"] is None for row in rows)
+        version = connection.execute("SELECT MAX(version) AS v FROM schema_migrations").fetchone()["v"]
+        assert version == 8
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    finally:
+        connection.close()
+
+    # Subir CANONICAL_SCHEMA_VERSION es lo que arma el backup: es el único rollback que hay.
+    backups = list(tmp_path.glob("nyanko.backup-v8-*.sqlite3"))
+    assert len(backups) == 1, f"sin backup pre-migración: {list(tmp_path.iterdir())}"
+    backup = sqlite3.connect(backups[0])
+    try:
+        # El backup es la BD DE ANTES: sin la columna nueva y con las filas.
+        names = {row[1] for row in backup.execute("PRAGMA table_info(library_entries)").fetchall()}
+        assert "chapter_progress" not in names
+        assert backup.execute("SELECT COUNT(*) FROM library_entries").fetchone()[0] == 2
+    finally:
+        backup.close()
+
+
+def test_set_chapter_progress_keeps_the_pair_coherent(monkeypatch):
+    database = memory_database(monkeypatch)
+    with database.connect() as connection:
+        connection.execute("INSERT INTO media(id) VALUES (1)")
+        connection.execute(
+            "INSERT INTO library_entries(media_id, status, progress) VALUES (1, 'CURRENT', 9)"
+        )
+
+    database.set_chapter_progress(1, 10.5)
+
+    with database.connect() as connection:
+        row = connection.execute(
+            "SELECT progress, chapter_progress FROM library_entries WHERE media_id = 1"
+        ).fetchone()
+    # El decimal sobrevive en local; el proveedor solo verá el floor.
+    assert row["chapter_progress"] == 10.5
+    assert row["progress"] == 10
+
+
+def test_tracker_progress_reads_the_tracker_not_the_local_entry(monkeypatch):
+    database = memory_database(monkeypatch)
+    account_id = database.ensure_account("anilist", "default")
+    with database.connect() as connection:
+        connection.execute("INSERT INTO media(id) VALUES (1)")
+        # A propósito DISTINTOS: el local ya lo movió la UI de forma optimista.
+        connection.execute(
+            "INSERT INTO library_entries(media_id, status, progress) VALUES (1, 'CURRENT', 3)"
+        )
+        connection.execute(
+            "INSERT INTO remote_library_entries"
+            "(account_id, media_id, status, progress, original_payload) "
+            "VALUES (?, 1, 'CURRENT', 7, '{}')",
+            (account_id,),
+        )
+
+    assert database.tracker_progress(1, account_id) == 7, "leyó el progreso LOCAL, no el del tracker"
+    # Sin fila del tracker: desconocido. La guarda de progress.next_progress falla cerrado.
+    assert database.tracker_progress(999, account_id) is None
