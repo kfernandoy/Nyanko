@@ -1,14 +1,28 @@
 ---
 phase: 05-packaging-auto-update
 verified: 2026-07-12T22:40:00Z
+reverified: 2026-07-13T05:25:00Z
 status: passed
-score: 9/10 must-haves verified
-behavior_unverified: 1
-overrides_applied: 1
-acknowledged_gaps:
-
-  - truth: "El asistente NSIS muestra el selector de idioma ES/EN y la página del EULA"
-    decision: "ACEPTADO SIN VERIFICAR (gate humano, 2026-07-12) — cosmético y NO bloqueante: la página de EULA es NUEVA respecto a la 0.1.15, no es requisito de paridad. Que el instalador CORRE E INSTALA está probado tres veces. Se cierra la fase con este ítem registrado, no resuelto"
+score: 11/11 must-haves verified
+behavior_unverified: 0
+overrides_applied: 0
+acknowledged_gaps: []
+reverification:
+  reason: |
+    El audit del milestone (2026-07-12) encontró B-1: `customCheckAppRunning` NO es aditiva —
+    es la rama !else del check del propio electron-builder. Definirla desactivaba
+    _CHECK_APP_RUNNING, que avisa y mata Nyanko.exe antes de extraer. Esta verificación era
+    ANTERIOR al arreglo, así que quedó stale por construcción: el installer.nsh que verificó
+    ya no es el que hay en el árbol.
+  changes_verified:
+    - "installer.nsh: customCheckAppRunning reconstruida como aditiva (a2c645d)"
+    - "native.ts: openLogsFolder entra en la frontera — 20 ops (W-1)"
+    - "updater.ts: autoUpdater.once('error') → app.quit() antes de killSidecar (W-2)"
+  human_gate:
+    date: 2026-07-13
+    test: "Nyanko 0.2.3 ABIERTA + doble click en Nyanko-Setup-0.2.4.exe (sin /S)"
+    result: "PASA — las tres cosas confirmadas por el humano: (a) el instalador AVISA de que Nyanko está abierta y la cierra antes de extraer (B-1 arreglado: eso es _CHECK_APP_RUNNING, la macro que estaba desactivada); (b) selector de idioma ES/EN; (c) página del EULA"
+    closes: ["B-1", "SC1b (selector ES/EN + EULA)"]
 deferred:
 
   - truth: "El backend no debe persistir URLs de assets con el host:puerto dentro (D-I-02)"
@@ -19,18 +33,9 @@ deferred:
     addressed_in: "0.3"
     evidence: "anilist.py:482 sigue con `RateLimitedClient(requests_per_minute=90)` mientras AniList responde `X-RateLimit-Limit: 30`. No muerde hoy (backfill secuencial ≈1 req/2 s) pero cualquier ráfaga comería 429s. Backend = fuera del alcance de 0.2"
 
-behavior_unverified_items:
+behavior_unverified_items: []
 
-  - truth: "El asistente NSIS muestra el selector de idioma ES/EN y la página del EULA"
-    test: "Ejecutar `Nyanko-Setup-0.2.3.exe` a doble click (SIN `/S`) en una máquina limpia y mirar las dos primeras páginas del asistente"
-    expected: "Diálogo «Installer Language» con Español/English, y a continuación la página de licencia con el texto de build/EULA.txt (bilingüe)"
-    why_human: "El payload del NSIS va comprimido en sólido (LZMA): ni el EULA ni la tabla de idiomas son greppables en el .exe — la búsqueda literal de la primera línea del EULA y de «Installer Language» en los 131 MB del instalador da 0 aciertos, en ASCII y en UTF-16. La config está presente y el instalador compila, pero nadie ha REGISTRADO haber visto esas dos páginas: las tres instalaciones de la fase fueron `/S` (05-03), por el updater de Tauri (05-04, que el ejecutor observó saltando directo a la página final) y una manual cuyo gate (05-02) preguntó por icono/biblioteca/updater, no por el asistente"
-
-human_verification:
-
-  - test: "Instalar `Nyanko-Setup-0.2.3.exe` a doble click (sin `/S`) y observar las dos primeras páginas del asistente"
-    expected: "Selector de idioma ES/EN + página del EULA (el texto bilingüe de build/EULA.txt)"
-    why_human: "El NSIS comprime su payload; no es verificable por grep. Es la única mitad de SC1 sin observación registrada — cosmética, NO bloqueante: que el instalador CORRE E INSTALA está probado tres veces"
+human_verification: []
 ---
 
 # Phase 5: Packaging + auto-update — Verification Report
@@ -72,7 +77,8 @@ silenciosas/por-updater y el gate de la tercera preguntó por otras cosas).
 | # | Truth (SC del ROADMAP + must_haves de los planes) | Status | Evidence |
 |---|---|---|---|
 | 1 | `electron-builder` produce un instalador NSIS que **corre e instala la app** (SC1a) | ✓ VERIFIED | `electron-builder.yml`: `win.target: nsis`, `oneClick:false`, `perMachine:false`, `artifactName: Nyanko-Setup-${version}.${ext}`. Artefactos reales en `release/`: 0.2.0/0.2.1/0.2.2/0.2.3 (`Nyanko-Setup-0.2.3.exe` = 131.201.778 B, idéntico al publicado). **Ejecutado 3 veces sobre la máquina real:** `/S` sobre una 0.1.15 (05-03, exit 0), instalación manual con gate humano (05-02) y lanzado por el updater de Tauri (05-04). En las tres la app quedó instalada y arrancó |
-| 2 | El asistente muestra **selector ES/EN + página del EULA** (SC1b) | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Config presente y cableada: `installerLanguages: [es_ES, en_US]`, `multiLanguageInstaller: true`, `displayLanguageSelector: true`, `license: build/EULA.txt` (74 líneas bilingües, byte-idéntico a `a50659c^`). El NSIS compiló sin errores. **Pero el payload va comprimido en sólido**: buscar la primera línea del EULA y «Installer Language» en los 131 MB del `.exe` (ASCII y UTF-16) da **0 aciertos** → no es verificable estáticamente, y ningún gate registró haber visto esas páginas. Ver `human_verification` |
+| 2 | El asistente muestra **selector ES/EN + página del EULA** (SC1b) | ✓ VERIFIED (re-verificación 2026-07-13) | Config presente y cableada: `installerLanguages: [es_ES, en_US]`, `multiLanguageInstaller: true`, `displayLanguageSelector: true`, `license: build/EULA.txt` (74 líneas bilingües, byte-idéntico a `a50659c^`). **OBSERVADO POR EL HUMANO** el 2026-07-13 al ejecutar `Nyanko-Setup-0.2.4.exe` a doble click (sin `/S`): ambas páginas salen. Deja de ser el gap cosmético que la verificación original aceptó a ciegas — el payload comprimido en sólido no era greppable, así que la única vía era mirarlo, y se miró |
+| 11 | **El instalador AVISA y cierra Nyanko antes de extraer** (B-1 — regresión de integración cruzada P2↔P5) | ✓ VERIFIED (re-verificación 2026-07-13) | Verdad que la verificación original **no podía contemplar**: la introdujo el audit del milestone. `customCheckAppRunning` es la rama `!else` del check de electron-builder (`allowOnlyOneInstallerInstance.nsh:36-42`), **no un hook aditivo** — definirla desactivaba `_CHECK_APP_RUNNING` en instalador Y desinstalador. Reconstruida como aditiva en `a2c645d` (`taskkill` del sidecar + `IS_POWERSHELL_AVAILABLE` + `_CHECK_APP_RUNNING`; el `!include getProcessInfo.nsh` + `Var pid` son obligatorios porque el include del framework va bajo `!ifmacrondef customCheckAppRunning`). **Probado en runtime el 2026-07-13**: con Nyanko 0.2.3 abierta, `Nyanko-Setup-0.2.4.exe` **avisa y la cierra** antes de extraer. Antes del arreglo: ni aviso ni kill |
 | 3 | El instalado incluye el **sidecar** (`nyanko-api.exe` + `_internal`) y los **bundles de extensión** (`chromium`/`firefox`) como `extraResources`, y la app arranca el sidecar en frío y **carga la biblioteca** (SC2) | ✓ VERIFIED | Layout verificado **en el paquete en disco**: `release/win-unpacked/resources/nyanko-api/{nyanko-api.exe, _internal/, extension/chromium/manifest.json, extension/firefox/manifest.json}` + `resources/icon.png` + `resources/app-update.yml`. **NO** existe `resources/extension/` (el sitio "obvio" que habría devuelto nulls en `/api/extension/bundle`). Arranque en frío + biblioteca: gates humanos de 05-02 («la biblioteca carga») y 05-03 («la biblioteca renderiza con su contenido real») |
 | 4 | `electron-updater` **detecta** una versión nueva en GitHub Releases, la **descarga verificando SHA512** y la **instala tras detener el sidecar** (SC3 / PKG-02) | ✓ VERIFIED | `updater.ts`: `autoDownload=false`; `checkForUpdate()` → `isUpdateAvailable`; `downloadAndInstallUpdate()` → `downloadUpdate()` → **`killSidecar()`** → `quitAndInstall(true,true)` (D-04/D-05), con guarda de módulo `updateAvailable` (T-05-05). Cableado end-to-end: `ipc.ts:111-112` (`updates:check`/`updates:install`) → preload `:42-43` → `native.ts:100-104`. **En el asar empaquetado**: `autoUpdater` ×7, `killSidecar` ×5, `quitAndInstall` ×1. **Ejecutado 0.2.0 → 0.2.1 sobre una instalación real** (gate humano 2026-07-12): `main.log` → `Full: 128,125.5 KB, To download: 766.47 KB (1%)`, SHA512 OK, instalación sin asistente, relanzado automático, cero sidecars huérfanos |
 | 5 | El parque **0.1.15** llega a 0.2.x por el puente minisign/`latest.json` (D-01, PKG-01/02) | ✓ VERIFIED | `scripts/publish-bridge.mjs` (firma → **verifica antes de subir** → publica; exige exactamente UN release con el tag). `npm run test:publish` → **5/5**. **Contra la red hoy**: `latest.json` del release latest tiene `url` basada en el **tag** (`…/download/v0.2.3/Nyanko-Setup-0.2.3.exe`, no `untagged-…`) y su firma decodifica a key id **`d4f6287094b6caba`**, el mismo que el `EMBEDDED_PUBKEY_B64` del puente. **E2E real (05-04):** una 0.1.15 instalada se auto-migró a 0.2.0 sola |
@@ -82,7 +88,19 @@ silenciosas/por-updater y el gate de la tercera preguntó por otras cosas).
 | 9 | **Higiene del paquete**: el asar no lleva config de desarrollo (D-I-01) | ✓ VERIFIED | `asar.listPackage()` → 1.763 entradas, **0** coincidencias con `.claude` / `.env`. Bloque `files:` con exclusiones **negativas** (`!.claude${/*}`, `!.env*`, `!electron-builder.yml`). El `.env` del backend (el que tiene el `CLIENT_SECRET`) nunca viajó |
 | 10 | **Ambos feeds** publicados y resolubles por un cliente anónimo | ✓ VERIFIED | `curl` sin token: `releases/latest/download/latest.yml` → `version: 0.2.3`, `sha512`, `size: 131201778` = **tamaño exacto del asset publicado** (API); `releases/latest/download/latest.json` → 200, firma + url por tag. El release **v0.2.3** trae los **cinco** artefactos (`.exe`, `.blockmap`, `.sig`, `latest.yml`, `latest.json`), no es borrador ni prerelease. `resources/app-update.yml` dentro del paquete: `provider: github, owner: kfernandoy, repo: Nyanko` (T-05-04: el feed **no** es configurable desde el código) |
 
-**Score:** 9/10 truths verified (1 present, behavior-unverified)
+**Score:** 11/11 truths verified (re-verificación 2026-07-13: el ítem 2 se observó y el ítem 11 se añadió y se probó)
+
+### Re-verificación 2026-07-13 — por qué existía
+
+Esta verificación quedó **stale por construcción**: el audit del milestone encontró B-1 *después* de
+escribirla, y el arreglo cambió el `installer.nsh` que ella había verificado. El fallo vivía en la
+**costura** entre la Fase 2 (matar el sidecar, que bloquea ficheros) y la Fase 5 (empaquetar): el
+arreglo de la 5 al problema de la 2 **desactivó en silencio la protección de bloqueo de ficheros del
+propio framework**, y ningún gate por fase podía verlo porque ambas fases son, por separado,
+correctas. En máquina rápida el auto-update gana la carrera, que es exactamente por qué pasó.
+
+El gate humano del 2026-07-13 cerró **tres** ítems de una sola ejecución (Nyanko abierta + instalador
+sin `/S`): el aviso de app-en-ejecución (B-1), el selector de idioma y el EULA.
 
 ### Deferred Items
 
