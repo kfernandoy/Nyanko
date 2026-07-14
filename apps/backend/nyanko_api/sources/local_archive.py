@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,15 @@ from .contract import (
 from .errors import SourceNotFoundError, SourceParseError, SourceUnsupportedError
 
 IMAGE_EXTENSIONS = frozenset(".jpg .jpeg .png .webp .gif .avif".split())
+
+_DIGITS = re.compile(r"(\d+)")
+
+
+def _natural_key(name: str) -> tuple[object, ...]:
+    """Ordena '2.jpg' antes que '10.jpg': el orden de cadena rompe la paginacion."""
+    return tuple(
+        int(part) if part.isdigit() else part.lower() for part in _DIGITS.split(name)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +59,7 @@ class LocalArchiveSource:
         try:
             chapter_paths = sorted(
                 (path for path in series_path.iterdir() if path.is_dir()),
-                key=lambda path: path.name,
+                key=lambda path: _natural_key(path.name),
             )
         except OSError as error:
             raise SourceParseError("No se pudo listar la serie local") from error
@@ -77,7 +87,7 @@ class LocalArchiveSource:
                     for path in chapter_path.iterdir()
                     if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
                 ),
-                key=lambda path: path.name,
+                key=lambda path: _natural_key(path.name),
             )
         except OSError as error:
             raise SourceParseError("No se pudo listar el capitulo local") from error

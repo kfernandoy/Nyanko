@@ -197,7 +197,7 @@ async def test_local_archive_lists_chapters_with_opaque_ids():
 
 
 @pytest.mark.asyncio
-async def test_local_archive_lists_only_images_in_lexicographic_order():
+async def test_local_archive_lists_only_images_in_natural_order():
     with _workdir("pages") as root:
         chapter_dir = root / "Cap 1"
         chapter_dir.mkdir()
@@ -207,7 +207,20 @@ async def test_local_archive_lists_only_images_in_lexicographic_order():
 
         pages = await source.pages("0:Cap 1")
 
-        assert [page.filename for page in pages] == ["1.jpg", "10.jpg", "2.jpg"]
+        assert [page.filename for page in pages] == ["1.jpg", "2.jpg", "10.jpg"]
+        assert [page.index for page in pages] == [1, 2, 3]
+
+
+@pytest.mark.asyncio
+async def test_local_archive_lists_chapters_in_natural_order():
+    with _workdir("chapter-order") as root:
+        for name in ["Cap 2", "Cap 10", "Cap 1"]:
+            (root / name).mkdir()
+        source = LocalArchiveSource(_Fetcher(), [{"id": "0", "path": str(root)}])
+
+        chapters = await source.chapters(SourceSeries(source_id="0:.", title="Biblioteca"))
+
+        assert [chapter.title for chapter in chapters] == ["Cap 1", "Cap 2", "Cap 10"]
 
 
 @pytest.mark.asyncio
