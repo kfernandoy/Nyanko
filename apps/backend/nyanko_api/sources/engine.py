@@ -101,14 +101,19 @@ class SourceEngine:
         return pages
 
     async def _call_source(self, call):
+        # El contrato es que el caller solo tiene que atrapar SourceError. Nada de lo que
+        # lance una fuente — httpx exotico o un IndexError parseando HTML ajeno — puede
+        # escapar de aqui sin tipar, o el caller se come un 500.
         try:
             return await call()
         except SourceError:
             raise
         except httpx.HTTPStatusError as error:
             raise _source_error_from_http_status(error) from error
-        except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as error:
+        except httpx.HTTPError as error:
             raise SourceNetworkError("No se pudo conectar con la fuente") from error
+        except Exception as error:
+            raise SourceParseError("La fuente devolvio algo que no se pudo interpretar") from error
 
 
 def _bounded_requests_per_minute(value: int) -> int:

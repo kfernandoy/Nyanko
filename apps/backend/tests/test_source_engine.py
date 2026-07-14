@@ -14,6 +14,7 @@ from nyanko_api.sources.contract import (
 )
 from nyanko_api.sources.engine import SourceEngine
 from nyanko_api.sources.errors import (
+    SourceError,
     SourceNetworkError,
     SourceNotFoundError,
     SourceParseError,
@@ -119,6 +120,26 @@ async def test_source_engine_translates_http_errors():
         await SourceEngine(
             SourceRegistry([_FuenteHttp(httpx.ConnectError("offline", request=request))])
         ).chapters("http", "serie")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        httpx.RemoteProtocolError("el servidor colgo a media respuesta"),
+        httpx.ProxyError("proxy caido"),
+        httpx.TooManyRedirects("bucle de redirecciones"),
+        httpx.DecodingError("gzip corrupto"),
+        IndexError("el parser de la fuente se salio de rango"),
+        ValueError("json ajeno malformado"),
+    ],
+)
+async def test_every_source_failure_reaches_the_caller_as_source_error(error):
+    """El caller solo atrapa SourceError; nada puede escaparse sin tipar."""
+    engine = SourceEngine(SourceRegistry([_FuenteHttp(error)]))
+
+    with pytest.raises(SourceError):
+        await engine.chapters("http", "serie")
 
 
 def test_source_engine_cache_stays_in_memory_only():
