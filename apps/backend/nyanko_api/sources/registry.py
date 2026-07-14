@@ -5,7 +5,8 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from .contract import SOURCE_API_VERSION, Source, SourceFetcher
+from .contract import SOURCE_API_VERSION, Source, SourceCapabilities, SourceFetcher
+from .engine import build_source_fetcher
 
 SourceStatus = Literal["ok", "rejected"]
 
@@ -96,7 +97,9 @@ def build_source_registry(
     registry = SourceRegistry()
     for source_factory in sources:
         try:
-            source = _instantiate_source(source_factory, fetcher, library_folders)
+            source_fetcher = fetcher or build_source_fetcher(_source_capabilities(source_factory))
+            source = _instantiate_source(source_factory, source_fetcher, library_folders)
+            _inject_fetcher(source, source_fetcher)
         except Exception as error:
             name = _source_attr(source_factory, "name", source_factory.__name__)
             display_name = _source_attr(source_factory, "display_name", name)
@@ -128,3 +131,17 @@ def _source_attr(source: object, name: str, default: str | None = None) -> str:
     if value is None:
         raise AttributeError(f"Source missing {name}")
     return str(value)
+
+
+def _source_capabilities(source: object) -> SourceCapabilities:
+    capabilities = getattr(source, "capabilities", None)
+    if isinstance(capabilities, SourceCapabilities):
+        return capabilities
+    return SourceCapabilities()
+
+
+def _inject_fetcher(source: Source, fetcher: SourceFetcher) -> None:
+    try:
+        setattr(source, "fetcher", fetcher)
+    except (AttributeError, TypeError):
+        return
