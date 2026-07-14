@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v0.3
 milestone_name: «Nyanko lee manga»
-current_phase: 02
-current_phase_name: motor-de-fuentes-contrato-presupuesto-y-taxonom-a-de-errores
-status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-07-13T23:57:19.458Z"
-last_activity: 2026-07-13
-last_activity_desc: Phase 02 execution started
+current_phase: 03
+current_phase_name: page-pipe-y-lectura-local
+status: ready_to_discuss
+stopped_at: Phase 02 cerrada (verify passed) — siguiente: discutir Fase 3
+last_updated: "2026-07-14T00:20:00.000Z"
+last_activity: 2026-07-14
+last_activity_desc: Phase 02 verificada (12/12, D-08 cerrado) y cerrada
 progress:
   total_phases: 9
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 7
-  completed_plans: 4
-  percent: 11
+  completed_plans: 7
+  percent: 22
 ---
 
 # Project State
@@ -26,21 +26,20 @@ See: .planning/PROJECT.md (updated 2026-07-13)
 **Core value:** Nyanko deja de ser solo un tracker y pasa a ser **donde consumes**: el manga se lee
 dentro de la app, y el tracking ocurre solo — el mismo trato que la detección de reproducción ya le da
 al anime.
-**Current focus:** Phase 02 — motor-de-fuentes-contrato-presupuesto-y-taxonom-a-de-errores
+**Current focus:** Phase 03 — page pipe + lectura local (la piedra angular)
 
 ## Current Position
 
-Phase: 02 (motor-de-fuentes-contrato-presupuesto-y-taxonom-a-de-errores) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 02
-Last activity: 2026-07-13 — Phase 02 execution started
+Phase: 02 — **CERRADA** (verify: passed, 12/12 verdades; code review: 4 blockers cerrados)
+Plan: 3 of 3, todos con SUMMARY. Suite: 407 passed.
+Last activity: 2026-07-14 — D-08 (prioridad de lectura) cerrado y re-verificado; fase 02 cerrada
 
-Siguiente comando: `/gsd-plan-phase 1`
+Siguiente comando: `/gsd-discuss-phase 3`
 
 ## Progress
 
 ```
-Fases: [.........] 0/9
+Fases: [##.......] 2/9
 ```
 
 | Fase | Qué entrega | Research pass |
@@ -102,13 +101,26 @@ cuenta vinculada, iconos de proveedores). No bloquean la 0.3.
 
 ## Session Continuity
 
-**Resume file:** .planning/phases/02-motor-de-fuentes-contrato-presupuesto-y-taxonom-a-de-errores/02-CONTEXT.md
+**Resume file:** .planning/phases/02-.../02-VERIFICATION.md
 
-**Last session:** 2026-07-13T20:28:02.431Z
-**Stopped at:** Phase 2 context gathered
+**Last session:** 2026-07-14
+**Stopped at:** Fase 02 cerrada: ejecutada, revisada (4 blockers cerrados) y verificada (passed).
 
-Roadmap de v0.3 creado el 2026-07-13. Nada ejecutado todavía. El siguiente paso es
-`/gsd-plan-phase 1`; las fases 7 y 8 llevan `--research-phase` cuando les toque.
+Fases 1 y 2 hechas y con sus gates en verde. Siguiente: `/gsd-discuss-phase 3` (page pipe + lectura
+local). Los planes los **ejecuta Codex** según `.planning/CODEX-RULES.md` (Codex escribe código y
+tests; el orquestador corre la suite, commitea y cierra los artefactos de `.planning/`). Las fases 7
+y 8 llevan `--research-phase` cuando les toque.
+
+### Warnings de la Fase 2 que entran como contexto de la Fase 3
+
+Al cablear el engine dejan de ser latentes (ver `02-VERIFICATION.md`):
+
+- **WR-06** — el registry se construye una sola vez en `lifespan`: una carpeta de biblioteca añadida
+  en caliente es invisible para `LocalArchiveSource` hasta reiniciar.
+- **WR-03** — el fallback a caché traga `SourceRateLimitError`: devolver caché ante un 429 es
+  back-pressure perdida (`except SourceError:` a secas en `engine.py:89`).
+- **WR-01** — `SourceEngine` no se re-exporta en `sources/__init__.py` (4 líneas).
+- **WR-08** — los `RateLimitedClient` por fuente nunca se cierran en el shutdown.
 
 ## Performance Metrics
 
@@ -130,4 +142,6 @@ Roadmap de v0.3 creado el 2026-07-13. Nada ejecutado todavía. El siguiente paso
 - [Phase 01]: Guardia FND-05 por introspeccion del esquema (sqlite_master + PRAGMA table_info): cero listas de columnas que mantener — Una lista de columnas escrita a mano es una lista que un dia no se actualiza; la guardia cubre el esquema v8 y lo que traiga la Fase 3 por construccion
 - [Phase 01]: assert_no_persisted_urls es un helper importable, no logica enterrada en un test — Es un control sobre DATOS: sobre tablas vacias pasa en vacio. Las Fases 3/7/8 deben llamarlo tras SUS escrituras
 - [Phase 01]: La regla dura de la lista blanca comprueba el sufijo 'path', no '_path' — local_files.path y library_folders.path no acaban en _path: la regla del plan no habria cubierto las unicas dos columnas de ruta local que existen
+- [Phase 02]: El presupuesto se concede de UNO EN UNO y en la SALIDA (`_grant_slot` desde `_release_slot`), no drenando el heap — repartir el heap entero hacía que cada waiter ya despachado fuera dueño de su hueco, así que la prioridad de lectura solo reordenaba dentro de la ventana de 1 ms: cosmética justo en el caso real (descargas en curso + lectura interactiva después). Tenía test verde encima; el test nuevo falla contra el dispatcher viejo
+- [Phase 02]: Un mecanismo con kwarg + heap + test verde puede no hacer NADA — la lección de Seam F: el verifier lo pilló ejecutando el limitador, no leyendo el review. Los tests de ritmo se escriben esperando a que algo haya SALIDO de verdad, no metiendo todo en la misma ráfaga
 - [Phase 1]: FND-05: la guardia de URLs persistidas tiene dos capas — la lista blanca exime del prefijo http, pero NADA exime de guardar una URL al propio sidecar (//127.0.0.1, //localhost, //[::1]), esté donde esté dentro del valor
