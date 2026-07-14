@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import heapq
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ParamSpec, TypeVar
 
 import httpx
@@ -87,6 +88,9 @@ class _LoopState:
     lock: asyncio.Lock
     semaphore: asyncio.Semaphore
     next_slot: float = 0.0
+    waiters: list[tuple[int, int, asyncio.Future[float]]] = field(default_factory=list)
+    sequence: int = 0
+    dispatch_scheduled: bool = False
 
 
 class RateLimitedClient:
@@ -184,8 +188,45 @@ class RateLimitedClient:
             self._clients[loop] = client
         return client
 
+    async def _reserve_slot(
+        self, loop: asyncio.AbstractEventLoop, state: _LoopState, priority: int
+    ) -> float:
+        future: asyncio.Future[float] = loop.create_future()
+        async with state.lock:
+            state.sequence += 1
+            heapq.heappush(state.waiters, (-int(priority), state.sequence, future))
+            if not state.dispatch_scheduled:
+                state.dispatch_scheduled = True
+                # ponytail: ventana de 1 ms para agrupar waiters y permitir que lectura
+                # adelante descargas ya encoladas. Si hace falta latencia sub-ms, usar
+                # colas separadas por consumidor y medir antes.
+                loop.call_later(0.001, self._schedule_dispatch, loop, state)
+        try:
+            return await future
+        except asyncio.CancelledError:
+            future.cancel()
+            raise
+
+    def _schedule_dispatch(self, loop: asyncio.AbstractEventLoop, state: _LoopState) -> None:
+        loop.create_task(self._dispatch_waiters(loop, state))
+
+    async def _dispatch_waiters(
+        self, loop: asyncio.AbstractEventLoop, state: _LoopState
+    ) -> None:
+        async with state.lock:
+            state.dispatch_scheduled = False
+            while state.waiters:
+                _priority, _sequence, future = heapq.heappop(state.waiters)
+                if future.cancelled():
+                    continue
+                deadline = max(loop.time(), state.next_slot)
+                state.next_slot = deadline + self._interval
+                future.set_result(deadline)
+
     @retry_with_backoff(max_retries=3, base_delay=1.0, max_delay=30.0)
-    async def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+    async def request(
+        self, method: str, url: str, *, priority: int = 0, **kwargs: Any
+    ) -> httpx.Response:
         loop = asyncio.get_running_loop()
         state = self._state_for(loop)
 
@@ -194,9 +235,7 @@ class RateLimitedClient:
             # hasta él FUERA de todo. Dormir con el semáforo en la mano (lo que se hacía
             # antes) no limitaba nada: las N corrutinas entraban a la vez, pedían todas el
             # mismo intervalo, despertaban en el mismo tick y salían en ráfaga.
-            async with state.lock:
-                deadline = max(loop.time(), state.next_slot)
-                state.next_slot = deadline + self._interval
+            deadline = await self._reserve_slot(loop, state, priority)
             await asyncio.sleep(deadline - loop.time())
 
         async with state.semaphore:  # tope de peticiones EN VUELO, no mecanismo de ritmo
@@ -208,14 +247,14 @@ class RateLimitedClient:
             response.raise_for_status()
             return response
 
-    async def post(self, url: str, **kwargs: Any) -> httpx.Response:
-        return await self.request("POST", url, **kwargs)
+    async def post(self, url: str, *, priority: int = 0, **kwargs: Any) -> httpx.Response:
+        return await self.request("POST", url, priority=priority, **kwargs)
 
-    async def get(self, url: str, **kwargs: Any) -> httpx.Response:
-        return await self.request("GET", url, **kwargs)
+    async def get(self, url: str, *, priority: int = 0, **kwargs: Any) -> httpx.Response:
+        return await self.request("GET", url, priority=priority, **kwargs)
 
-    async def patch(self, url: str, **kwargs: Any) -> httpx.Response:
-        return await self.request("PATCH", url, **kwargs)
+    async def patch(self, url: str, *, priority: int = 0, **kwargs: Any) -> httpx.Response:
+        return await self.request("PATCH", url, priority=priority, **kwargs)
 
-    async def delete(self, url: str, **kwargs: Any) -> httpx.Response:
-        return await self.request("DELETE", url, **kwargs)
+    async def delete(self, url: str, *, priority: int = 0, **kwargs: Any) -> httpx.Response:
+        return await self.request("DELETE", url, priority=priority, **kwargs)
