@@ -43,6 +43,12 @@ class SourceRegistry:
         if not isinstance(source, Source):
             self._reject(name, display_name, "La fuente no cumple el contrato Source")
             return
+        # isinstance contra un Protocol solo comprueba que el atributo EXISTA. Sin esto,
+        # una fuente con capabilities basura se registra como "ok" y revienta a quien la
+        # consuma (asdict en /api/sources se lleva por delante las fuentes buenas).
+        if not isinstance(getattr(source, "capabilities", None), SourceCapabilities):
+            self._reject(name, display_name, "La fuente declara capabilities invalidas")
+            return
         self._sources[name] = source
         self._registrations[name] = SourceRegistration(
             name=name,
@@ -96,17 +102,32 @@ def build_source_registry(
 
     registry = SourceRegistry()
     for source_factory in sources:
+        # register() tambien lanza (nombre duplicado, name ausente). Si se queda fuera del
+        # try, una sola fuente rota sube hasta lifespan y el sidecar no arranca — justo lo
+        # contrario de lo que este registro existe para garantizar (D-13).
         try:
             source_fetcher = fetcher or build_source_fetcher(_source_capabilities(source_factory))
             source = _instantiate_source(source_factory, source_fetcher, library_folders)
             _inject_fetcher(source, source_fetcher)
+            registry.register(source)
         except Exception as error:
-            name = _source_attr(source_factory, "name", source_factory.__name__)
-            display_name = _source_attr(source_factory, "display_name", name)
-            registry.reject(name, display_name, f"No se pudo cargar la fuente: {error}")
-            continue
-        registry.register(source)
+            _reject_broken_source(registry, source_factory, error)
     return registry
+
+
+def _reject_broken_source(
+    registry: SourceRegistry,
+    source_factory: Callable[..., Source],
+    error: Exception,
+) -> None:
+    name = str(
+        getattr(source_factory, "name", None) or getattr(source_factory, "__name__", "desconocida")
+    )
+    display_name = str(getattr(source_factory, "display_name", None) or name)
+    if any(registration.name == name for registration in registry.registrations()):
+        # ponytail: ya hay una fuente con ese nombre; la duplicada se descarta sin pisarla
+        return
+    registry.reject(name, display_name, f"No se pudo cargar la fuente: {error}")
 
 
 def _instantiate_source(

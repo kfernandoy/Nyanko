@@ -182,6 +182,39 @@ def test_registry_rejects_duplicate_source_names():
         SourceRegistry([_FuenteOk(), _FuenteOk()])
 
 
+def test_registry_rejects_source_with_invalid_capabilities():
+    class _FuenteCapabilidadesBasura(_FuenteOk):
+        name = "basura"
+        capabilities = 42
+
+    registry = SourceRegistry([_FuenteCapabilidadesBasura()])
+
+    assert registry.status("basura").status == "rejected"
+    assert registry.all() == []
+
+
+def test_a_broken_source_never_takes_down_the_sidecar():
+    class _FuenteQueRevienta(_FuenteOk):
+        name = "revienta"
+
+        def __init__(self, *_args, **_kwargs):
+            raise RuntimeError("boom en el constructor")
+
+    class _FuenteSinNombre(_FuenteOk):
+        name = None
+
+    # Nombre duplicado: register() lanza ValueError. Antes escapaba de
+    # build_source_registry y el sidecar no arrancaba.
+    registry = build_source_registry(
+        fetcher=_Fetcher(),
+        sources=[_FuenteOk, _FuenteOk, _FuenteQueRevienta, _FuenteSinNombre],
+    )
+
+    assert registry.status("ok").status == "ok"
+    assert registry.status("revienta").status == "rejected"
+    assert [source.name for source in registry.all()] == ["ok"]
+
+
 @pytest.mark.asyncio
 async def test_local_archive_lists_chapters_with_opaque_ids():
     with _workdir("chapters") as root:
