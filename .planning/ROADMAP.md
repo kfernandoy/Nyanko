@@ -135,9 +135,36 @@ se enchufa a un pipe que ya corre.
 
 **Techo declarado**: la caché de lectura `_stream/` se limpia al arrancar y al cerrar capítulo. Sin LRU. Se añade si alguien se queja — pero el techo se escribe aquí, o «caché de páginas sin límite se come el SSD» se convierte en un bug real.
 
+> **Anulado en planificación (D-02)**: no hay `_stream/`, no hay caché de lectura y no hay limpieza al arrancar. Las páginas se sirven en streaming desde el CBZ/disco por una ruta dinámica bajo `/assets`. La desviación va en la dirección buena: sin caché no existe el bug que este techo describía, y no hay estado en disco que reconciliar tras un cierre brusco. Menos código y menos superficie, no más.
+
 **Research pass**: No. Todo tiene precedente en el árbol: el mount `/assets`, `normalizeAssetUrls` (`api.ts:202`), `zipfile`/`pathlib`/`re` de stdlib. No hay nada que aprender, solo precedente que seguir.
 
-**Plans**: TBD
+**Plans**: 7 plans
+
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Contrato v2 (`page_bytes`, `SOURCE_API_VERSION` 1→2) + `LocalArchiveSource` lee CBZ/ZIP y `ComicInfo.xml` — RD-01, RD-08 — wave 1
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 03-02-PLAN.md — Esquema v9 (`reader_prefs`, `reader_progress`, `reading_events`) + guardia FND-05 contra escrituras reales — RD-03, RD-05, RD-06, RD-07 — wave 2
+- [ ] 03-03-PLAN.md — La ruta `/assets/pages/{page_id:path}` declarada ANTES del mount (D-04) + test de traversal (D-05) — RD-01 — wave 2
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 03-04-PLAN.md — API `/api/manga/*` (capítulos, páginas, prefs, progreso, evento) + WR-06 — RD-03, RD-05, RD-06, RD-07 — wave 3
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 03-05-PLAN.md — Cliente + `MangaLibraryView`: el camino del usuario hasta un capítulo — RD-01 — wave 4
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 03-06-PLAN.md — `ReaderView`: tres modos, navegación, reanudar, encadenado + evento, ventana de decodificación — RD-02, RD-03, RD-04, RD-05, RD-06, RD-07, RD-09 — wave 5
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 03-07-PLAN.md — RD-09 **medido** (RSS < 500 MB con 200 páginas reales) + la CSP corregida (Seam G) — RD-09 — wave 6
 
 **UI hint**: yes
 

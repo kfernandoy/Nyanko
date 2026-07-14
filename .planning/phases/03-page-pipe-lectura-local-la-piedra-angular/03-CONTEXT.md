@@ -111,6 +111,55 @@ nadie** — nace para que la Fase 5 lo encuentre ya escrito).
 - **D-15: en esta fase se escribe la fila y no la lee nadie. Eso es el diseño, no un cabo suelto.** El
   ROADMAP pone esta fase antes que el sync para que el evento exista **antes** que su consumidor.
 
+### El contrato gana un cuarto método (decidido tras el pattern mapping)
+
+El pattern mapper encontró el agujero: **el `Source` Protocol de la Fase 2 no tiene forma de pedir el
+contenido de una página.** Tiene 3 métodos (`search`/`chapters`/`pages`) y `SourcePage` no lleva ni
+URL ni bytes. Sin esto, la ruta de D-01 no puede servir nada.
+
+- **D-16: el contrato gana `page_bytes(page)` y `SOURCE_API_VERSION` pasa de 1 a 2.** La fuente local
+  lo sirve del disco o del ZIP; una fuente online (Fase 7) lo servirá de **su** fetcher, con **sus**
+  headers declarados y **su** presupuesto — es decir, ON-05 (ningún byte sale del renderer) y SRC-06
+  (el cubo compartido) se cumplen **por construcción**, no por disciplina del que escriba el adapter.
+
+- **D-17: bumpear la versión de API es GRATIS hoy y caro después.** No existe ni una sola extensión
+  publicada — el canal de instalación es la Fase 6 y las fuentes son la Fase 7. Hacerlo ahora cuesta
+  un `int`; hacerlo en la Fase 7 es un cambio de contrato con adapters escritos encima.
+  `registry.py:36-42` ya rechaza por versión: eso debe seguir en verde con el 2.
+
+- **D-18: NADA de `isinstance(source, LocalArchiveSource)` en la ruta.** Funcionaría hoy con la única
+  fuente que existe y se convertiría en una rama por fuente en la Fase 7 — que es exactamente lo que
+  **SRC-05 prohíbe** (cero ramas por nombre/tipo de fuente; el test de la Fase 2 lo verifica).
+
+### Hallazgos del pattern mapper que el plan DEBE absorber
+
+- **H-1: `APIRouter` está prohibido en `main.py` por un test verde de la Fase 2**
+  (`test_source_api.py:155-162`: `assert "APIRouter" not in main_source`). El `manga.py` con router que
+  preveía `ARCHITECTURE.md` **no existe como opción**. Y como el `Mount("/assets")` devuelve
+  `Match.FULL` para todo su prefijo, solo queda una forma de cumplir D-04: declarar
+  `@app.get("/assets/pages/{page_id:path}")` **entre `main.py:1441` y `main.py:1442`**, antes del mount.
+  Con un test que falle si alguien lo reordena.
+
+- **H-2: el esquema v9 pone rojo un test de la Fase 2 por construcción.**
+  `test_phase_2_does_not_add_source_persistence_columns` (`test_source_api.py:165-184`) afirma
+  `assert "source_name" not in database_module.SCHEMA` — y D-10/D-13 añaden tres tablas con
+  `source_name`. **Esta fase es la que reescribe ese test**, explícitamente y en su propia tarea. Un
+  plan que no lo toque deja la suite roja y al ejecutor decidiendo solo qué borrar.
+
+- **H-3: la CSP literal del ROADMAP deja la app sin portadas.** `img-src 'self' http://127.0.0.1:*`
+  borra todas las portadas de Descubrir/Temporadas/Búsqueda y el avatar: son URLs del CDN del proveedor
+  que llegan crudas al renderer (`anilist.py:613` → `DiscoveryView.tsx:281`). **Falta `https:`.** Y
+  falta `connect-src ... ws://127.0.0.1:*` o muere `playbackSocket()` (`api.ts:489`). Además el
+  vehículo **no puede ser `onHeadersReceived`**: en producción el renderer carga por `file://`
+  (`index.ts:83`) y el splash por `data:` (`splash.ts:71`) → tiene que ser `<meta http-equiv>`. Ojo al
+  `script-src` del splash: choca con sus `onclick=` inline (`splash.ts:47-49`).
+  **La CSP se escribe corregida, no literal.** El criterio del ROADMAP se cumple en su intención
+  (existe una CSP, `webSecurity` sigue en `true`); su texto tenía un bug.
+
+- **H-4 (gratis, de paso):** el handler pasa por `SourceEngine._call_source` (`engine.py:103-116`),
+  que ya garantiza que nada escapa sin tipar. Eso paga **WR-01** (exportar `SourceEngine` en
+  `sources/__init__.py`, 2 líneas) sin coste adicional.
+
 ### Claude's Discretion
 
 - **CBZ/ZIP en `LocalArchiveSource`:** hoy la fuente **solo lee carpetas de imágenes**. Hay que
