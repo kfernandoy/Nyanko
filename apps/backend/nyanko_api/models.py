@@ -30,6 +30,20 @@ class ProviderInfo(BaseModel):
     capabilities: ProviderCapabilitiesResponse
 
 
+class SourceCapabilitiesResponse(BaseModel):
+    search: bool
+    headers: dict[str, str]
+    requests_per_minute: int
+
+
+class SourceInfo(BaseModel):
+    name: str
+    display_name: str
+    status: Literal["ok", "rejected"]
+    rejection_reason: str | None = None
+    capabilities: SourceCapabilitiesResponse | None = None
+
+
 class AccountInfo(BaseModel):
     id: int
     provider: str

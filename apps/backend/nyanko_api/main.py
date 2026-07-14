@@ -129,10 +129,13 @@ from .models import (
     TorrentDownloadResponse,
     LocalSeries,
     LocalAssociateRequest,
+    SourceCapabilitiesResponse,
+    SourceInfo,
 )
 from .normalizer import fold_title, folded_title, normalize, normalize_title
 from .providers import MyAnimeListProvider, build_provider_registry
 from .scanner import iter_video_files, parse_file
+from .sources import SourceRegistration, SourceRegistry, build_source_registry
 from . import torrents as torrents_mod
 
 
@@ -1402,6 +1405,9 @@ async def lifespan(app: FastAPI):
         database.ensure_account(
             "anilist", "default", credential_ref="keyring:anilist:default"
         )
+    app.state.source_registry = build_source_registry(
+        library_folders=database.get_library_folders()
+    )
 
     instance_token = read_token_file(settings.instance_token_file) or generate_token()
     write_token_file(settings.instance_token_file, instance_token)
@@ -1486,6 +1492,27 @@ def providers(
         )
         for provider in registry.all()
     ]
+
+
+@app.get("/api/sources", response_model=list[SourceInfo])
+def list_sources(request: Request) -> list[SourceInfo]:
+    registry: SourceRegistry = request.app.state.source_registry
+    return [_source_info(registration) for registration in registry.registrations()]
+
+
+def _source_info(registration: SourceRegistration) -> SourceInfo:
+    capabilities = (
+        SourceCapabilitiesResponse.model_validate(asdict(registration.source.capabilities))
+        if registration.source is not None
+        else None
+    )
+    return SourceInfo(
+        name=registration.name,
+        display_name=registration.display_name,
+        status=registration.status,
+        rejection_reason=registration.rejection_reason,
+        capabilities=capabilities,
+    )
 
 
 @app.get("/api/accounts", response_model=list[AccountInfo])
