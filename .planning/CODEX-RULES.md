@@ -81,6 +81,25 @@ Un reporte optimista se detecta siempre y cuesta más caro que la verdad.
 ## 8. Respuesta final
 
 Termina siempre con:
-- Ficheros creados/modificados
-- Hashes de los commits
+- Ficheros creados/modificados, **agrupados por tarea del plan** (el orquestador los necesita así para los commits atómicos)
 - Qué NO has podido hacer (si aplica)
+- **Nada de hashes ni de resultados de pytest**: no puedes generar ni lo uno ni lo otro (reglas 2 y 4)
+
+---
+
+# Notas para el ORQUESTADOR (no para Codex)
+
+Cómo lanzar a Codex desde Claude Code sin que se muera a medias:
+
+- **NO uses el `--background` del companion.** Su worker desacoplado muere en cuanto termina la llamada Bash
+  que lo engendró (el harness se lleva el árbol de procesos). Se queda en `starting`, sin session ID, sin producir nada.
+- **NO lo lances en primer plano a pelo.** La herramienta Bash tope a 10 minutos y mata al proceso hijo de Codex
+  a media faena. Un plan tarda >10 min.
+- **SÍ:** Codex en **primer plano**, dentro de una llamada **Bash con `run_in_background: true`**. Esa sí persiste
+  entre turnos y notifica al salir.
+- El `status` del companion **miente sobre los jobs muertos**: sigue diciendo `running` durante horas después de que
+  el proceso haya desaparecido. No te fíes; comprueba la frescura del fichero de log (`.claude/plugins/data/
+  codex-openai-codex/state/<repo>/jobs/<job>.log`) o mira si el árbol de trabajo cambia.
+
+Y el reparto real de tareas, que es el que impone el sandbox:
+**Codex escribe código y tests. El orquestador ejecuta la suite, commitea y cierra los artefactos de `.planning/`.**

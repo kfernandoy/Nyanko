@@ -27,7 +27,7 @@ Detalle completo (goals, success criteria, waves): [milestones/v0.2-ROADMAP.md](
 ### 🚧 v0.3 «Nyanko lee manga»
 
 - [x] **Phase 1: Fundaciones — limitador, esquema y modelo de progreso** - Nada hace una ráfaga ni escribe una fila hasta que el limitador limita de verdad y el modelo de progreso está decidido y migrado contra la BD real (completed 2026-07-13)
-- [ ] **Phase 2: Motor de fuentes — contrato, presupuesto y taxonomía de errores** - Existe un contrato de fuente versionado contra el que construir, con el presupuesto de peticiones en el motor y no en sus llamadores
+- [x] **Phase 2: Motor de fuentes — contrato, presupuesto y taxonomía de errores** - Existe un contrato de fuente versionado contra el que construir, con el presupuesto de peticiones en el motor y no en sus llamadores (completed 2026-07-14)
 - [ ] **Phase 3: Page pipe + lectura local — la piedra angular** - Nyanko lee la colección de CBZ del disco: sin red, sin rate limits, sin scraping en la superficie de depuración
 - [ ] **Phase 4: Identidad y vínculo — fuente ↔ entrada del tracker** - El vínculo es explícito, almacenado y confirmado por el usuario; el sync podrá asumirlo o negarse
 - [ ] **Phase 5: Sync de progreso — la tesis del milestone** - Última página → el progreso sube solo al proveedor, con confirmar/deshacer y en el timeline
@@ -102,11 +102,11 @@ solo consumidor.
 
 **Research pass**: No. El contrato está completamente investigado (forma del Protocol, versionado, taxonomía de errores, la trampa de PyInstaller) y la decisión abierta que el research dejaba aquí (bundled vs runtime-loadable) ya está **tomada por el humano**: D-1/D-2/D-3.
 
-**Plans**: 1/3 plans executed
+**Plans**: 3/3 plans complete
 
-- [ ] 02-01-PLAN.md
+- [x] 02-01-PLAN.md
 - [x] 02-02-PLAN.md
-- [ ] 02-03-PLAN.md
+- [x] 02-03-PLAN.md
 
 ---
 
@@ -379,7 +379,7 @@ backend, el cliente HTTP, la verificación sha256, el gate de seguridad y una UI
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Electron shell scaffold + data-dir lock | v0.2 | 4/4 | Complete    | 2026-07-13 |
-| 2. Main core — sidecar lifecycle + logging | v0.2 | 1/3 | In Progress|  |
+| 2. Main core — sidecar lifecycle + logging | v0.2 | 3/3 | Complete   | 2026-07-14 |
 | 3. Native boundary + Tauri removal | v0.2 | 2/2 | Complete | 2026-07-11 |
 | 4. Native feature parity | v0.2 | 3/3 | Complete | 2026-07-11 |
 | 5. Packaging + auto-update | v0.2 | 6/6 | Complete | 2026-07-12 |
