@@ -117,12 +117,12 @@ cuenta vinculada, iconos de proveedores). No bloquean la 0.3.
 **Resume file:** .planning/phases/03-page-pipe-lectura-local-la-piedra-angular/03-CONTEXT.md
 
 **Last session:** 2026-07-14T04:49:03.435Z
-**Stopped at:** Phase 3 context gathered
+**Stopped at:** Fase 03 planificada (7 planes) y verificada por el plan-checker. Lista para ejecutar.
 
-Fases 1 y 2 hechas y con sus gates en verde. Fase 3 discutida. Siguiente: `/gsd-plan-phase 3`.
+Fases 1 y 2 hechas y con sus gates en verde. Siguiente: `/gsd-execute-phase 3`.
 Los planes los **ejecuta Codex** según `.planning/CODEX-RULES.md` (Codex escribe código y tests; el
-orquestador corre la suite, commitea y cierra los artefactos de `.planning/`). El ROADMAP marca
-`UI hint: yes` para la Fase 3: `/gsd-ui-phase 3` antes de planificar si se quiere contrato visual.
+orquestador corre la suite, commitea y cierra los artefactos de `.planning/`). Se planificó **sin**
+`/gsd-ui-phase` por decisión explícita, aunque el ROADMAP marque `UI hint: yes`.
 Las fases 7 y 8 llevan `--research-phase` cuando les toque.
 
 ### Warnings de la Fase 2 que entran como contexto de la Fase 3
