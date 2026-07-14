@@ -35,27 +35,36 @@ Es la stdlib y es lo correcto; que a ti te falle es problema de tu sandbox, no d
 > Pasaba los tests y ensuciaba el repo con un directorio relativo dependiente del cwd. Hubo que revertirlo.
 > **No repitas esto.**
 
-## 4. Commits: son parte del trabajo, no un extra
+## 4. NO intentes commitear. No puedes.
 
-Un plan **no está hecho** hasta que está commiteado. Si escribes código y no lo commiteas, has entregado cero.
+**No ejecutes `git add`, `git commit`, ni ningún comando que escriba en `.git/`.** Fallará siempre.
 
-- Un commit atómico **por tarea del plan**, con prefijo del plan: `feat(02-02): ...`, `test(02-02): ...`.
-- **Mensajes de commit en INGLÉS.** **Código y comentarios en ESPAÑOL.**
-- Commits normales. **NUNCA `--no-verify`.** Si un hook falla, arregla la causa.
-- Al terminar, `git status` debe quedar limpio. Compruébalo.
+Motivo (medido, no teórico): tu sandbox `workspace-write` **deniega la escritura en `.git/`**.
+`git add` muere con `fatal: Unable to create '.../.git/index.lock': Permission denied`.
+No es una carrera, no es un lock colgado, no se arregla reintentando.
+
+**El orquestador hace los commits** después de verificar tu trabajo. Tú entregas el árbol de trabajo
+en su estado final y **reportas exactamente qué has tocado** para que él pueda commitearlo bien.
+
+Lo que SÍ debes hacer: dejar el trabajo agrupado y coherente, y en tu respuesta final decir qué ficheros
+corresponden a qué tarea del plan, para que los commits atómicos salgan correctos.
+
+> **NUNCA simules commits, ni uses `--no-verify`, ni inventes hashes.** (La última vez lo hiciste bien:
+> reportaste el bloqueo con exactitud en vez de fingir. Sigue así.)
+
+Convenciones que el orquestador aplicará: mensajes en INGLÉS, un commit atómico por tarea, prefijo `(NN-MM)`.
+Código y comentarios en ESPAÑOL — **eso sí es cosa tuya**.
 
 ## 5. SUMMARY.md
 
 Escribe `<dir-de-la-fase>/<NN-MM>-SUMMARY.md` (formato: mira otros `*-SUMMARY.md` del repo).
-**Escríbelo y commitéalo acto seguido** (`docs(NN-MM): add plan summary`), sin narrar nada entre medias.
-En el self-check, pon el resultado de tests que te haya dado el ORQUESTADOR. Si no te ha dado ninguno, escribe
-"pendiente de verificación por el orquestador". **No inventes un resultado de tests.**
+**No lo commitees** (ver regla 4) — déjalo en el árbol de trabajo; el orquestador lo commitea.
 
-Luego actualiza el progreso:
-```
-node "$HOME/.claude/gsd-core/bin/gsd-tools.cjs" query roadmap.update-plan-progress <fase> <plan> complete
-```
-y commitea `.planning/ROADMAP.md` + `.planning/STATE.md` si cambian.
+En el self-check y en cada `status:` de coverage, escribe `unknown` / "pendiente de verificación por el
+orquestador". **No inventes un resultado de tests** — tú no puedes ejecutarlos (regla 2).
+El orquestador corre la suite, rellena los resultados reales y cierra el `status:`.
+
+Tampoco ejecutes `roadmap.update-plan-progress`: escribe en `.planning/`, y eso también lo cierra el orquestador.
 
 ## 6. Alcance
 

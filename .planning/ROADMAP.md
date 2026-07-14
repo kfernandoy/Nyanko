@@ -102,7 +102,11 @@ solo consumidor.
 
 **Research pass**: No. El contrato está completamente investigado (forma del Protocol, versionado, taxonomía de errores, la trampa de PyInstaller) y la decisión abierta que el research dejaba aquí (bundled vs runtime-loadable) ya está **tomada por el humano**: D-1/D-2/D-3.
 
-**Plans**: TBD
+**Plans**: 1/3 plans executed
+
+- [ ] 02-01-PLAN.md
+- [x] 02-02-PLAN.md
+- [ ] 02-03-PLAN.md
 
 ---
 
@@ -375,7 +379,7 @@ backend, el cliente HTTP, la verificación sha256, el gate de seguridad y una UI
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Electron shell scaffold + data-dir lock | v0.2 | 4/4 | Complete    | 2026-07-13 |
-| 2. Main core — sidecar lifecycle + logging | v0.2 | 2/2 | Complete | 2026-07-10 |
+| 2. Main core — sidecar lifecycle + logging | v0.2 | 1/3 | In Progress|  |
 | 3. Native boundary + Tauri removal | v0.2 | 2/2 | Complete | 2026-07-11 |
 | 4. Native feature parity | v0.2 | 3/3 | Complete | 2026-07-11 |
 | 5. Packaging + auto-update | v0.2 | 6/6 | Complete | 2026-07-12 |
