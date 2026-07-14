@@ -4,11 +4,11 @@ milestone: v0.3
 milestone_name: «Nyanko lee manga»
 current_phase: 03
 current_phase_name: page-pipe-lectura-local-la-piedra-angular
-status: ready_to_plan
-stopped_at: Phase 3 context gathered
+status: ready_to_execute
+stopped_at: Fase 03 planificada y verificada — lista para ejecutar
 last_updated: "2026-07-14T04:49:03.451Z"
 last_activity: 2026-07-14
-last_activity_desc: Fase 03 discutida — CONTEXT.md escrito (4 decisiones bloqueadas)
+last_activity_desc: Fase 03 planificada (7 planes) y verificada por el plan-checker
 progress:
   total_phases: 9
   completed_phases: 2
@@ -31,11 +31,23 @@ al anime.
 ## Current Position
 
 Fase 02 — **CERRADA** (verify: passed, 12/12 verdades; code review: 4 blockers cerrados). Suite: 407 passed.
-Fase 03 — **DISCUTIDA**: `03-CONTEXT.md` escrito, 4 decisiones bloqueadas (bytes por ruta dinámica
-bajo `/assets` sin caché; ventana ±2 y RSS < 500 MB; `reader_prefs` + `reader_progress` en schema v9;
-`reading_events` con `chapter REAL`).
+Fase 03 — **PLANIFICADA Y VERIFICADA**: 7 planes en 6 olas, plan-checker en verde (3 blockers
+cerrados en la revisión 1/3). CONTEXT con 18 decisiones bloqueadas.
 
-Siguiente comando: `/gsd-plan-phase 3` (los planes los ejecuta Codex — ver `.planning/CODEX-RULES.md`)
+Siguiente comando: `/gsd-execute-phase 3` (los planes los ejecuta Codex — ver `.planning/CODEX-RULES.md`)
+
+| Plan | Ola | Qué entrega |
+|------|-----|-------------|
+| 03-01 | 1 | Contrato v2: `page_bytes` + `SOURCE_API_VERSION` 1→2. CBZ/ZIP/ComicInfo en `LocalArchiveSource` |
+| 03-02 | 2 | Esquema v9 (`reader_prefs`, `reader_progress`, `reading_events`) + guardia FND-05 |
+| 03-03 | 2 | Ruta `/assets/pages/{page_id:path}` — antes del mount (D-04), sin paths (D-05) |
+| 03-04 | 3 | API `/api/manga/*` + WR-06 (registry estático) |
+| 03-05 | 4 | Cliente + `MangaLibraryView` |
+| 03-06 | 5 | `ReaderView`: 3 modos, navegación, encadenado, ventana de decodificación |
+| 03-07 | 6 | RD-09 **medido** (RSS real del renderer) + CSP (Seam G) |
+
+**El orquestador corre estos gates, Codex no puede:** la suite de pytest (su sandbox deniega el TEMP
+del sistema) y `scripts/reader-rss.mjs` (no arranca Electron en su jaula).
 
 ## Progress
 
