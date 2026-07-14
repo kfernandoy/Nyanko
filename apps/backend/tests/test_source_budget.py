@@ -117,50 +117,51 @@ async def test_consumers_share_one_source_bucket(monkeypatch, real_rate_limit_sl
 
 
 @pytest.mark.asyncio
-async def test_read_priority_overtakes_queued_downloads(monkeypatch, real_rate_limit_sleep):
-    real_rate_limit_sleep.clear()
-    delays: list[tuple[str, float]] = []
-
-    async def _record_sleep(delay: float = 0.0, *args, **kwargs):
-        task = asyncio.current_task()
-        delays.append((task.get_name() if task else "", delay))
-
-    monkeypatch.setattr("nyanko_api.http.asyncio.sleep", _record_sleep)
+async def test_read_priority_overtakes_queued_downloads(monkeypatch):
+    # Este es el unico test de ritmo que necesita reloj REAL: con el sleep falseado nunca
+    # llega a formarse cola (cada peticion se auto-concede el hueco y sale), y sin cola no
+    # hay prioridad que medir. 1200/min = 50 ms por hueco: la cola se forma de verdad y el
+    # test entero cuesta ~200 ms.
+    monkeypatch.setattr("nyanko_api.http.asyncio.sleep", _real_sleep)
+    salidas: list[str] = []
 
     class FakeClient:
-        async def request(self, *args, **kwargs):
+        async def request(self, _method, url, **kwargs):
+            salidas.append(url)
             return _FakeResponse()
 
     monkeypatch.setattr(
         "nyanko_api.http.httpx.AsyncClient", lambda **kwargs: FakeClient()
     )
-    client = RateLimitedClient(requests_per_minute=60, max_concurrency=10)
+    client = RateLimitedClient(requests_per_minute=1200, max_concurrency=10)
 
     downloads = [
         asyncio.create_task(
             client.get(f"https://source.test/download/{index}", priority=0),
             name=f"download-{index}",
         )
-        for index in range(2)
+        for index in range(6)
     ]
-    loop = asyncio.get_running_loop()
-    while len(client._state_for(loop).waiters) < 2:
+
+    # Esperar a que una descarga haya SALIDO de verdad: a partir de ahi el reparto ya
+    # ocurrio, que es lo que hace honesto al test. Meter la lectura antes la colaba dentro
+    # de la ventana de agrupacion de 1 ms — el caso facil, y el motivo de que el test
+    # anterior pasara con el bug puesto.
+    while not salidas:
         await _real_sleep(0)
 
-    reads = [
-        asyncio.create_task(
-            client.get(f"https://source.test/read/{index}", priority=SOURCE_READ_PRIORITY),
-            name=f"read-{index}",
-        )
-        for index in range(2)
-    ]
-
-    await asyncio.gather(*downloads, *reads)
-
-    by_task = dict(delays)
-    assert max(by_task[name] for name in by_task if name.startswith("read-")) < min(
-        by_task[name] for name in by_task if name.startswith("download-")
+    # La lectura llega TARDE, con la cola de descargas ya andando: el reader interactivo
+    # sobre descargas en curso. Con el heap repartido en bloque, las 6 descargas ya eran
+    # duenas de sus huecos y la lectura solo podia ponerse la ULTIMA.
+    read = asyncio.create_task(
+        client.get("https://source.test/read", priority=SOURCE_READ_PRIORITY),
+        name="read",
     )
+
+    await asyncio.gather(*downloads, read)
+
+    adelantadas = len(salidas) - 1 - salidas.index("https://source.test/read")
+    assert adelantadas >= 2, f"la lectura no adelanto a las descargas en cola: {salidas}"
 
 
 def test_sources_package_does_not_reimplement_rate_limiting():

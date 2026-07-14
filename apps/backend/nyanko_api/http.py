@@ -90,7 +90,7 @@ class _LoopState:
     next_slot: float = 0.0
     waiters: list[tuple[int, int, asyncio.Future[float]]] = field(default_factory=list)
     sequence: int = 0
-    dispatch_scheduled: bool = False
+    pacing: bool = False
 
 
 class RateLimitedClient:
@@ -195,33 +195,36 @@ class RateLimitedClient:
         async with state.lock:
             state.sequence += 1
             heapq.heappush(state.waiters, (-int(priority), state.sequence, future))
-            if not state.dispatch_scheduled:
-                state.dispatch_scheduled = True
-                # ponytail: ventana de 1 ms para agrupar waiters y permitir que lectura
-                # adelante descargas ya encoladas. Si hace falta latencia sub-ms, usar
-                # colas separadas por consumidor y medir antes.
-                loop.call_later(0.001, self._schedule_dispatch, loop, state)
+            if not state.pacing:
+                self._grant_slot(loop, state)
         try:
             return await future
         except asyncio.CancelledError:
             future.cancel()
             raise
 
-    def _schedule_dispatch(self, loop: asyncio.AbstractEventLoop, state: _LoopState) -> None:
-        loop.create_task(self._dispatch_waiters(loop, state))
+    def _grant_slot(self, loop: asyncio.AbstractEventLoop, state: _LoopState) -> None:
+        """Entrega el hueco al waiter de MAYOR prioridad que haya AHORA. Llamar CON el lock."""
+        while state.waiters:
+            _priority, _sequence, future = heapq.heappop(state.waiters)
+            if future.cancelled():
+                continue
+            deadline = max(loop.time(), state.next_slot)
+            state.next_slot = deadline + self._interval
+            state.pacing = True
+            future.set_result(deadline)
+            return
+        state.pacing = False
 
-    async def _dispatch_waiters(
-        self, loop: asyncio.AbstractEventLoop, state: _LoopState
-    ) -> None:
+    async def _release_slot(self, loop: asyncio.AbstractEventLoop, state: _LoopState) -> None:
+        # El que acaba de salir es quien abre el siguiente hueco: así el reparto ocurre lo
+        # MÁS TARDE posible. Antes se repartía el heap entero de una vez, y un waiter ya
+        # despachado era dueño de su hueco — de modo que una lectura que llegara después
+        # solo podía ponerse DETRÁS de descargas que aún no habían salido. La prioridad
+        # únicamente reordenaba dentro de la ventana de agrupación de 1 ms: cosmética justo
+        # en el caso que importa, la lectura interactiva con la cola de descargas ya andando.
         async with state.lock:
-            state.dispatch_scheduled = False
-            while state.waiters:
-                _priority, _sequence, future = heapq.heappop(state.waiters)
-                if future.cancelled():
-                    continue
-                deadline = max(loop.time(), state.next_slot)
-                state.next_slot = deadline + self._interval
-                future.set_result(deadline)
+            self._grant_slot(loop, state)
 
     @retry_with_backoff(max_retries=3, base_delay=1.0, max_delay=30.0)
     async def request(
@@ -236,7 +239,11 @@ class RateLimitedClient:
             # antes) no limitaba nada: las N corrutinas entraban a la vez, pedían todas el
             # mismo intervalo, despertaban en el mismo tick y salían en ráfaga.
             deadline = await self._reserve_slot(loop, state, priority)
-            await asyncio.sleep(deadline - loop.time())
+            try:
+                await asyncio.sleep(deadline - loop.time())
+            finally:
+                # Incluso si nos cancelan durmiendo: si no soltamos, la cola no avanza nunca.
+                await self._release_slot(loop, state)
 
         async with state.semaphore:  # tope de peticiones EN VUELO, no mecanismo de ritmo
             response = await self._client_for(loop).request(method, url, **kwargs)
