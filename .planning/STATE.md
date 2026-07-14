@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.3
 milestone_name: «Nyanko lee manga»
-current_phase: 02
-current_phase_name: "verify: passed, 12/12 verdades; code review: 4 blockers cerrados"
-status: ready_to_discuss
+current_phase: 03
+current_phase_name: page-pipe-lectura-local-la-piedra-angular
+status: ready_to_plan
 stopped_at: Phase 3 context gathered
 last_updated: "2026-07-14T04:49:03.451Z"
 last_activity: 2026-07-14
-last_activity_desc: D-08 (prioridad de lectura) cerrado y re-verificado; fase 02 cerrada
+last_activity_desc: Fase 03 discutida — CONTEXT.md escrito (4 decisiones bloqueadas)
 progress:
   total_phases: 9
   completed_phases: 2
@@ -30,11 +30,12 @@ al anime.
 
 ## Current Position
 
-Phase: 02 — **CERRADA** (verify: passed, 12/12 verdades; code review: 4 blockers cerrados)
-Plan: 3 of 3, todos con SUMMARY. Suite: 407 passed.
-Last activity: 2026-07-14 — D-08 (prioridad de lectura) cerrado y re-verificado; fase 02 cerrada
+Fase 02 — **CERRADA** (verify: passed, 12/12 verdades; code review: 4 blockers cerrados). Suite: 407 passed.
+Fase 03 — **DISCUTIDA**: `03-CONTEXT.md` escrito, 4 decisiones bloqueadas (bytes por ruta dinámica
+bajo `/assets` sin caché; ventana ±2 y RSS < 500 MB; `reader_prefs` + `reader_progress` en schema v9;
+`reading_events` con `chapter REAL`).
 
-Siguiente comando: `/gsd-discuss-phase 3`
+Siguiente comando: `/gsd-plan-phase 3` (los planes los ejecuta Codex — ver `.planning/CODEX-RULES.md`)
 
 ## Progress
 
@@ -106,10 +107,11 @@ cuenta vinculada, iconos de proveedores). No bloquean la 0.3.
 **Last session:** 2026-07-14T04:49:03.435Z
 **Stopped at:** Phase 3 context gathered
 
-Fases 1 y 2 hechas y con sus gates en verde. Siguiente: `/gsd-discuss-phase 3` (page pipe + lectura
-local). Los planes los **ejecuta Codex** según `.planning/CODEX-RULES.md` (Codex escribe código y
-tests; el orquestador corre la suite, commitea y cierra los artefactos de `.planning/`). Las fases 7
-y 8 llevan `--research-phase` cuando les toque.
+Fases 1 y 2 hechas y con sus gates en verde. Fase 3 discutida. Siguiente: `/gsd-plan-phase 3`.
+Los planes los **ejecuta Codex** según `.planning/CODEX-RULES.md` (Codex escribe código y tests; el
+orquestador corre la suite, commitea y cierra los artefactos de `.planning/`). El ROADMAP marca
+`UI hint: yes` para la Fase 3: `/gsd-ui-phase 3` antes de planificar si se quiere contrato visual.
+Las fases 7 y 8 llevan `--research-phase` cuando les toque.
 
 ### Warnings de la Fase 2 que entran como contexto de la Fase 3
 
