@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.3
 milestone_name: «Nyanko lee manga»
-current_phase: 03
-current_phase_name: page-pipe-y-lectura-local
+current_phase: 02
+current_phase_name: "verify: passed, 12/12 verdades; code review: 4 blockers cerrados"
 status: ready_to_discuss
-stopped_at: Phase 02 cerrada (verify passed) — siguiente: discutir Fase 3
-last_updated: "2026-07-14T00:20:00.000Z"
+stopped_at: Phase 3 context gathered
+last_updated: "2026-07-14T04:49:03.451Z"
 last_activity: 2026-07-14
-last_activity_desc: Phase 02 verificada (12/12, D-08 cerrado) y cerrada
+last_activity_desc: D-08 (prioridad de lectura) cerrado y re-verificado; fase 02 cerrada
 progress:
   total_phases: 9
   completed_phases: 2
@@ -101,10 +101,10 @@ cuenta vinculada, iconos de proveedores). No bloquean la 0.3.
 
 ## Session Continuity
 
-**Resume file:** .planning/phases/02-.../02-VERIFICATION.md
+**Resume file:** .planning/phases/03-page-pipe-lectura-local-la-piedra-angular/03-CONTEXT.md
 
-**Last session:** 2026-07-14
-**Stopped at:** Fase 02 cerrada: ejecutada, revisada (4 blockers cerrados) y verificada (passed).
+**Last session:** 2026-07-14T04:49:03.435Z
+**Stopped at:** Phase 3 context gathered
 
 Fases 1 y 2 hechas y con sus gates en verde. Siguiente: `/gsd-discuss-phase 3` (page pipe + lectura
 local). Los planes los **ejecuta Codex** según `.planning/CODEX-RULES.md` (Codex escribe código y
@@ -117,8 +117,10 @@ Al cablear el engine dejan de ser latentes (ver `02-VERIFICATION.md`):
 
 - **WR-06** — el registry se construye una sola vez en `lifespan`: una carpeta de biblioteca añadida
   en caliente es invisible para `LocalArchiveSource` hasta reiniciar.
+
 - **WR-03** — el fallback a caché traga `SourceRateLimitError`: devolver caché ante un 429 es
   back-pressure perdida (`except SourceError:` a secas en `engine.py:89`).
+
 - **WR-01** — `SourceEngine` no se re-exporta en `sources/__init__.py` (4 líneas).
 - **WR-08** — los `RateLimitedClient` por fuente nunca se cierran en el shutdown.
 
