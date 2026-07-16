@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import mimetypes
 import re
-from collections.abc import Iterable, Mapping
+import zipfile
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 
 from .contract import (
     SOURCE_API_VERSION,
@@ -12,11 +15,16 @@ from .contract import (
     SourceChapter,
     SourceFetcher,
     SourcePage,
+    SourcePageContent,
     SourceSeries,
 )
 from .errors import SourceNotFoundError, SourceParseError, SourceUnsupportedError
 
 IMAGE_EXTENSIONS = frozenset(".jpg .jpeg .png .webp .gif .avif".split())
+ARCHIVE_EXTENSIONS = frozenset((".cbz", ".zip"))
+UNSUPPORTED_ARCHIVE_EXTENSIONS = frozenset((".cbr", ".rar"))
+ARCHIVE_MEMBER_SEPARATOR = "!"
+COMIC_INFO_MAX_BYTES = 1024 * 1024
 
 _DIGITS = re.compile(r"(\d+)")
 
@@ -58,51 +66,201 @@ class LocalArchiveSource:
             raise SourceNotFoundError("Serie local no encontrada")
         try:
             chapter_paths = sorted(
-                (path for path in series_path.iterdir() if path.is_dir()),
+                (
+                    path
+                    for path in series_path.iterdir()
+                    if path.is_dir()
+                    or path.suffix.lower()
+                    in ARCHIVE_EXTENSIONS | UNSUPPORTED_ARCHIVE_EXTENSIONS
+                ),
                 key=lambda path: _natural_key(path.name),
             )
         except OSError as error:
             raise SourceParseError("No se pudo listar la serie local") from error
         if not chapter_paths:
             raise SourceParseError("La serie local no tiene capitulos")
-        return [
-            SourceChapter(
-                source_id=self._make_id(root_key, root, path),
-                title=path.name,
-                series_id=self._make_id(root_key, root, series_path),
-                source_name=self.name,
+        chapters: list[SourceChapter] = []
+        for path in chapter_paths:
+            comic_info = self._comic_info(path)
+            number_text = comic_info.get("Number")
+            try:
+                is_directory = path.is_dir()
+                has_images = is_directory and any(
+                    child.is_file() and child.suffix.lower() in IMAGE_EXTENSIONS
+                    for child in path.iterdir()
+                )
+            except OSError as error:
+                raise SourceParseError("No se pudo listar el capitulo local") from error
+            chapters.append(
+                SourceChapter(
+                    source_id=self._make_id(root_key, root, path),
+                    title=comic_info.get("Title") or path.name,
+                    series_id=self._make_id(root_key, root, series_path),
+                    source_name=self.name,
+                    number=(
+                        self._chapter_number(number_text)
+                        if number_text is not None
+                        else self._chapter_number(path.name)
+                    ),
+                    is_chapter=not is_directory or has_images,
+                )
             )
-            for path in chapter_paths
-        ]
+        return chapters
 
     async def pages(self, chapter: SourceChapter | str) -> list[SourcePage]:
         chapter_id = chapter.source_id if isinstance(chapter, SourceChapter) else chapter
         root_key, root, chapter_path = self._resolve_id(chapter_id)
-        if not chapter_path.is_dir():
+        if chapter_path.is_dir():
+            try:
+                page_paths = sorted(
+                    (
+                        path
+                        for path in chapter_path.iterdir()
+                        if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+                    ),
+                    key=lambda path: _natural_key(path.name),
+                )
+            except OSError as error:
+                raise SourceParseError("No se pudo listar el capitulo local") from error
+            if not page_paths:
+                raise SourceParseError("El capitulo local no tiene paginas")
+            return [
+                SourcePage(
+                    source_id=self._make_id(root_key, root, path),
+                    chapter_id=self._make_id(root_key, root, chapter_path),
+                    index=index,
+                    filename=path.name,
+                    source_name=self.name,
+                )
+                for index, path in enumerate(page_paths, start=1)
+            ]
+
+        if not chapter_path.is_file():
+            raise SourceNotFoundError("Capitulo local no encontrado")
+        suffix = chapter_path.suffix.lower()
+        if suffix in UNSUPPORTED_ARCHIVE_EXTENSIONS:
+            raise SourceUnsupportedError("Formato no soportado: conviertelo a CBZ")
+        if suffix not in ARCHIVE_EXTENSIONS:
             raise SourceNotFoundError("Capitulo local no encontrado")
         try:
-            page_paths = sorted(
-                (
-                    path
-                    for path in chapter_path.iterdir()
-                    if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
-                ),
-                key=lambda path: _natural_key(path.name),
-            )
-        except OSError as error:
-            raise SourceParseError("No se pudo listar el capitulo local") from error
-        if not page_paths:
+            with zipfile.ZipFile(chapter_path) as archive:
+                members = sorted(
+                    (
+                        member
+                        for member in archive.namelist()
+                        if not member.endswith("/")
+                        and Path(member).suffix.lower() in IMAGE_EXTENSIONS
+                    ),
+                    key=_natural_key,
+                )
+        except (OSError, zipfile.BadZipFile) as error:
+            raise SourceParseError("No se pudo leer el archivo del capitulo") from error
+        if not members:
             raise SourceParseError("El capitulo local no tiene paginas")
+        opaque_chapter_id = self._make_id(root_key, root, chapter_path)
         return [
             SourcePage(
-                source_id=self._make_id(root_key, root, path),
-                chapter_id=self._make_id(root_key, root, chapter_path),
+                source_id=(
+                    f"{opaque_chapter_id}{ARCHIVE_MEMBER_SEPARATOR}{member}"
+                ),
+                chapter_id=opaque_chapter_id,
                 index=index,
-                filename=path.name,
+                filename=Path(member).name,
                 source_name=self.name,
             )
-            for index, path in enumerate(page_paths, start=1)
+            for index, member in enumerate(members, start=1)
         ]
+
+    async def page_bytes(self, page: SourcePage | str) -> SourcePageContent:
+        page_id = page.source_id if isinstance(page, SourcePage) else page
+        parts = page_id.split(ARCHIVE_MEMBER_SEPARATOR, 1)
+        archive_id = parts[0]
+        member = parts[1] if len(parts) == 2 else None
+        _, _, candidate = self._resolve_id(archive_id)
+
+        if member is None:
+            if not candidate.is_file() or candidate.suffix.lower() not in IMAGE_EXTENSIONS:
+                raise SourceNotFoundError("Pagina local no encontrada")
+            media_type = mimetypes.guess_type(candidate.name)[0]
+            return SourcePageContent(
+                media_type=media_type or "application/octet-stream",
+                path=candidate,
+            )
+
+        suffix = candidate.suffix.lower()
+        if suffix in UNSUPPORTED_ARCHIVE_EXTENSIONS:
+            raise SourceUnsupportedError("Formato no soportado: conviertelo a CBZ")
+        if not candidate.is_file() or suffix not in ARCHIVE_EXTENSIONS:
+            raise SourceNotFoundError("Archivo local no encontrado")
+        try:
+            with zipfile.ZipFile(candidate) as archive:
+                if member not in archive.namelist():
+                    raise SourceNotFoundError("Pagina local no encontrada")
+        except (OSError, zipfile.BadZipFile) as error:
+            raise SourceParseError("No se pudo leer el archivo del capitulo") from error
+
+        def chunks() -> Iterator[bytes]:
+            # Abrir ambos recursos dentro del generador evita servir desde un fichero ya
+            # cerrado y tambien filtrar el descriptor si el consumidor corta la respuesta.
+            with zipfile.ZipFile(candidate) as archive:
+                with archive.open(member) as content:
+                    while block := content.read(64 * 1024):
+                        yield block
+
+        media_type = mimetypes.guess_type(member)[0]
+        return SourcePageContent(
+            media_type=media_type or "application/octet-stream",
+            chunks=chunks(),
+        )
+
+    def _chapter_number(self, name: str) -> float | None:
+        match = re.search(r"\d+(?:\.\d+)?", name)
+        return float(match.group()) if match else None
+
+    def _comic_info(self, chapter_path: Path) -> dict[str, str]:
+        raw: bytes
+        try:
+            if chapter_path.is_dir():
+                comic_info_path = chapter_path / "ComicInfo.xml"
+                if not comic_info_path.is_file():
+                    return {}
+                if comic_info_path.stat().st_size > COMIC_INFO_MAX_BYTES:
+                    return {}
+                raw = comic_info_path.read_bytes()
+            elif chapter_path.suffix.lower() in ARCHIVE_EXTENSIONS:
+                with zipfile.ZipFile(chapter_path) as archive:
+                    member_name = next(
+                        (
+                            name
+                            for name in archive.namelist()
+                            if name.lower() == "comicinfo.xml"
+                        ),
+                        None,
+                    )
+                    if member_name is None:
+                        return {}
+                    member = archive.getinfo(member_name)
+                    if member.file_size > COMIC_INFO_MAX_BYTES:
+                        return {}
+                    raw = archive.read(member_name)
+            else:
+                return {}
+        except (OSError, KeyError, zipfile.BadZipFile):
+            return {}
+
+        upper = raw.upper().replace(b"\x00", b"")
+        if b"<!DOCTYPE" in upper or b"<!ENTITY" in upper:
+            return {}
+        try:
+            root = ElementTree.fromstring(raw)
+        except ElementTree.ParseError:
+            return {}
+        metadata: dict[str, str] = {}
+        for name in ("Number", "Title", "Series", "PageCount"):
+            element = root.find(name)
+            if element is not None and element.text and element.text.strip():
+                metadata[name] = element.text.strip()
+        return metadata
 
     def _load_roots(self, library_folders: Iterable[Mapping[str, Any] | str]) -> dict[str, Path]:
         roots: dict[str, Path] = {}

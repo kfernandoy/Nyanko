@@ -5,8 +5,10 @@ from .contract import (
     SourceChapter,
     SourceFetcher,
     SourcePage,
+    SourcePageContent,
     SourceSeries,
 )
+from .engine import DefaultSourceFetcher, SourceEngine, build_source_fetcher
 from .errors import (
     SourceError,
     SourceNetworkError,
@@ -29,16 +31,20 @@ __all__ = [
     "SourceCapabilities",
     "SourceChapter",
     "SourceError",
+    "SourceEngine",
     "SourceFetcher",
     "SourceNetworkError",
     "SourceNotFoundError",
     "SourcePage",
+    "SourcePageContent",
     "SourceParseError",
     "SourceRateLimitError",
     "SourceRegistration",
     "SourceRegistry",
     "SourceSeries",
     "SourceUnsupportedError",
+    "DefaultSourceFetcher",
+    "build_source_fetcher",
     "build_source_registry",
     "source_error_action",
 ]

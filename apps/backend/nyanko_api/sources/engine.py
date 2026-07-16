@@ -7,7 +7,13 @@ import httpx
 
 from nyanko_api.http import RateLimitedClient
 
-from .contract import SourceCapabilities, SourceChapter, SourcePage, SourceSeries
+from .contract import (
+    SourceCapabilities,
+    SourceChapter,
+    SourcePage,
+    SourcePageContent,
+    SourceSeries,
+)
 from .errors import (
     SourceError,
     SourceNetworkError,
@@ -99,6 +105,12 @@ class SourceEngine:
         if not pages:
             raise SourceParseError("La fuente no devolvio paginas")
         return pages
+
+    async def page_bytes(
+        self, source_name: str, page: SourcePage | str
+    ) -> SourcePageContent:
+        source = self._registry.get(source_name)
+        return await self._call_source(lambda: source.page_bytes(page))
 
     async def _call_source(self, call):
         # El contrato es que el caller solo tiene que atrapar SourceError. Nada de lo que

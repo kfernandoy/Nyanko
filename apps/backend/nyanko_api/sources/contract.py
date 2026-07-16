@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-SOURCE_API_VERSION = 1
+SOURCE_API_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +28,8 @@ class SourceChapter:
     title: str
     series_id: str
     source_name: str = ""
+    number: float | None = None
+    is_chapter: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +39,19 @@ class SourcePage:
     index: int
     filename: str
     source_name: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class SourcePageContent:
+    """Contenido de pagina: exactamente uno de ``path`` o ``chunks`` no es ``None``.
+
+    ``path`` permite servir un fichero de disco sin copiarlo a memoria; ``chunks``
+    cubre contenido que no es un fichero suelto, como un miembro ZIP o un CDN.
+    """
+
+    media_type: str
+    path: Path | None = None
+    chunks: Iterator[bytes] | None = None
 
 
 class SourceFetcher(Protocol):
@@ -54,3 +70,5 @@ class Source(Protocol):
     async def chapters(self, series: SourceSeries | str) -> list[SourceChapter]: ...
 
     async def pages(self, chapter: SourceChapter | str) -> list[SourcePage]: ...
+
+    async def page_bytes(self, page: SourcePage | str) -> SourcePageContent: ...
