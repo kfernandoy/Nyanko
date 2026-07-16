@@ -139,15 +139,15 @@ se enchufa a un pipe que ya corre.
 
 **Research pass**: No. Todo tiene precedente en el árbol: el mount `/assets`, `normalizeAssetUrls` (`api.ts:202`), `zipfile`/`pathlib`/`re` de stdlib. No hay nada que aprender, solo precedente que seguir.
 
-**Plans**: 7 plans
+**Plans**: 2/7 plans executed
 
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — Contrato v2 (`page_bytes`, `SOURCE_API_VERSION` 1→2) + `LocalArchiveSource` lee CBZ/ZIP y `ComicInfo.xml` — RD-01, RD-08 — wave 1
+- [x] 03-01-PLAN.md — Contrato v2 (`page_bytes`, `SOURCE_API_VERSION` 1→2) + `LocalArchiveSource` lee CBZ/ZIP y `ComicInfo.xml` — RD-01, RD-08 — wave 1
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 03-02-PLAN.md — Esquema v9 (`reader_prefs`, `reader_progress`, `reading_events`) + guardia FND-05 contra escrituras reales — RD-03, RD-05, RD-06, RD-07 — wave 2
+- [x] 03-02-PLAN.md — Esquema v9 (`reader_prefs`, `reader_progress`, `reading_events`) + guardia FND-05 contra escrituras reales — RD-03, RD-05, RD-06, RD-07 — wave 2
 - [ ] 03-03-PLAN.md — La ruta `/assets/pages/{page_id:path}` declarada ANTES del mount (D-04) + test de traversal (D-05) — RD-01 — wave 2
 
 **Wave 3** *(blocked on Wave 2)*
@@ -407,7 +407,7 @@ backend, el cliente HTTP, la verificación sha256, el gate de seguridad y una UI
 |-------|-----------|----------------|--------|-----------|
 | 1. Electron shell scaffold + data-dir lock | v0.2 | 4/4 | Complete    | 2026-07-13 |
 | 2. Main core — sidecar lifecycle + logging | v0.2 | 3/3 | Complete   | 2026-07-14 |
-| 3. Native boundary + Tauri removal | v0.2 | 2/2 | Complete | 2026-07-11 |
+| 3. Native boundary + Tauri removal | v0.2 | 2/7 | In Progress|  |
 | 4. Native feature parity | v0.2 | 3/3 | Complete | 2026-07-11 |
 | 5. Packaging + auto-update | v0.2 | 6/6 | Complete | 2026-07-12 |
 | 1. Fundaciones — limitador, esquema y modelo de progreso | v0.3 | 0/? | Not started | - |
