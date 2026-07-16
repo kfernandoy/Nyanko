@@ -63,6 +63,8 @@ export function ReaderView({
   const scrollInicialHecho = useRef(false);
   const modoAnterior = useRef<ReaderMode | null>(null);
   const eventosEmitidos = useRef(new Set<string>());
+  const capituloListo = useRef<string | null>(null);
+  const progresoPendiente = useRef<{ capitulo: string; pagina: number } | null>(null);
 
   useEffect(() => {
     let activo = true;
@@ -89,6 +91,7 @@ export function ReaderView({
         if (!activo) return;
         const total = paginasGuardadas.length;
         const paginaGuardada = progresoGuardado?.page ?? 1;
+        capituloListo.current = chapter.source_id;
         setPaginas(paginasGuardadas);
         setPreferencias(preferenciasEfectivas);
         setPaginaActual(total > 0 ? Math.min(total, Math.max(1, paginaGuardada)) : 1);
@@ -183,13 +186,29 @@ export function ReaderView({
   }, [abrirTransicion, grupos, indiceGrupo, irAPagina]);
 
   useEffect(() => {
-    if (!listo || total === 0) return;
+    if (!listo || total === 0 || capituloListo.current !== chapter.source_id) return;
+    const progreso = { capitulo: chapter.source_id, pagina: paginaActual };
+    progresoPendiente.current = progreso;
     const temporizador = window.setTimeout(() => {
-      void api.setReaderProgress(SOURCE_NAME, chapter.source_id, paginaActual)
+      if (progresoPendiente.current !== progreso) return;
+      progresoPendiente.current = null;
+      void api.setReaderProgress(SOURCE_NAME, progreso.capitulo, progreso.pagina)
         .catch((reason: unknown) => setAviso(reason instanceof Error ? reason.message : String(reason)));
     }, PROGRESS_DEBOUNCE_MS);
     return () => window.clearTimeout(temporizador);
   }, [chapter.source_id, listo, paginaActual, total]);
+
+  useEffect(() => {
+    if (!listo || total === 0 || capituloListo.current !== chapter.source_id) return;
+    const capitulo = chapter.source_id;
+    return () => {
+      const progreso = progresoPendiente.current;
+      if (!progreso || progreso.capitulo !== capitulo) return;
+      progresoPendiente.current = null;
+      // Escape, cerrar y encadenar capítulo pasan por aquí sin perder el último debounce.
+      void api.setReaderProgress(SOURCE_NAME, progreso.capitulo, progreso.pagina).catch(() => {});
+    };
+  }, [chapter.source_id, listo, total]);
 
   useEffect(() => {
     const cambioAVertical = modo === "vertical" && modoAnterior.current !== "vertical";
