@@ -192,7 +192,20 @@ fuente y una entrada del tracker — para que el sync pueda asumirlo, y **negars
 
 **Research pass**: No. Precedentes: `media_mappings` (la tabla que este problema necesita, con columna de offset y todo, construida para la extensión de navegador), `matcher.py`, `match_corrections`, el flujo detectar→proponer→confirmar→deshacer de `playback_events`.
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — `ChapterRecognition`: tabla de casos en ROJO antes que el código (`extra` = .99, `omake` = .98, `12a` → 12.1), módulo propio y puro, y `LocalArchiveSource` delegando — LNK-03 — wave 1
+- [ ] 04-02-PLAN.md — El vínculo almacenado: `media_mappings.chapter_offset` (schema v11, mirror de `episode_offset`) + `linking.py` con `require_link` que falla cerrado — LNK-01, LNK-04 — wave 1
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 04-03-PLAN.md — Proponer/confirmar/desvincular en HTTP, SIN la rama de auto-persistencia por umbral del precedente de anime (`main.py:3688-3690`), + el tripwire de `pending_mutations` en `reading-events` — LNK-01, LNK-02, LNK-04 — wave 2
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 04-04-PLAN.md — El panel de vínculo: score visible, sugerencias al mismo nivel que la propuesta, offset y desvincular — LNK-01, LNK-02 — wave 3
 
 ---
 
