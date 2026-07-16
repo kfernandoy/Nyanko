@@ -44,7 +44,9 @@ expected: |
   no lo comprueba nadie. Concretamente: Descubrir / Temporadas / Busqueda muestran portadas y
   el avatar se ve; `npm run dev` no revienta por el preambulo inline de React Refresh; y los
   botones del splash (Reintentar / Abrir logs / Salir) responden.
-result: pending
+result: pass
+reported: "las 2 cosas funcionan"
+source: manual
 
 ## Auto-covered (29/31 — no se preguntan)
 
