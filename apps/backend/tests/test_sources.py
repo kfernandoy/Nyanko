@@ -475,6 +475,31 @@ async def test_local_archive_rejects_traversal_ids():
             await source.pages("missing:.")
 
 
+def test_local_archive_skips_anime_folders():
+    # La cara de manga del hallazgo #2: una carpeta de anime no es una raíz de manga.
+    with _workdir("kind-roots") as root:
+        anime = root / "anime"
+        manga = root / "manga"
+        anime.mkdir()
+        manga.mkdir()
+        source = LocalArchiveSource(_Fetcher(), [
+            {"id": "0", "path": str(anime), "kind": "anime"},
+            {"id": "1", "path": str(manga), "kind": "manga"},
+        ])
+
+        raices = set(source._roots.values())
+        assert manga.resolve() in raices
+        assert anime.resolve() not in raices
+
+
+def test_local_archive_accepts_folder_without_kind():
+    # Tipo ausente ⇒ ambas: el mismo criterio que la migración v9→v10.
+    with _workdir("kind-ausente") as root:
+        source = LocalArchiveSource(_Fetcher(), [{"id": "0", "path": str(root)}])
+
+        assert set(source._roots.values()) == {root.resolve()}
+
+
 def test_registered_source_modules_do_not_import_network_clients():
     with _workdir("import-guard") as root:
         registry = build_source_registry(

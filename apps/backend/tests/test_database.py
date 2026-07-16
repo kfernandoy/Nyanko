@@ -1104,6 +1104,84 @@ def test_v7_database_migrates_additively_without_losing_rows(tmp_path):
         backup.close()
 
 
+# --- Schema v10: library_folders.kind (anime/manga/ambas) ---
+
+
+def _degrade_to_v9(path: Path) -> None:
+    """Convierte una BD v10 recién creada en una v9 realista: quita la columna nueva y
+    baja la versión. Es la única forma honesta de probar la migración — un fixture
+    escrito a mano no comparte el esquema con el de producción."""
+    connection = sqlite3.connect(path)
+    connection.execute("ALTER TABLE library_folders DROP COLUMN kind")
+    connection.execute("DELETE FROM schema_migrations")
+    connection.execute("INSERT INTO schema_migrations(version) VALUES (9)")
+    connection.commit()
+    connection.close()
+
+
+def test_new_database_has_library_folder_kind_defaulting_to_ambas(monkeypatch):
+    database = memory_database(monkeypatch)
+    with database.connect() as connection:
+        names = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(library_folders)").fetchall()
+        }
+        assert "kind" in names
+        # Un escritor que no manda tipo (un renderer viejo, un INSERT a pelo) cae en
+        # 'ambas': el comportamiento de hoy. Fallar a 'anime'/'manga' volvería la
+        # carpeta invisible para un mundo EN SILENCIO — el bug que se está arreglando.
+        connection.execute("INSERT INTO library_folders(path, recursive) VALUES ('/sin/tipo', 1)")
+        kind = connection.execute(
+            "SELECT kind FROM library_folders WHERE path = '/sin/tipo'"
+        ).fetchone()["kind"]
+    assert kind == "ambas"
+
+
+def test_v9_library_folders_migran_a_ambas(tmp_path):
+    path = tmp_path / "nyanko.sqlite3"
+    Database(path).initialize()
+    _degrade_to_v9(path)
+
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "INSERT INTO library_folders(path, recursive) VALUES ('/anime/series', 1), ('/manga/tomos', 0)"
+    )
+    connection.commit()
+    connection.close()
+
+    Database(path).initialize()
+
+    connection = sqlite3.connect(path)
+    connection.row_factory = sqlite3.Row
+    try:
+        rows = connection.execute(
+            "SELECT path, recursive, kind FROM library_folders ORDER BY path"
+        ).fetchall()
+        # Las carpetas de una biblioteca de producción HOY sirven para las dos cosas:
+        # migrarlas a otra cosa sería pérdida de datos silenciosa (Core Value).
+        assert len(rows) == 2
+        assert [row["path"] for row in rows] == ["/anime/series", "/manga/tomos"]
+        assert [row["kind"] for row in rows] == ["ambas", "ambas"]
+        assert [bool(row["recursive"]) for row in rows] == [True, False]
+        version = connection.execute("SELECT MAX(version) AS v FROM schema_migrations").fetchone()["v"]
+        assert version == 10
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    finally:
+        connection.close()
+
+    # Subir CANONICAL_SCHEMA_VERSION es lo que arma el backup: es el único rollback que hay.
+    backups = list(tmp_path.glob("nyanko.backup-v10-*.sqlite3"))
+    assert len(backups) == 1, f"sin backup pre-migración: {list(tmp_path.iterdir())}"
+    backup = sqlite3.connect(backups[0])
+    try:
+        # El backup es la BD DE ANTES: sin la columna nueva y con las filas.
+        names = {row[1] for row in backup.execute("PRAGMA table_info(library_folders)").fetchall()}
+        assert "kind" not in names
+        assert backup.execute("SELECT COUNT(*) FROM library_folders").fetchone()[0] == 2
+    finally:
+        backup.close()
+
+
 def test_set_chapter_progress_keeps_the_pair_coherent(monkeypatch):
     database = memory_database(monkeypatch)
     with database.connect() as connection:
