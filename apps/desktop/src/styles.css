@@ -410,6 +410,13 @@ button.small { border-radius: 6px; padding: 5px 12px; font-size: 12px; }
 .reader-stage { position: relative; width: 100%; height: 100%; overflow: hidden; }
 .reader-stage--pannable { cursor: grab; }
 .reader-stage--pannable:active { cursor: grabbing; }
+/* En «ancho»/«original» la pagina es mas alta que el stage a proposito, asi que el stage
+   paginado scrollea: es la convencion de Mihon («ajuste ancho» = llena el ancho y bajas
+   scrolleando) y la unica forma de VER la parte que sobra — antes se recortaba con
+   overflow:hidden y el paneo estaba capado a zoom>100%, o sea que no habia manera de
+   llegar a ella (UAT 03). A «alto» la pagina cabe entera, no hay desborde y no aparece
+   barra: la rueda vuelve a pasar de pagina directa. */
+.reader-paged { overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 /* `.reader-paged` (el stage paginado) tiene que seguir siendo un bloque normal: nada de
    display:grid ni place-items:center. `.reader-pages` cuelga de el con height:100%, y esa
    altura solo resuelve si su bloque contenedor tiene ALTURA DEFINIDA; como item de un grid
@@ -421,8 +428,20 @@ button.small { border-radius: 6px; padding: 5px 12px; font-size: 12px; }
 .reader-pages { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; transform-origin: center; }
 .reader-direction-rtl { flex-direction: row-reverse; }
 .reader-direction-ltr { flex-direction: row; }
-.reader-page--visible { flex: 1 1 0; height: 100%; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: clip; }
+/* `overflow-y: visible` deja que la pagina desborde hacia el scroller del stage; a lo ancho
+   se sigue recortando. Es la unica pareja que el spec permite: `clip` convive con
+   `visible`, mientras que hidden/auto/scroll obligarian al otro eje a volverse `auto`. */
+.reader-page--visible { flex: 1 1 0; height: 100%; min-width: 0; display: flex; align-items: center; justify-content: center; overflow-x: clip; overflow-y: visible; }
 .reader-page--visible img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; pointer-events: none; }
+/* EL LOMO: en doble pagina cada hoja se pegaba al centro de SU mitad, dejando ~92px de aire
+   justo en el medio — en un tomo real se tocan. El aire sobrante se va a los extremos. En
+   RTL `.reader-pages` es `row-reverse`, asi que el primer hijo del DOM cae a la DERECHA y
+   los bordes interiores se invierten: por eso hacen falta las dos parejas de selectores.
+   El `:not(:last-child)` deja la pagina suelta centrada, como debe estar. */
+.reader-direction-ltr .reader-page--visible:first-child:not(:last-child),
+.reader-direction-rtl .reader-page--visible:last-child:not(:first-child) { justify-content: flex-end; }
+.reader-direction-ltr .reader-page--visible:last-child:not(:first-child),
+.reader-direction-rtl .reader-page--visible:first-child:not(:last-child) { justify-content: flex-start; }
 /* `max-height:none` es lo que mantiene «ancho» significando ANCHO. Con la cadena de
    alturas ya definida, el `max-height:100%` de la regla base recortaria el alto al del
    stage y `object-fit:contain` apaisaria la pagina hasta ~457px de ancho: dejaria de
@@ -431,6 +450,13 @@ button.small { border-radius: 6px; padding: 5px 12px; font-size: 12px; }
 .reader-fit-width .reader-page--visible img { width: 100%; height: auto; max-height: none; }
 .reader-fit-height .reader-page--visible img { width: auto; height: 100%; }
 .reader-fit-original .reader-page--visible img { width: auto; height: auto; max-width: none; max-height: none; }
+/* Centrado SEGURO. Con `align-items:center` a secas, una pagina mas alta que su hueco
+   desborda por ARRIBA y por abajo a partes iguales, y el borde superior queda fuera del
+   scroller: inalcanzable, scrollees lo que scrollees. Los margenes auto de un item flex
+   ganan a align-items y colapsan a 0 cuando no hay aire, asi que la pagina que desborda
+   arranca pegada arriba (y se scrollea entera) y la que cabe sigue centrada. */
+.reader-fit-width .reader-page--visible img,
+.reader-fit-original .reader-page--visible img { margin-block: auto; }
 /* NADA de `overflow-anchor: none` aqui. El anclaje de scroll es la funcion NATIVA del
    navegador que compensa los cambios de altura por encima del viewport, y este scroller
    los provoca por diseno: la ventana de decodificacion monta y suelta paginas mientras

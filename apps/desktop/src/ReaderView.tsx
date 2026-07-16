@@ -14,7 +14,8 @@ import type { MangaChapter, MangaPage, ReaderMode, ReaderPrefs } from "./types";
 
 const SOURCE_NAME = "local_archive";
 const PROGRESS_DEBOUNCE_MS = 500;
-const MIN_ZOOM = 1;
+const MIN_ZOOM = 0.25;
+const ZOOM_BASE = 1;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.25;
 
@@ -51,7 +52,7 @@ export function ReaderView({
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [controlesVisibles, setControlesVisibles] = useState(true);
-  const [zoom, setZoom] = useState(MIN_ZOOM);
+  const [zoom, setZoom] = useState(ZOOM_BASE);
   const [paneo, setPaneo] = useState({ x: 0, y: 0 });
   const [transicion, setTransicion] = useState<Transicion | null>(null);
   const contenedorVertical = useRef<HTMLDivElement | null>(null);
@@ -69,7 +70,7 @@ export function ReaderView({
     setListo(false);
     setErrorCarga(null);
     setAviso(null);
-    setZoom(MIN_ZOOM);
+    setZoom(ZOOM_BASE);
     setPaneo({ x: 0, y: 0 });
     setTransicion(null);
     scrollInicialHecho.current = false;
@@ -276,7 +277,7 @@ export function ReaderView({
   const ajustarZoom = useCallback((delta: number) => {
     setZoom((actual) => {
       const siguiente = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, actual + delta));
-      if (siguiente === MIN_ZOOM) setPaneo({ x: 0, y: 0 });
+      if (siguiente === ZOOM_BASE) setPaneo({ x: 0, y: 0 });
       return siguiente;
     });
   }, []);
@@ -288,15 +289,26 @@ export function ReaderView({
       return;
     }
     if (modo === "vertical") return;
+    const escenario = event.currentTarget;
+    const delta = event.deltaY + event.deltaX;
+    const puedeDesplazarse = escenario.scrollHeight > escenario.clientHeight + 1
+      && ((event.deltaY > 0 && escenario.scrollTop + escenario.clientHeight < escenario.scrollHeight - 1)
+        || (event.deltaY < 0 && escenario.scrollTop > 1));
+    if (puedeDesplazarse) return;
+
     event.preventDefault();
     if (ruedaBloqueada.current || Math.abs(event.deltaY) + Math.abs(event.deltaX) < 10) return;
     ruedaBloqueada.current = true;
-    mover(event.deltaY + event.deltaX > 0 ? 1 : -1);
+    const direccion = delta > 0 ? 1 : -1;
+    mover(direccion);
+    requestAnimationFrame(() => {
+      escenario.scrollTop = direccion > 0 ? 0 : escenario.scrollHeight;
+    });
     window.setTimeout(() => { ruedaBloqueada.current = false; }, 180);
   };
 
   const iniciarArrastre = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (zoom <= MIN_ZOOM || event.button !== 0) return;
+    if (zoom <= ZOOM_BASE || event.button !== 0) return;
     event.preventDefault();
     huboArrastre.current = false;
     arrastre.current = {
@@ -435,7 +447,7 @@ export function ReaderView({
             <button type="button" onClick={() => ajustarZoom(-ZOOM_STEP)} aria-label={t("reader.zoom.out")}>−</button>
             <span>{Math.round(zoom * 100)}%</span>
             <button type="button" onClick={() => ajustarZoom(ZOOM_STEP)} aria-label={t("reader.zoom.in")}>+</button>
-            <button type="button" onClick={() => { setZoom(MIN_ZOOM); setPaneo({ x: 0, y: 0 }); }}>{t("reader.zoom.reset")}</button>
+            <button type="button" onClick={() => { setZoom(ZOOM_BASE); setPaneo({ x: 0, y: 0 }); }}>{t("reader.zoom.reset")}</button>
           </div>
           <button type="button" onClick={alternarPantallaCompleta}>{t("reader.fullscreen")}</button>
         </header>
@@ -474,7 +486,7 @@ export function ReaderView({
         </div>
       ) : (
         <div
-          className={`reader-stage reader-paged${zoom > MIN_ZOOM ? " reader-stage--pannable" : ""}`}
+          className={`reader-stage reader-paged${zoom > ZOOM_BASE ? " reader-stage--pannable" : ""}`}
           onWheel={alUsarRueda}
           onMouseDown={iniciarArrastre}
           onMouseMove={moverArrastre}

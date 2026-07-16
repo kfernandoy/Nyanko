@@ -389,13 +389,31 @@ const MEDIR = `new Promise((resolve) => requestAnimationFrame(() => requestAnima
   const rect = (elemento) => {
     if (!elemento) return null;
     const caja = elemento.getBoundingClientRect();
-    return { w: Number(caja.width.toFixed(2)), h: Number(caja.height.toFixed(2)) };
+    return {
+      w: Number(caja.width.toFixed(2)),
+      h: Number(caja.height.toFixed(2)),
+      // El borde izquierdo/derecho hace falta para el lomo: dos paginas del ancho correcto
+      // pueden seguir estando separadas, que es exactamente lo que reporto el usuario.
+      izq: Number(caja.left.toFixed(2)),
+      der: Number(caja.right.toFixed(2)),
+    };
   };
   const imagenes = [...document.querySelectorAll('.reader-page--visible img')];
   resolve({
     titlebar: Boolean(document.querySelector('.titlebar')),
     reader: rect(document.querySelector('.reader')),
     stage: rect(document.querySelector('.reader-stage')),
+    // La caja de CONTENIDO del stage, no la de borde: en «ancho»/«original» el stage
+    // paginado desborda y saca su barra de scroll (styles.css la fija fina, ~10px), que
+    // se come ancho por dentro. \`.reader-pages{width:100%}\` resuelve contra el contenido,
+    // asi que comparar contra getBoundingClientRect() daria un falso FALLO de 10px por una
+    // barra que es correcta. clientWidth/clientHeight EXCLUYEN la barra: es la caja contra
+    // la que de verdad resuelven los porcentajes, y sigue cazando el eslabon indefinido
+    // (el bug del grid daba 1650 contra 686, no 10px).
+    stageContenido: (() => {
+      const elemento = document.querySelector('.reader-stage');
+      return elemento ? { w: elemento.clientWidth, h: elemento.clientHeight } : null;
+    })(),
     pages: rect(document.querySelector('.reader-pages')),
     slots: [...document.querySelectorAll('.reader-page--visible')].map(rect),
     imgs: imagenes.map((imagen) => ({
@@ -421,8 +439,14 @@ async function medir() {
 
 function describir(medicion) {
   const imagenes = medicion.imgs.map((imagen) => `${imagen.w}x${imagen.h}`).join(" + ");
+  // El lomo se IMPRIME, no solo se asierta: es el numero que el usuario reporto a ojo.
+  let lomo = "";
+  if (medicion.imgs.length === 2) {
+    const [uno, dos] = [...medicion.imgs].sort((a, b) => a.izq - b.izq);
+    lomo = ` | lomo ${Number((dos.izq - uno.der).toFixed(2))}px`;
+  }
   return `stage ${medicion.stage.w}x${medicion.stage.h} | pages ${medicion.pages.w}x${medicion.pages.h} `
-    + `| slots ${medicion.slots.map((slot) => `${slot.w}x${slot.h}`).join(" + ")} | img ${imagenes}`;
+    + `| slots ${medicion.slots.map((slot) => `${slot.w}x${slot.h}`).join(" + ")} | img ${imagenes}${lomo}`;
 }
 
 const igual = (a, b) => Math.abs(a - b) <= TOLERANCIA_PX;
@@ -430,7 +454,11 @@ const igual = (a, b) => Math.abs(a - b) <= TOLERANCIA_PX;
 // Cada caso devuelve la lista de motivos por los que falla. Vacia = OK.
 function comprobar(ajuste, medicion) {
   const motivos = [];
-  const { stage, pages, slots, imgs } = medicion;
+  const { stage, stageContenido, pages, slots, imgs } = medicion;
+  // Los porcentajes resuelven contra la caja de CONTENIDO, que es la de borde menos la
+  // barra de scroll. Se compara contra ella y no contra `stage` para no fallar por una
+  // barra correcta; ver el comentario de stageContenido en MEDIR.
+  const caja = stageContenido ?? stage;
 
   // LA INVARIANTE DE LA CAUSA RAIZ, y vale para los tres ajustes: la cadena de alturas
   // del stage hasta el hueco de pagina tiene que ser DEFINIDA. En cuanto un eslabon se
@@ -438,15 +466,28 @@ function comprobar(ajuste, medicion) {
   // natural de la pagina y los porcentajes de la img degradan. Se comprueba aqui, y no
   // solo mirando la img, porque este es el eslabon que se rompio y el que mide el fallo
   // sin depender de que ajuste este puesto.
-  if (!igual(pages.w, stage.w) || !igual(pages.h, stage.h)) {
+  if (!igual(pages.w, caja.w) || !igual(pages.h, caja.h)) {
     motivos.push(
-      `.reader-pages mide ${pages.w}x${pages.h} y deberia calcar el stage (${stage.w}x${stage.h}): `
+      `.reader-pages mide ${pages.w}x${pages.h} y deberia calcar el contenido del stage (${caja.w}x${caja.h}): `
       + "su height/width:100% no resuelve, la cadena tiene un eslabon indefinido",
     );
   }
+  // EL LOMO: dos paginas con el ancho correcto pueden seguir separadas. En un tomo real
+  // se tocan, y aqui cada una flotaba centrada en su mitad dejando ~92px de aire JUSTO EN
+  // EL CENTRO (UAT 03: «las paginas dobles estan aun mas separadas»). El aire sobrante va
+  // a los extremos, no al medio. Vale para los dos sentidos: se mide la distancia entre
+  // los bordes interiores, y quien es "interior" lo decide la geometria, no el orden del DOM.
+  if (imgs.length === 2 && ajuste !== "original") {
+    const [uno, dos] = [...imgs].sort((a, b) => a.izq - b.izq);
+    const lomo = Number((dos.izq - uno.der).toFixed(2));
+    if (!igual(lomo, 0)) {
+      motivos.push(`las dos paginas dejan ${lomo}px de hueco en el lomo y deberian tocarse`);
+    }
+  }
+
   for (const [indice, hueco] of slots.entries()) {
-    if (!igual(hueco.h, stage.h)) {
-      motivos.push(`el hueco de pagina ${indice + 1} mide ${hueco.h}px de alto y el stage ${stage.h}px: su height:100% no resuelve`);
+    if (!igual(hueco.h, caja.h)) {
+      motivos.push(`el hueco de pagina ${indice + 1} mide ${hueco.h}px de alto y el stage ${caja.h}px: su height:100% no resuelve`);
     }
   }
 
@@ -468,8 +509,8 @@ function comprobar(ajuste, medicion) {
     } else {
       // «Alto» ajusta al ALTO y ademas debe verse ENTERA: usa toda la altura del stage y
       // no rebasa su hueco a lo ancho. Es el hallazgo #3, literal.
-      if (!igual(imagen.h, stage.h)) {
-        motivos.push(`el ajuste alto deberia usar los ${stage.h}px del stage, usa ${imagen.h}px`);
+      if (!igual(imagen.h, caja.h)) {
+        motivos.push(`el ajuste alto deberia usar los ${caja.h}px del stage, usa ${imagen.h}px`);
       }
       if (imagen.w > hueco.w + TOLERANCIA_PX) {
         motivos.push(`la img mide ${imagen.w}px de ancho y su hueco ${hueco.w}px: la pagina sale recortada`);
