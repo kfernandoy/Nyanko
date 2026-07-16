@@ -26,6 +26,30 @@ UNSUPPORTED_ARCHIVE_EXTENSIONS = frozenset((".cbr", ".rar"))
 ARCHIVE_MEMBER_SEPARATOR = "!"
 COMIC_INFO_MAX_BYTES = 1024 * 1024
 
+# La frontera archivo/miembro se DERIVA de los datos: el separador solo es estructural
+# cuando sigue a una extension de archivo, porque en un nombre de serie (`Yotsuba&!`,
+# `Bakuman!`, `Oh My Goddess!`) el `!` es un caracter legal y corriente. Partir por el
+# primero convertia esas bibliotecas enteras en 404.
+# IGNORECASE casa `.CBZ!` SIN transformar la cadena, asi que los indices del match caen
+# sobre el id original; pasarlo por `.lower()` podria alargarlo ('İ'.lower() son DOS
+# caracteres) y desplazar el corte. ASCII impide que esa misma 'İ' case con la `i` de
+# `.zip`. El patron se construye desde las constantes de arriba (sorted() para que sea
+# estable entre procesos): una lista escrita a mano es una lista que un dia no se
+# actualiza. Las no soportadas van incluidas a proposito: sin `.cbr!` el id no parte y
+# el error deja de ser el 415 "conviertelo a CBZ" para pasar a un 404 enganoso.
+# ponytail: un directorio llamado literalmente `Foo.zip!bar` daria un falso positivo;
+# fuera de alcance hasta que exista.
+_ARCHIVE_MEMBER_BOUNDARY = re.compile(
+    "("
+    + "|".join(
+        re.escape(extension)
+        for extension in sorted(ARCHIVE_EXTENSIONS | UNSUPPORTED_ARCHIVE_EXTENSIONS)
+    )
+    + ")"
+    + re.escape(ARCHIVE_MEMBER_SEPARATOR),
+    re.IGNORECASE | re.ASCII,
+)
+
 _DIGITS = re.compile(r"(\d+)")
 
 
@@ -173,9 +197,11 @@ class LocalArchiveSource:
 
     async def page_bytes(self, page: SourcePage | str) -> SourcePageContent:
         page_id = page.source_id if isinstance(page, SourcePage) else page
-        parts = page_id.split(ARCHIVE_MEMBER_SEPARATOR, 1)
-        archive_id = parts[0]
-        member = parts[1] if len(parts) == 2 else None
+        # search() devuelve la coincidencia mas a la IZQUIERDA: la frontera es la primera
+        # extension seguida del separador; lo que venga despues es miembro, `!` incluido.
+        match = _ARCHIVE_MEMBER_BOUNDARY.search(page_id)
+        archive_id = page_id[: match.end(1)] if match else page_id
+        member = page_id[match.end() :] if match else None
         _, _, candidate = self._resolve_id(archive_id)
 
         if member is None:
