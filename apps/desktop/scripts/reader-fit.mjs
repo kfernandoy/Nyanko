@@ -720,6 +720,87 @@ async function medirSaltoVertical(sentido) {
   return ok;
 }
 
+// --- RD-05: reanudas donde lo dejaste, aunque cierres de golpe (WR-02) ---
+//
+// El progreso se escribe con un debounce de 500ms y el cleanup del efecto cancelaba el
+// write pendiente al desmontar: pasabas a la pagina 50, cerrabas, y reabrias en la 49.
+// Este gate mide EL VIAJE del requisito (pasar pagina -> cerrar -> reabrir), no las capas
+// por separado: la BD, el endpoint y la restauracion ya tenian test cada uno, y aun asi el
+// viaje estaba roto — el bug vivia justo en la costura que ningun test cruzaba.
+//
+// EL TIMING ES LOS DIENTES: hay que cerrar DENTRO de los 500ms (si no, el debounce salta y
+// el gate pasa aunque el bug siga) pero DESPUES de que React haya commiteado la pasada de
+// pagina (si no, el efecto ni llega a programar el write y no se ejercita nada). De ahi la
+// espera de 120ms DENTRO del renderer: sin round-trip que la vuelva impredecible.
+const PASAR_Y_CERRAR_RAPIDO = `new Promise((resolve) => {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
+  setTimeout(() => {
+    const contador = (document.querySelector('.reader-counter')?.textContent ?? '').trim();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    resolve(contador);
+  }, 120);
+})`;
+
+const PAGINA_DEL_CONTADOR = `(() => {
+  const texto = (document.querySelector('.reader-counter')?.textContent ?? '').trim();
+  const numero = Number.parseInt(texto.split('/')[0].trim(), 10);
+  return Number.isFinite(numero) ? numero : null;
+})()`;
+
+async function medirReanudar() {
+  await ponerModo("ltr");
+  await ponerAjuste("height");
+
+  // Volver a la 1 ANTES de nada: este caso corre el ultimo y hereda la pagina donde lo dejo
+  // el de vertical (cerca del final). Sin este reset, dos PageDown se pasan de la ultima
+  // pagina, abren la pantalla de transicion — que hace `return` ANTES del contador
+  // (ReaderView.tsx:383) — y el caso mide null en vez del bug.
+  await ejecutarEnRenderer("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })); true");
+  await esperarCondicion(`${PAGINA_DEL_CONTADOR} === 1`, "el reader no volvio a la pagina 1 con Home");
+
+  // Asentar en una pagina > 1 y dejar que el debounce escriba tranquilo: asi la pagina que
+  // se pierda si el flush falla es distinguible de «nunca se guardo nada».
+  for (let paso = 0; paso < 2; paso += 1) {
+    await ejecutarEnRenderer("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true })); true");
+    await esperar(250);
+  }
+  await esperar(700); // > PROGRESS_DEBOUNCE_MS: el progreso de esta pagina ya esta escrito
+  const asentada = await ejecutarEnRenderer(PAGINA_DEL_CONTADOR);
+  // Fallar aqui es un fallo DEL HARNESS, no del reader: si no se lee el contador no se esta
+  // midiendo nada, y un caso que no mide nada no puede dar verde.
+  if (asentada === null || asentada < 2 || asentada >= TOTAL_PAGINAS) {
+    throw new Error(`precondicion de rd-05: se esperaba estar asentado entre la 2 y la ${TOTAL_PAGINAS - 1}, y el contador dice ${asentada}`);
+  }
+
+  // Una pasada mas y cierre inmediato: ESTE es el write que WR-02 tiraba a la basura.
+  const contadorAntesDeCerrar = await ejecutarEnRenderer(PASAR_Y_CERRAR_RAPIDO);
+  const esperada = Number.parseInt(contadorAntesDeCerrar.split("/")[0].trim(), 10);
+  await esperarCondicion(
+    "!document.querySelector('.reader-counter')",
+    "el reader no se cerro con Escape",
+  );
+
+  // Reabrir por el mismo camino del usuario y ver donde aterriza.
+  await esperar(600); // margen para que el flush llegue al sidecar antes de releer
+  await abrirPrimerCapitulo();
+  await esperarCondicion(`${PAGINA_DEL_CONTADOR} !== null`, "el reader no reabrio");
+  await esperar(400); // la restauracion llega con el Promise.all del mount
+  const reanudada = await ejecutarEnRenderer(PAGINA_DEL_CONTADOR);
+
+  const ok = reanudada === esperada;
+  const detalle = `asentada en ${asentada} | cerrado de golpe en ${esperada} | reabre en ${reanudada}`;
+  console.log(
+    `${ok ? "OK  " : "FALLO"} rd-05 / reanudar tras cierre rapido   ${detalle}`,
+  );
+  if (!ok) {
+    console.log(
+      `      -> se cerro en la pagina ${esperada} y reabrio en la ${reanudada}: el progreso `
+      + "pendiente se perdio al desmontar (el debounce se cancela sin flush, WR-02)",
+    );
+  }
+  return ok;
+}
+
 async function recorrerVertical() {
   // Solo ajuste «ancho»: es el unico en el que la pagina real (~1650px) desborda el
   // `min-height:100vh` del slot, o sea el unico donde montar cambia la altura. A «alto» la
@@ -786,7 +867,10 @@ async function ejecutarHarness() {
     await abrirPrimerCapitulo();
     const ajustesOk = await recorrerAjustes();
     const verticalOk = await recorrerVertical();
-    const todoOk = ajustesOk && verticalOk;
+    // El ultimo, y a proposito: cierra y reabre el reader, asi que deja la app en otro
+    // estado y no debe condicionar a los que miden layout.
+    const reanudarOk = await medirReanudar();
+    const todoOk = ajustesOk && verticalOk && reanudarOk;
     console.log(todoOk ? "\nAjustes del reader: OK" : "\nAjustes del reader: FALLO");
     codigoSalida = todoOk ? 0 : 1;
   } catch (error) {
