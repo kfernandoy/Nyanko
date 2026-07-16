@@ -17,6 +17,7 @@
     "test:reader": "node --import tsx --test src/readerWindow.test.ts",
     "test:reader-rss": "electron scripts/reader-rss.mjs",
     "test:prefs": "node --import tsx --test electron/main/window-prefs.test.ts",
+    "test:csp": "node --import tsx --test electron/main/csp.test.ts",
     "test:publish": "node --test scripts/publish-bridge.test.mjs"
   },
   "dependencies": {

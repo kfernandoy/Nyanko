@@ -11,10 +11,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // T-02-SPLASH: MISMAS webPreferences seguras que la ventana principal + el mismo
 // preload endurecido (nyanko bridge). No se introduce ninguna ventana privilegiada.
+// El splash no carga nada externo: default-src 'none' cierra toda salida. El script
+// inline se limita a los tres onclick de Reintentar/Abrir logs/Salir; bloquearlos
+// dejaria sin respuesta precisamente la pantalla que aparece cuando algo ya fallo.
 const SPLASH_HTML = `<!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
 <style>
   html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif;
     background: #14131a; color: #ece9f1; -webkit-user-select: none; user-select: none; }
