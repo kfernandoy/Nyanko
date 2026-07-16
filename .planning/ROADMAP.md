@@ -139,7 +139,7 @@ se enchufa a un pipe que ya corre.
 
 **Research pass**: No. Todo tiene precedente en el árbol: el mount `/assets`, `normalizeAssetUrls` (`api.ts:202`), `zipfile`/`pathlib`/`re` de stdlib. No hay nada que aprender, solo precedente que seguir.
 
-**Plans**: 5/7 plans executed
+**Plans**: 6/7 plans executed
 
 **Wave 1**
 
@@ -160,7 +160,7 @@ se enchufa a un pipe que ya corre.
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 03-06-PLAN.md — `ReaderView`: tres modos, navegación, reanudar, encadenado + evento, ventana de decodificación — RD-02, RD-03, RD-04, RD-05, RD-06, RD-07, RD-09 — wave 5
+- [x] 03-06-PLAN.md — `ReaderView`: tres modos, navegación, reanudar, encadenado + evento, ventana de decodificación — RD-02, RD-03, RD-04, RD-05, RD-06, RD-07, RD-09 — wave 5
 
 **Wave 6** *(blocked on Wave 5)*
 
@@ -407,7 +407,7 @@ backend, el cliente HTTP, la verificación sha256, el gate de seguridad y una UI
 |-------|-----------|----------------|--------|-----------|
 | 1. Electron shell scaffold + data-dir lock | v0.2 | 4/4 | Complete    | 2026-07-13 |
 | 2. Main core — sidecar lifecycle + logging | v0.2 | 3/3 | Complete   | 2026-07-14 |
-| 3. Native boundary + Tauri removal | v0.2 | 5/7 | In Progress|  |
+| 3. Native boundary + Tauri removal | v0.2 | 6/7 | In Progress|  |
 | 4. Native feature parity | v0.2 | 3/3 | Complete | 2026-07-11 |
 | 5. Packaging + auto-update | v0.2 | 6/6 | Complete | 2026-07-12 |
 | 1. Fundaciones — limitador, esquema y modelo de progreso | v0.3 | 0/? | Not started | - |

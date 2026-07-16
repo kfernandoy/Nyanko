@@ -1,0 +1,1 @@
+[content lost - E: drive NTFS corruption during power outage, 2026-07-17. Original blob 47bb3b4ab114a321380e1b1c1db47e39ecf2cbe6 could not be recovered from local objects, origin, or the no-mistakes mirror.]
