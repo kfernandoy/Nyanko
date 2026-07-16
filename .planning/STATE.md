@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v0.3
 milestone_name: «Nyanko lee manga»
-status: in_progress
-stopped_at: Fase 03 lista para verificar: 3 Critical + UAT manual PASADO (5 hallazgos + 3 de UX + 1 regresion). Siguiente: /gsd-verify-work 3
+status: phase_complete
+stopped_at: Fase 03 CERRADA (verify passed 7/7, UAT 2/2). Siguiente: Fase 04 — identidad y vinculo
 last_updated: "2026-07-16T08:32:45.489Z"
 progress:
   total_phases: 9
@@ -29,7 +29,7 @@ al anime.
 ## Current Position
 
 Fase 02 — **CERRADA** (verify: passed, 12/12 verdades; code review: 4 blockers cerrados). Suite: 407 passed.
-Fase 03 — **EJECUTADA (7/7 planes)**, no cerrada todavía. Code review: 3 Critical, 6 Warning, 2 Info
+Fase 03 — **CERRADA** (verify: **passed, 7/7 verdades**; UAT: 2/2, 0 gaps; suite 461 passed). Code review: 3 Critical, 6 Warning, 2 Info
 (`03-REVIEW.md`). Dos de los tres Critical ya cerrados vía `/gsd-quick`:
 
 - **RD-09 medido y en verde**: 619-621 MB → **147-161 MB** (pico ~243) contra el techo de 500.
@@ -39,10 +39,12 @@ Fase 03 — **EJECUTADA (7/7 planes)**, no cerrada todavía. Code review: 3 Crit
 - **CR-03 cerrado** (+ **WR-03** en el mismo commit-set): el cache de capítulos vive entre peticiones y
   un 429 sigue saliendo 429 con el cache caliente. Suite: **455 passed**.
 
-Los **3 Critical del review están cerrados**. **UAT manual PASADO** (confirmado por el usuario 2026-07-16), incluidas 3 de UX y 1 regresion que
-salieron de la segunda vuelta.
+Los **3 Critical del review están cerrados** y el **UAT manual PASÓ**. RD-05 (reanudar) era el último
+hueco: el verifier lo dejó en `human_needed` porque nadie había ejercitado el viaje cerrar→reabrir, y
+escondía **WR-02** (el debounce se cancelaba al desmontar sin flush). Cerrado y con **gate medido**
+(`test:reader-fit`, caso `rd-05`): sin el flush cierra en la 7 y reabre en la 5; con él, en la 7.
 
-Siguiente comando: `/gsd-verify-work 3` — el UAT manual ya esta pasado.
+Siguiente comando: `/gsd-plan-phase 4` (o `/gsd-discuss-phase 4`).
 
 | Plan | Ola | Qué entrega |
 |------|-----|-------------|
@@ -60,7 +62,7 @@ del sistema) y `scripts/reader-rss.mjs` (no arranca Electron en su jaula).
 ## Progress
 
 ```
-Fases: [##.......] 2/9
+Fases: [###......] 3/9
 ```
 
 | Fase | Qué entrega | Research pass |
