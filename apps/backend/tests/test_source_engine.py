@@ -10,6 +10,7 @@ from nyanko_api.sources.contract import (
     SourceCapabilities,
     SourceChapter,
     SourcePage,
+    SourcePageContent,
     SourceSeries,
 )
 from nyanko_api.sources.engine import SourceEngine
@@ -44,6 +45,12 @@ class _FuenteCache:
     async def pages(self, chapter: SourceChapter | str) -> list[SourcePage]:
         chapter_id = chapter.source_id if isinstance(chapter, SourceChapter) else chapter
         return [SourcePage(source_id="p1", chapter_id=chapter_id, index=1, filename="1.jpg")]
+
+    async def page_bytes(self, page: SourcePage | str) -> SourcePageContent:
+        return SourcePageContent(
+            media_type="image/jpeg",
+            chunks=(chunk for chunk in (b"pagina",)),
+        )
 
 
 class _FuenteVacia(_FuenteCache):
@@ -92,6 +99,16 @@ async def test_empty_chapters_are_parse_error_and_do_not_cache_empty_list():
         await engine.chapters("vacia", "serie")
 
     assert engine._chapters == {}
+
+
+@pytest.mark.asyncio
+async def test_source_engine_delega_page_bytes_por_el_contrato():
+    engine = SourceEngine(SourceRegistry([_FuenteCache()]))
+
+    content = await engine.page_bytes("cache", "p1")
+
+    assert content.chunks is not None
+    assert b"".join(content.chunks) == b"pagina"
 
 
 @pytest.mark.asyncio

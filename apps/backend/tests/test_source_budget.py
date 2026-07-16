@@ -10,6 +10,7 @@ from nyanko_api.sources.contract import (
     SourceCapabilities,
     SourceChapter,
     SourcePage,
+    SourcePageContent,
     SourceSeries,
 )
 from nyanko_api.sources.engine import (
@@ -51,6 +52,12 @@ class _FuenteConFetch:
     async def pages(self, chapter: SourceChapter | str) -> list[SourcePage]:
         chapter_id = chapter.source_id if isinstance(chapter, SourceChapter) else chapter
         return [SourcePage(source_id="p1", chapter_id=chapter_id, index=1, filename="1.jpg")]
+
+    async def page_bytes(self, page: SourcePage | str) -> SourcePageContent:
+        return SourcePageContent(
+            media_type="image/jpeg",
+            chunks=(chunk for chunk in (b"pagina",)),
+        )
 
 
 def test_registry_builds_one_rate_limited_fetcher_per_source():

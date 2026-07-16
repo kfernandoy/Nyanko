@@ -5,6 +5,7 @@ import inspect
 import sys
 import tempfile
 import types
+import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import fields, is_dataclass
@@ -12,13 +13,19 @@ from pathlib import Path
 
 import pytest
 
-from nyanko_api.sources import SOURCES, LocalArchiveSource, build_source_registry
+from nyanko_api.sources import (
+    SOURCES,
+    LocalArchiveSource,
+    SourceEngine,
+    build_source_registry,
+)
 from nyanko_api.sources.contract import (
     SOURCE_API_VERSION,
     Source,
     SourceCapabilities,
     SourceChapter,
     SourcePage,
+    SourcePageContent,
     SourceSeries,
 )
 from nyanko_api.sources.errors import (
@@ -27,6 +34,7 @@ from nyanko_api.sources.errors import (
     SourceNotFoundError,
     SourceParseError,
     SourceRateLimitError,
+    SourceUnsupportedError,
     source_error_action,
 )
 from nyanko_api.sources.registry import SourceRegistry
@@ -56,12 +64,20 @@ class _FuenteOk:
         chapter_id = chapter.source_id if isinstance(chapter, SourceChapter) else chapter
         return [SourcePage(source_id="p1", chapter_id=chapter_id, index=1, filename="1.jpg")]
 
+    async def page_bytes(self, page: SourcePage | str) -> SourcePageContent:
+        return SourcePageContent(
+            media_type="image/jpeg",
+            chunks=(chunk for chunk in (b"pagina",)),
+        )
+
 
 def test_source_api_version_is_exact_integer():
     contract = Path("nyanko_api/sources/contract.py").read_text(encoding="utf-8")
 
-    assert SOURCE_API_VERSION == 1
-    assert "SOURCE_API_VERSION = 1" in contract
+    # page_bytes hizo incompatible el contrato (D-16). Como el registro exige una
+    # coincidencia exacta, la version 2 separa extensiones viejas de fallos silenciosos.
+    assert SOURCE_API_VERSION == 2
+    assert "SOURCE_API_VERSION = 2" in contract
 
 
 def test_source_protocol_is_runtime_checkable_and_minimal():
@@ -72,7 +88,7 @@ def test_source_protocol_is_runtime_checkable_and_minimal():
     }
 
     assert getattr(Source, "_is_runtime_protocol")
-    assert methods == {"search", "chapters", "pages"}
+    assert methods == {"search", "chapters", "pages", "page_bytes"}
 
     contract = Path("nyanko_api/sources/contract.py").read_text(encoding="utf-8")
     assert "popular" not in contract
@@ -89,8 +105,19 @@ def test_source_capabilities_are_data():
     assert {"headers", "requests_per_minute"} <= names
 
 
+def test_source_page_content_is_frozen_data():
+    assert is_dataclass(SourcePageContent)
+    assert SourcePageContent.__dataclass_params__.frozen
+    assert hasattr(SourcePageContent, "__slots__")
+    assert [field.name for field in fields(SourcePageContent)] == [
+        "media_type",
+        "path",
+        "chunks",
+    ]
+
+
 def test_source_domain_types_are_not_tracker_models():
-    for domain_type in (SourceSeries, SourceChapter, SourcePage):
+    for domain_type in (SourceSeries, SourceChapter, SourcePage, SourcePageContent):
         assert domain_type.__module__ == "nyanko_api.sources.contract"
 
     contract = Path("nyanko_api/sources/contract.py").read_text(encoding="utf-8")
@@ -125,6 +152,11 @@ def test_real_sources_match_protocol(source_class):
         _assert_source_signature(source, "search", ("query", "limit"))
         _assert_source_signature(source, "chapters", ("series",))
         _assert_source_signature(source, "pages", ("chapter",))
+        _assert_source_signature(source, "page_bytes", ("page",))
+
+
+def test_source_engine_is_part_of_the_public_package():
+    assert SourceEngine.__module__ == "nyanko_api.sources.engine"
 
 
 def test_sources_init_uses_explicit_list():
@@ -143,18 +175,21 @@ def test_sources_do_not_use_runtime_autodiscovery():
 
 
 def test_registry_keeps_wrong_api_version_visible():
-    class FuenteV2(_FuenteOk):
-        name = "v2"
-        api_version = SOURCE_API_VERSION + 1
+    class FuenteV1(_FuenteOk):
+        name = "v1"
+        api_version = 1
 
     registry = SourceRegistry()
-    registry.register(FuenteV2())
-    registration = registry.status("v2")
+    registry.register(FuenteV1())
+    registry.register(_FuenteOk())
+    registration = registry.status("v1")
 
     assert registration.status == "rejected"
     assert registration.rejection_reason
-    assert str(SOURCE_API_VERSION + 1) in registration.rejection_reason
-    assert registry.all() == []
+    assert "1" in registration.rejection_reason
+    assert "2" in registration.rejection_reason
+    assert registry.status("ok").status == "ok"
+    assert [source.name for source in registry.all()] == ["ok"]
 
 
 def test_registry_keeps_loading_errors_visible():
@@ -220,11 +255,14 @@ async def test_local_archive_lists_chapters_with_opaque_ids():
     with _workdir("chapters") as root:
         (root / "Cap 1").mkdir()
         (root / "Cap 2").mkdir()
+        (root / "Cap 1" / "1.jpg").write_bytes(b"pagina")
         source = LocalArchiveSource(_Fetcher(), [{"id": "0", "path": str(root)}])
 
         chapters = await source.chapters(SourceSeries(source_id="0:.", title="Biblioteca"))
 
         assert [chapter.title for chapter in chapters] == ["Cap 1", "Cap 2"]
+        assert [chapter.number for chapter in chapters] == [1.0, 2.0]
+        assert [chapter.is_chapter for chapter in chapters] == [True, False]
         assert all(str(root) not in chapter.source_id for chapter in chapters)
         assert all(not Path(chapter.source_id).is_absolute() for chapter in chapters)
 
@@ -242,6 +280,173 @@ async def test_local_archive_lists_only_images_in_natural_order():
 
         assert [page.filename for page in pages] == ["1.jpg", "2.jpg", "10.jpg"]
         assert [page.index for page in pages] == [1, 2, 3]
+
+
+@pytest.mark.asyncio
+async def test_archivo_local_iguala_zip_y_carpeta_en_orden_natural(tmp_path):
+    chapter_dir = tmp_path / "Cap 1"
+    chapter_dir.mkdir()
+    for name in ("2.jpg", "10.jpg", "1.jpg"):
+        (chapter_dir / name).write_bytes(name.encode())
+    archive_path = tmp_path / "Cap 2.cbz"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        for name in ("2.jpg", "10.jpg", "1.jpg"):
+            archive.writestr(name, name.encode())
+        archive.writestr("nota.txt", b"ignorada")
+
+    source = LocalArchiveSource(_Fetcher(), [{"id": "0", "path": str(tmp_path)}])
+    directory_pages = await source.pages("0:Cap 1")
+    archive_pages = await source.pages("0:Cap 2.cbz")
+
+    assert [(page.filename, page.index) for page in directory_pages] == [
+        (page.filename, page.index) for page in archive_pages
+    ] == [("1.jpg", 1), ("2.jpg", 2), ("10.jpg", 3)]
+    assert all("!" not in page.source_id for page in directory_pages)
+    assert all("!" in page.source_id for page in archive_pages)
+    assert all(str(tmp_path) not in page.source_id for page in archive_pages)
+    assert all(not Path(page.source_id).is_absolute() for page in archive_pages)
+
+
+@pytest.mark.asyncio
+async def test_comic_info_del_cbz_manda_sobre_el_nombre(tmp_path):
+    archive_path = tmp_path / "Cap 003.cbz"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("1.jpg", b"pagina")
+        archive.writestr(
+            "comicinfo.XML",
+            "<ComicInfo><Number>12.5</Number><Title>El eclipse</Title></ComicInfo>",
+        )
+    source = LocalArchiveSource(_Fetcher(), [{"id": "0", "path": str(tmp_path)}])
+
+    chapter = (await source.chapters("0:."))[0]
+
+    assert chapter.number == 12.5
+    assert isinstance(chapter.number, float)
+    assert chapter.title == "El eclipse"
+
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("1.jpg", b"pagina")
+
+    chapter_without_metadata = (await source.chapters("0:."))[0]
+    assert chapter_without_metadata.number == 3.0
+    assert chapter_without_metadata.title == "Cap 003.cbz"
+
+
+@pytest.mark.asyncio
+async def test_comic_info_malformado_degrada_al_nombre(tmp_path):
+    archive_path = tmp_path / "Cap 004.cbz"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("1.jpg", b"pagina")
+        archive.writestr("ComicInfo.xml", b"<ComicInfo><Number>99")
+    source = LocalArchiveSource(_Fetcher(), [{"id": "0", "path": str(tmp_path)}])
+
+    chapter = (await source.chapters("0:."))[0]
+
+    assert chapter.number == 4.0
+    assert chapter.title == "Cap 004.cbz"
+
+
+@pytest.mark.asyncio
+async def test_comic_info_peligroso_o_desmedido_no_se_parsea(tmp_path, monkeypatch):
+    entity_archive = tmp_path / "Cap 005.cbz"
+    with zipfile.ZipFile(entity_archive, "w") as archive:
+        archive.writestr("1.jpg", b"pagina")
+        archive.writestr(
+            "ComicInfo.xml",
+            b'<!DOCTYPE comic [<!ENTITY x "boom">]>'
+            b"<ComicInfo><Number>&x;</Number></ComicInfo>",
+        )
+    huge_archive = tmp_path / "Cap 006.cbz"
+    with zipfile.ZipFile(huge_archive, "w") as archive:
+        archive.writestr("1.jpg", b"pagina")
+        archive.writestr("ComicInfo.xml", b" " * (1024 * 1024 + 1))
+    utf16_archive = tmp_path / "Cap 007.cbz"
+    with zipfile.ZipFile(utf16_archive, "w") as archive:
+        archive.writestr("1.jpg", b"pagina")
+        archive.writestr(
+            "ComicInfo.xml",
+            '<!DOCTYPE comic [<!ENTITY x "boom">]>'
+            "<ComicInfo><Number>&x;</Number></ComicInfo>".encode("utf-16"),
+        )
+
+    def fail_if_called(_raw):
+        raise AssertionError("El XML peligroso se descarto antes de parsearlo")
+
+    monkeypatch.setattr(
+        "nyanko_api.sources.local_archive.ElementTree.fromstring", fail_if_called
+    )
+    source = LocalArchiveSource(_Fetcher(), [{"id": "0", "path": str(tmp_path)}])
+
+    chapters = await source.chapters("0:.")
+
+    assert [chapter.number for chapter in chapters] == [5.0, 6.0, 7.0]
+
+
+@pytest.mark.asyncio
+async def test_cbr_se_rechaza_sin_intentar_abrirlo(tmp_path):
+    (tmp_path / "Cap 7.cbr").write_bytes(b"esto no es un archivo")
+    source = LocalArchiveSource(_Fetcher(), [{"id": "0", "path": str(tmp_path)}])
+
+    with pytest.raises(SourceUnsupportedError, match="CBZ"):
+        await source.pages("0:Cap 7.cbr")
+
+
+@pytest.mark.asyncio
+async def test_page_bytes_devuelve_path_para_imagen_suelta(tmp_path):
+    image_path = tmp_path / "pagina.jpg"
+    image_path.write_bytes(b"jpeg")
+    source = LocalArchiveSource(_Fetcher(), [{"id": "0", "path": str(tmp_path)}])
+
+    content = await source.page_bytes("0:pagina.jpg")
+
+    assert content.path == image_path
+    assert content.chunks is None
+    assert content.media_type == "image/jpeg"
+
+
+@pytest.mark.asyncio
+async def test_page_bytes_transmite_el_miembro_cbz_exacto(tmp_path):
+    expected = b"bytes exactos del zip"
+    archive_path = tmp_path / "Cap 8.cbz"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("carpeta/pagina.jpg", expected)
+    source = LocalArchiveSource(_Fetcher(), [{"id": "0", "path": str(tmp_path)}])
+    page = (await source.pages("0:Cap 8.cbz"))[0]
+
+    content = await source.page_bytes(page)
+
+    assert content.path is None
+    assert content.chunks is not None
+    assert content.media_type == "image/jpeg"
+    assert b"".join(content.chunks) == expected
+
+
+@pytest.mark.asyncio
+async def test_page_bytes_rechaza_ids_fuera_de_la_biblioteca(tmp_path):
+    archive_path = tmp_path / "Cap1.cbz"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("1.jpg", b"pagina")
+    source = LocalArchiveSource(_Fetcher(), [{"id": "0", "path": str(tmp_path)}])
+
+    for page_id in (
+        "0:../../etc/passwd",
+        "0:Cap1.cbz!../../../etc/passwd",
+        "raiz-no-registrada:x.jpg",
+    ):
+        with pytest.raises(SourceError):
+            await source.page_bytes(page_id)
+
+
+@pytest.mark.asyncio
+async def test_zip_corrupto_o_sin_imagenes_es_error_de_parseo(tmp_path):
+    (tmp_path / "corrupto.cbz").write_bytes(b"no es zip")
+    with zipfile.ZipFile(tmp_path / "vacio.cbz", "w") as archive:
+        archive.writestr("nota.txt", b"sin paginas")
+    source = LocalArchiveSource(_Fetcher(), [{"id": "0", "path": str(tmp_path)}])
+
+    for chapter_id in ("0:corrupto.cbz", "0:vacio.cbz"):
+        with pytest.raises(SourceParseError):
+            await source.pages(chapter_id)
 
 
 @pytest.mark.asyncio

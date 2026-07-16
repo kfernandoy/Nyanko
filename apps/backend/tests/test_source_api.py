@@ -18,6 +18,7 @@ from nyanko_api.sources.contract import (
     SourceCapabilities,
     SourceChapter,
     SourcePage,
+    SourcePageContent,
     SourceSeries,
 )
 from nyanko_api.sources.errors import SourceParseError
@@ -50,6 +51,12 @@ class _AlwaysFailSource:
 
     async def pages(self, chapter: SourceChapter | str) -> list[SourcePage]:
         raise SourceParseError("fallo de uso que no debe salir por /api/sources")
+
+    async def page_bytes(self, page: SourcePage | str) -> SourcePageContent:
+        return SourcePageContent(
+            media_type="image/jpeg",
+            chunks=(chunk for chunk in (b"pagina",)),
+        )
 
 
 class _WrongVersionSource(_AlwaysFailSource):
