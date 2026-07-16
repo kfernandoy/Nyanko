@@ -20,6 +20,7 @@ from .errors import (
     SourceNotFoundError,
     SourceParseError,
     SourceRateLimitError,
+    source_error_action,
 )
 
 if TYPE_CHECKING:
@@ -92,7 +93,13 @@ class SourceEngine:
             fresh = await self._call_source(lambda: source.chapters(series))
             if not fresh:
                 raise SourceParseError("La fuente no devolvio capitulos")
-        except SourceError:
+        except SourceError as error:
+            # Un 429 es back-pressure: la fuente esta PIDIENDO que paremos. Servir cache
+            # lo silencia y seguimos machacandola, que es justo lo que la fuente intenta
+            # evitar. Quien decide es la taxonomia, no un isinstance nuevo: si mañana otro
+            # error mapea a "esperar", esta rama se entera sola.
+            if source_error_action(error) == "esperar":
+                raise
             if key in self._chapters:
                 return list(self._chapters[key])
             raise

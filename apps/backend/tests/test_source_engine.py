@@ -32,13 +32,14 @@ class _FuenteCache:
 
     def __init__(self):
         self.fail = False
+        self.error: SourceError = SourceParseError("Cloudflare devolvio HTML")
 
     async def search(self, query: str, limit: int = 20) -> list[SourceSeries]:
         return [SourceSeries(source_id=query, title=query)]
 
     async def chapters(self, series: SourceSeries | str) -> list[SourceChapter]:
         if self.fail:
-            raise SourceParseError("Cloudflare devolvio HTML")
+            raise self.error
         series_id = series.source_id if isinstance(series, SourceSeries) else series
         return [SourceChapter(source_id="c1", title="1", series_id=series_id)]
 
@@ -79,6 +80,21 @@ async def test_chapters_returns_good_cache_after_source_parse_error():
     source.fail = True
 
     assert await engine.chapters("cache", "serie") == cached
+
+
+@pytest.mark.asyncio
+async def test_un_429_no_se_sirve_de_cache_aunque_este_caliente():
+    """Un 429 es back-pressure, no un hueco que tape el cache: tiene que llegar al caller."""
+    source = _FuenteCache()
+    engine = SourceEngine(SourceRegistry([source]))
+
+    await engine.chapters("cache", "serie")
+    source.error = SourceRateLimitError("limitado", retry_after=3)
+    source.fail = True
+
+    with pytest.raises(SourceRateLimitError) as limitado:
+        await engine.chapters("cache", "serie")
+    assert limitado.value.retry_after == 3
 
 
 @pytest.mark.asyncio
