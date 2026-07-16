@@ -408,13 +408,25 @@ button.small { border-radius: 6px; padding: 5px 12px; font-size: 12px; }
 .reader-stage { position: relative; width: 100%; height: 100%; overflow: hidden; }
 .reader-stage--pannable { cursor: grab; }
 .reader-stage--pannable:active { cursor: grabbing; }
-.reader-paged { display: grid; place-items: center; }
+/* `.reader-paged` (el stage paginado) tiene que seguir siendo un bloque normal: nada de
+   display:grid ni place-items:center. `.reader-pages` cuelga de el con height:100%, y esa
+   altura solo resuelve si su bloque contenedor tiene ALTURA DEFINIDA; como item de un grid
+   con los items centrados NO se estira, asi que su altura queda indefinida y arrastra a
+   toda la cadena: `height:100%` de la img degrada a auto y `max-height:100%` a none, la
+   pagina se pinta a su alto natural y `.reader-stage{overflow:hidden}` la recorta — el
+   ajuste «alto» dejaba de ajustar (UAT 03, hallazgo #3). El grid tampoco aportaba centrado:
+   `.reader-pages` ya centra sus paginas con flex. Lo vigila scripts/reader-fit.mjs. */
 .reader-pages { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; transform-origin: center; }
 .reader-direction-rtl { flex-direction: row-reverse; }
 .reader-direction-ltr { flex-direction: row; }
 .reader-page--visible { flex: 1 1 0; height: 100%; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: clip; }
 .reader-page--visible img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; pointer-events: none; }
-.reader-fit-width .reader-page--visible img { width: 100%; height: auto; }
+/* `max-height:none` es lo que mantiene «ancho» significando ANCHO. Con la cadena de
+   alturas ya definida, el `max-height:100%` de la regla base recortaria el alto al del
+   stage y `object-fit:contain` apaisaria la pagina hasta ~457px de ancho: dejaria de
+   llenar el ancho. Hasta ahora ese clamp era inerte solo porque la altura era indefinida
+   (un 100% de algo indefinido computa a none), o sea que «ancho» funcionaba de rebote. */
+.reader-fit-width .reader-page--visible img { width: 100%; height: auto; max-height: none; }
 .reader-fit-height .reader-page--visible img { width: auto; height: 100%; }
 .reader-fit-original .reader-page--visible img { width: auto; height: auto; max-width: none; max-height: none; }
 .reader-vertical { overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; overflow-anchor: none; }
