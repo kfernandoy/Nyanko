@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.3
 milestone_name: «Nyanko lee manga»
 status: in_progress
-stopped_at: Fase 03: 3 Critical + 4 de los 5 hallazgos del UAT cerrados (el #1 CBR no es bug). Pendiente: reconfirmar el UAT manual
+stopped_at: Fase 03 lista para verificar: 3 Critical + UAT manual PASADO (5 hallazgos + 3 de UX + 1 regresion). Siguiente: /gsd-verify-work 3
 last_updated: "2026-07-16T08:32:45.489Z"
 progress:
   total_phases: 9
@@ -39,10 +39,10 @@ Fase 03 — **EJECUTADA (7/7 planes)**, no cerrada todavía. Code review: 3 Crit
 - **CR-03 cerrado** (+ **WR-03** en el mismo commit-set): el cache de capítulos vive entre peticiones y
   un 429 sigue saliendo 429 con el cache caliente. Suite: **455 passed**.
 
-Los **3 Critical del review están cerrados**. Pendiente para cerrar la fase: el **UAT manual de los tres
-modos** (el harness solo cubre paginado).
+Los **3 Critical del review están cerrados**. **UAT manual PASADO** (confirmado por el usuario 2026-07-16), incluidas 3 de UX y 1 regresion que
+salieron de la segunda vuelta.
 
-Siguiente comando: `/gsd-verify-work 3` tras el UAT manual.
+Siguiente comando: `/gsd-verify-work 3` — el UAT manual ya esta pasado.
 
 | Plan | Ola | Qué entrega |
 |------|-----|-------------|
@@ -200,7 +200,46 @@ La fase 03 NO cierra: RD-02 pide los tres modos de lectura y el UAT los encontro
 5. **No se ve la numeracion de pagina** — existe (`ReaderView.tsx:441`, `{paginaActual} / {total}`)
    pero vive DENTRO del <header> de controles, que se alterna con un clic. Acoplamiento de diseno.
 
-- PENDIENTE: UAT manual de los tres modos con un capitulo real — el harness solo cubre paginado. Falta: rtl/ltr pasan pagina y las flechas respetan el sentido; vertical mantiene el scroll continuo sin huecos; doble pagina en rtl muestra DOS paginas.
+- **UAT manual: PASADO** (confirmado por el usuario, 2026-07-16). Los 5 hallazgos cerrados, mas 3 de UX
+  que salieron del propio UAT y 1 regresion que introdujo el arreglo del #2.
+
+### UAT manual, segunda vuelta — 3 de UX + 1 regresion (todo cerrado)
+
+Salieron al usar el reader de verdad, ya con los 5 primeros arreglados:
+
+6. **Regresion del #2** (`6b4976b`): `MangaLibraryView` pedia capitulos de manga a TODAS las carpetas,
+   incluidas las de anime → «Raiz local no registrada», y al ser un `Promise.all` UNA raiz invalida
+   tumbaba la vista entera. El filtro `kind` se puso en los 2 consumidores del BACKEND, pero habia un
+   septimo consumidor **al otro lado de HTTP**: `libraryFolders()` devuelve todas por diseno y el front
+   asumia que todas eran raices de manga. **Leccion: el grep de llamantes se quedo en el borde de Python.**
+   Sin cobertura automatica (no hay infra de tests de componentes React; montarla seria una dependencia
+   nueva para un `.filter()`).
+7. **«Ancho»/«original» no dejaban ver la pagina entera y no habia forma de llegar al resto** (`7430607`):
+   la pagina mide 1650px en un stage de 686, `.reader-stage` era `overflow:hidden` y el paneo estaba
+   capado a `zoom <= MIN_ZOOM` con `MIN_ZOOM=1` — o sea inalcanzable en el ajuste POR DEFECTO. RD-04 pide
+   «modos de ajuste, zoom y paneo» y faltaba la mitad del mecanismo. Decision del usuario: convencion
+   Mihon → scroll vertical en ancho/original; la rueda scrollea y pasa de pagina al llegar al final; a
+   «alto» (que cabe entera) sigue pasando directa.
+8. **Doble pagina con ~92px de hueco en el lomo** (`7430607`): CONSECUENCIA de arreglar el #3 — antes la
+   cadena de alturas rota hacia que cada pagina midiera 550px y llenara su mitad, tocandose por accidente.
+   Al definir la altura pasa a 457.33 en un hueco de 550 y aparece el aire. Arreglado alineando los bordes
+   interiores (dos parejas de selectores: en RTL `row-reverse` invierte quien es "interior"). Medido: **lomo 0px**.
+9. **Zoom minimo al 25%** (`7430607`): `MIN_ZOOM` 1 → 0.25, separando `ZOOM_BASE=1` para el estado inicial,
+   el reset y **la puerta del paneo** — bajar la constante a secas habria activado el paneo al 100% y
+   habria competido con el scroll nuevo.
+
+Los 7/8/9 los escribio **Codex** (contrato de `.planning/CODEX-RULES.md`: el escribe codigo, el orquestador
+mide y commitea).
+
+**Dos correcciones que la MEDICION le hizo al parte del usuario** — el metodo del #3 dando fruto:
+- «Ancho» tampoco funcionaba nunca: pintaba `1100x1650`, IDENTICO a «alto». Un solo bug.
+- El vertical tambien salta HACIA ABAJO (-915px), no solo hacia arriba.
+
+**Gate nuevo**: `npm run test:reader-fit` (11 casos) mide la cadena de alturas de los 3 ajustes x 2
+sentidos x doble pagina, el hueco del lomo, y el salto de scroll vertical en los 2 sentidos. Todos vistos
+en ROJO antes de darlos por buenos. Ojo: compara contra `clientWidth`/`clientHeight` (la caja de CONTENIDO)
+porque el stage paginado ya saca barra de scroll y se come 10px de ancho — contra la caja de borde daria
+un falso FALLO por una barra correcta.
 
 ### Quick Tasks Completed
 
