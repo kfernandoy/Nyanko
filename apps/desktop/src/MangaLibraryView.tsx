@@ -35,7 +35,14 @@ export function MangaLibraryView({ onOpenChapter }: { onOpenChapter: (chapter: M
           return;
         }
 
-        const carpetas = await api.libraryFolders();
+        // `libraryFolders()` devuelve TODAS las carpetas a proposito (Ajustes las lista
+        // todas), asi que el filtro por tipo es cosa de quien consume: pedirle capitulos
+        // de manga a una carpeta de anime da «Raiz local no registrada», y como esto es
+        // un Promise.all, esa unica raiz invalida tumbaba la biblioteca ENTERA. Mismo
+        // criterio que `LocalArchiveSource._load_roots`: sin tipo ⇒ ambas.
+        const carpetas = (await api.libraryFolders()).filter(
+          (carpeta) => (carpeta.kind ?? "ambas") !== "anime",
+        );
         if (carpetas.length === 0) {
           if (!cancelado) {
             setCapitulos([]);
