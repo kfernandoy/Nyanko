@@ -270,9 +270,42 @@ CREATE TABLE IF NOT EXISTS pending_mutations (
   error TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS reader_prefs (
+  source_name TEXT NOT NULL,
+  series_id TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'rtl',
+  fit TEXT,
+  double_page INTEGER NOT NULL DEFAULT 0,
+  double_page_offset INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (source_name, series_id)
+);
+CREATE TABLE IF NOT EXISTS reader_progress (
+  source_name TEXT NOT NULL,
+  chapter_id TEXT NOT NULL,
+  page INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (source_name, chapter_id)
+);
+CREATE TABLE IF NOT EXISTS reading_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  source_name TEXT NOT NULL,
+  series_id TEXT,
+  chapter_id TEXT,
+  -- El capítulo 12.5 existe: playback_events.episode es INTEGER y por eso no se
+  -- reutiliza esa tabla para la lectura.
+  chapter REAL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  -- El vínculo nace en la Fase 4. Hasta entonces media_id es NULL; usarlo como
+  -- clave hoy obligaría a adivinar el defecto de los usuarios existentes.
+  media_id INTEGER,
+  progress_before REAL,
+  progress_after REAL
+);
 """
 
-CANONICAL_SCHEMA_VERSION = 8
+CANONICAL_SCHEMA_VERSION = 9
 # media: alto a propósito — los detalles guardados en local son lo que hace que
 # reabrir/editar una card sea instantáneo (estilo Taiga); son JSON pequeños.
 CACHE_RESOURCE_LIMITS = {"media:": 500, "season:": 24, "discover:": 80}
@@ -620,6 +653,104 @@ class Database:
     def delete_setting(self, key: str) -> None:
         with self.connect() as connection:
             connection.execute("DELETE FROM settings WHERE key = ?", (key,))
+
+    def get_reader_prefs(self, source_name: str, series_id: str) -> dict | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT mode, fit, double_page, double_page_offset FROM reader_prefs "
+                "WHERE source_name = ? AND series_id = ?",
+                (source_name, series_id),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def set_reader_prefs(
+        self,
+        source_name: str,
+        series_id: str,
+        *,
+        mode: str | None = None,
+        fit: str | None = None,
+        double_page: int | None = None,
+        double_page_offset: int | None = None,
+    ) -> None:
+        presentes = [
+            (columna, valor)
+            for columna, valor in (
+                ("mode", mode),
+                ("fit", fit),
+                ("double_page", double_page),
+                ("double_page_offset", double_page_offset),
+            )
+            if valor is not None
+        ]
+        columnas = ["source_name", "series_id", *(columna for columna, _ in presentes)]
+        parametros = [source_name, series_id, *(valor for _, valor in presentes)]
+        asignaciones = [
+            *(f"{columna} = excluded.{columna}" for columna, _ in presentes),
+            "updated_at = CURRENT_TIMESTAMP",
+        ]
+        with self.connect() as connection:
+            connection.execute(
+                f"INSERT INTO reader_prefs ({', '.join(columnas)}) "
+                f"VALUES ({', '.join('?' for _ in columnas)}) "
+                "ON CONFLICT(source_name, series_id) DO UPDATE SET "
+                + ", ".join(asignaciones),
+                parametros,
+            )
+
+    def get_reader_progress(self, source_name: str, chapter_id: str) -> dict | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT page, updated_at FROM reader_progress "
+                "WHERE source_name = ? AND chapter_id = ?",
+                (source_name, chapter_id),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def set_reader_progress(self, source_name: str, chapter_id: str, page: int) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "INSERT INTO reader_progress(source_name, chapter_id, page) VALUES (?, ?, ?) "
+                "ON CONFLICT(source_name, chapter_id) DO UPDATE SET "
+                "page = excluded.page, updated_at = CURRENT_TIMESTAMP",
+                (source_name, chapter_id, page),
+            )
+
+    def insert_reading_event(
+        self,
+        source_name: str,
+        series_id: str | None,
+        chapter_id: str | None,
+        chapter: float | None,
+        status: str = "pending",
+        media_id: int | None = None,
+        progress_before: float | None = None,
+        progress_after: float | None = None,
+    ) -> int:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO reading_events "
+                "(source_name, series_id, chapter_id, chapter, status, media_id, "
+                "progress_before, progress_after) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    source_name,
+                    series_id,
+                    chapter_id,
+                    chapter,
+                    status,
+                    media_id,
+                    progress_before,
+                    progress_after,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def get_recent_reading_events(self, limit: int = 20) -> list[dict]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM reading_events ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def get_library_folders(self) -> list[dict]:
         with self.connect() as connection:
