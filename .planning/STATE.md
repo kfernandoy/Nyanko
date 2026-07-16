@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.3
 milestone_name: «Nyanko lee manga»
-status: ready_to_execute
-stopped_at: Fase 03 planificada y verificada — lista para ejecutar
-last_updated: "2026-07-16T08:11:40.970Z"
+status: in_progress
+stopped_at: Fase 03 ejecutada (7/7 planes) y RD-09 en verde tras el quick 260716-6ba — pendiente UAT manual de los tres modos
+last_updated: "2026-07-16T08:32:45.489Z"
 progress:
   total_phases: 9
   completed_phases: 3
@@ -162,4 +162,11 @@ Al cablear el engine dejan de ser latentes (ver `02-VERIFICATION.md`):
 
 ### Blockers
 
-- RD-09 REPROBADO con evidencia medida: 621 MB (pico 691 MB) vs techo 500 MB con la ventana +-2 de D-07. Con ventana=1 el mismo harness mide 153 MB: la medicion es real y responde a la ventana. Prohibido relajar ventana/techo. Decidir: arreglar retencion del reader o recalibrar el techo. Gate: npm run test:reader-rss
+- ~~RD-09 REPROBADO: 621 MB vs techo 500 MB~~ **CERRADO** (quick 260716-6ba, 2026-07-16). Causa raiz: no era la ventana de decodificacion (`decodeWindow` siempre fue correcta), era CSS — `.reader-page--preload img` llevaba `max-width:none; max-height:none` y las reglas de ajuste solo apuntaban a `--visible`, asi que los 4 vecinos se maquetaban a 2000x3000 fuera del lienzo (`left:-100000px` mueve, no saca del layout ni del paint). Ahora paginado monta solo el grupo visible y calienta los vecinos por HTTP sin DOM. Medido: **147-161 MB (pico ~243)** vs techo 500, `test:reader-rss` sale 0. `MAX_LIVE_PAGES`=5 y `TECHO_RSS_MB`=500 SIN TOCAR — el numero baja porque el reader retiene menos, no porque se aflojara el gate.
+- PENDIENTE (no bloquea RD-09): UAT manual de los tres modos con un capitulo real — el harness solo cubre paginado. Falta: rtl/ltr pasan pagina y las flechas respetan el sentido; vertical mantiene el scroll continuo sin huecos; doble pagina en rtl muestra DOS paginas.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260716-6ba | Arreglar la retencion de memoria del reader: preload a resolucion intrinseca (RD-09 CR-02) | 2026-07-16 | 3c9c4b3 | [260716-6ba-arreglar-la-retencion-de-memoria-del-rea](./quick/260716-6ba-arreglar-la-retencion-de-memoria-del-rea/) |
