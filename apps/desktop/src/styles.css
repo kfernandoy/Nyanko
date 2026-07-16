@@ -386,8 +386,10 @@ button.small { border-radius: 6px; padding: 5px 12px; font-size: 12px; }
 .manga-library-state { min-height: 220px; display: grid; place-content: center; margin: 0; color: var(--text-dim); text-align: center; }
 .manga-library-error { color: #e7a9b5; }
 
-/* Reader: los wrappers fuera de la ventana no contienen <img>; los cuatro vecinos
-   paginados se mantienen fuera del lienzo, nunca ocultos con display/visibility. */
+/* Reader: en paginado se monta EXACTAMENTE el grupo visible (1 pagina, o 2 con doble
+   pagina); los vecinos de la ventana se calientan por HTTP sin elemento en el DOM, asi
+   que no hay nada fuera del lienzo que acotar. En vertical el scroll continuo si monta
+   la ventana entera, y sus reglas acotan cada imagen a su slot. */
 .reader { position: relative; height: 100vh; min-height: 0; overflow: hidden; color: #eef0f6; background: #05070c; user-select: none; }
 .titlebar + .reader { height: calc(100vh - 34px); }
 .reader-status { height: 100%; display: grid; place-content: center; margin: 0; color: #9ba2b5; text-align: center; }
@@ -412,8 +414,6 @@ button.small { border-radius: 6px; padding: 5px 12px; font-size: 12px; }
 .reader-direction-ltr { flex-direction: row; }
 .reader-page--visible { flex: 1 1 0; height: 100%; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: clip; }
 .reader-page--visible img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; pointer-events: none; }
-.reader-page--preload { position: absolute; top: 0; left: -100000px; pointer-events: none; }
-.reader-page--preload img { display: block; max-width: none; max-height: none; }
 .reader-fit-width .reader-page--visible img { width: 100%; height: auto; }
 .reader-fit-height .reader-page--visible img { width: auto; height: 100%; }
 .reader-fit-original .reader-page--visible img { width: auto; height: auto; max-width: none; max-height: none; }
