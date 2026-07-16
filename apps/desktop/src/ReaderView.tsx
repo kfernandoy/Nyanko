@@ -217,6 +217,27 @@ export function ReaderView({
     return () => observador.disconnect();
   }, [modo, total]);
 
+  // Calienta la cache HTTP de los vecinos de la ventana SIN montarlos: sin elemento vivo no hay
+  // layout, ni decode, ni bitmap — que es justo lo que pagaba el preload maquetado a resolucion
+  // intrinseca. El `Cache-Control: private, max-age=3600` que sirve el sidecar es lo que permite
+  // que la pagina ya calentada pinte desde cache al pasar.
+  useEffect(() => {
+    // En vertical esas paginas ya estan montadas como <img>: volver a pedirlas seria trabajo duplicado.
+    if (modo === "vertical") return;
+    const controlador = new AbortController();
+    for (const indice of ventana) {
+      if (paginasVisibles.includes(indice)) continue;
+      const pagina = paginaPorIndice.get(indice);
+      if (!pagina) continue;
+      // `no-cors` iguala el modo de peticion al del <img> (que tampoco es CORS), asi que la entrada
+      // de cache que se escribe es la que el <img> puede reutilizar, y es inmune al origen `null`
+      // del renderer empaquetado (file://). Un preload que revienta no debe avisar al usuario.
+      void fetch(pagina.url, { mode: "no-cors", signal: controlador.signal }).catch(() => {});
+    }
+    // Pasar pagina cancela lo que ya no sirve, en vez de apilar peticiones capitulo abajo.
+    return () => controlador.abort();
+  }, [modo, paginaPorIndice, paginasVisibles, ventana]);
+
   const alternarPantallaCompleta = useCallback(() => {
     const operacion = document.fullscreenElement
       ? document.exitFullscreen()
@@ -461,16 +482,11 @@ export function ReaderView({
             className={`reader-pages reader-direction-${preferencias.mode} reader-fit-${ajuste}`}
             style={{ transform: transformacion }}
           >
-            {ventana.map((indice) => {
+            {paginasVisibles.map((indice) => {
               const pagina = paginaPorIndice.get(indice);
               if (!pagina) return null;
-              const visible = paginasVisibles.includes(indice);
               return (
-                <div
-                  key={pagina.index}
-                  className={`reader-page ${visible ? "reader-page--visible" : "reader-page--preload"}`}
-                  aria-hidden={!visible}
-                >
+                <div key={pagina.index} className="reader-page reader-page--visible">
                   <img src={pagina.url} alt={pagina.filename} decoding="async" draggable={false} />
                 </div>
               );
