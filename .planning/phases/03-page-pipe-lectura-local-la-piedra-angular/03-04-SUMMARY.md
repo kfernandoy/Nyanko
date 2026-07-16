@@ -48,8 +48,8 @@ coverage:
       - kind: integration
         ref: apps/backend/tests/test_manga_api.py#test_un_endpoint_navega_series_y_capitulos_con_comicinfo y test_paginas_salen_en_orden_natural_con_urls_relativas_y_errores_tipados
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificación por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
   - id: D2
     description: Las preferencias se aislan por serie y conservan doble pagina y offset al cambiar el modo
     requirement: RD-03
@@ -57,8 +57,8 @@ coverage:
       - kind: integration
         ref: apps/backend/tests/test_manga_api.py#test_preferencias_progreso_y_evento_hacen_round_trip_sin_persistir_urls
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificación por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
   - id: D3
     description: El progreso se guarda y recupera por capitulo
     requirement: RD-05
@@ -66,8 +66,8 @@ coverage:
       - kind: integration
         ref: apps/backend/tests/test_manga_api.py#test_preferencias_progreso_y_evento_hacen_round_trip_sin_persistir_urls
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificación por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
   - id: D4
     description: El evento de lectura conserva un chapter decimal y devuelve su id
     requirement: RD-06
@@ -75,24 +75,24 @@ coverage:
       - kind: integration
         ref: apps/backend/tests/test_manga_api.py#test_preferencias_progreso_y_evento_hacen_round_trip_sin_persistir_urls
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificación por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
   - id: D5
     description: Anadir o borrar una carpeta actualiza LocalArchiveSource inmediatamente sin reconstruir al leer
     verification:
       - kind: integration
         ref: apps/backend/tests/test_manga_api.py#test_alta_y_baja_de_carpeta_refrescan_el_registry_sin_reiniciar
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificación por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
   - id: D6
     description: Los endpoints conservan 404, 415, 429, 502 y 503 y la guardia FND-05 revisa escrituras reales
     verification:
       - kind: integration
         ref: apps/backend/tests/test_manga_api.py#test_los_endpoints_de_fuente_no_convierten_errores_tipados_en_500 y test_preferencias_progreso_y_evento_hacen_round_trip_sin_persistir_urls
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificación por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
 
 duration: unknown
 completed: 2026-07-16

@@ -47,10 +47,10 @@ coverage:
     verification:
       - kind: unit
         ref: npm run test:reader --workspace @nyanko/desktop
-        status: passing
+        status: pass
       - kind: manual_procedural
         ref: "prueba de dientes: DECODE_AHEAD=5 pone rojo el test de la propiedad"
-        status: passing
+        status: pass
     human_judgment: false
     rationale: "4/4 verdes. Con DECODE_AHEAD=5 caen 3 tests y sale con 1 ('pagina 1: 6 indices vivos'); revertido limpio."
   - id: D2
@@ -59,19 +59,19 @@ coverage:
     verification:
       - kind: integration
         ref: npm run build --workspace @nyanko/desktop && npm run test:reader-rss --workspace @nyanko/desktop
-        status: failing
+        status: pass
       - kind: manual_procedural
         ref: "prueba de dientes: la medición responde a la ventana (1 página = 153 MB, 5 páginas = 621 MB)"
-        status: passing
-    human_judgment: true
-    rationale: "El harness mide de verdad y tiene dientes, pero el número REPROBADO: 621 MB (pico 691 MB) contra un techo de 500 MB. RD-09 no se cumple."
+        status: pass
+    human_judgment: false
+    rationale: "REPROBABA con 621 MB (pico 691) cuando se escribió este SUMMARY. La causa NO era la ventana (decodeWindow siempre fue correcta) sino CSS: `.reader-page--preload img` llevaba `max-width/max-height: none` y los 4 vecinos se maquetaban a 2000x3000 (03-REVIEW CR-02). Cerrado por el quick 260716-6ba. Medido por el orquestador tras `npm run build`, varias corridas: 136-166 MB (pico 225-256) contra el techo de 500 -> exit 0. MAX_LIVE_PAGES=5 y TECHO_RSS_MB=500 sin tocar: el número baja porque el reader retiene menos, no porque se aflojara el gate."
   - id: D3
     description: la ventana principal y el splash tienen CSP sin relajar las preferencias seguras de Electron
     requirement: RD-09
     verification:
       - kind: unit
         ref: npm run test:csp --workspace @nyanko/desktop
-        status: passing
+        status: pass
       - kind: manual_procedural
         ref: comprobar portadas, páginas locales, playbackSocket, HMR y botones del splash
         status: unknown
@@ -83,7 +83,7 @@ coverage:
     verification:
       - kind: other
         ref: npm run check --workspace @nyanko/desktop
-        status: passing
+        status: pass
     human_judgment: false
     rationale: "tsc --noEmit limpio."
 

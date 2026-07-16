@@ -57,18 +57,18 @@ coverage:
     verification:
       - kind: manual_procedural
         ref: npm run dev y navegar Berserk/Cap 1, Cap 2.cbz, Cap 10
-        status: deferred
-    human_judgment: true
-    rationale: "UAT manual pendiente: requiere una biblioteca local real con manga. tsc verde cubre la firma de tipos; la navegación se valida al cerrar la fase."
+        status: pass
+    human_judgment: false
+    rationale: "UAT manual PASADO por el usuario (2026-07-16) sobre su biblioteca real: navega las raíces, baja por series y abre capítulos. De paso destapó dos bugs, ya cerrados: los títulos con `!` eran ilegibles (CR-01, quick 260716-8fb) y la vista pedía capítulos de manga a las carpetas de anime (`6b4976b`)."
   - id: D3
     description: local-manga está en la sidebar y el hueco del reader sustituye app-shell fuera de la barra lateral
     requirement: RD-01
     verification:
       - kind: manual_procedural
         ref: abrir local-manga y seleccionar un capítulo en la app
-        status: deferred
-    human_judgment: true
-    rationale: "UAT manual pendiente: requiere lanzar la app Electron y navegar. Se valida al cerrar la fase junto con el reader (03-06)."
+        status: pass
+    human_judgment: false
+    rationale: "UAT manual PASADO por el usuario (2026-07-16): abre local-manga desde la sidebar y el reader ocupa la pantalla."
 
 duration: unknown
 completed: 2026-07-16

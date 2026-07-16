@@ -45,8 +45,8 @@ coverage:
       - kind: integration
         ref: apps/backend/tests/test_manga_pages.py#test_sirve_una_pagina_suelta_con_sus_bytes_exactos y test_transmite_un_miembro_cbz_y_cierra_el_archivo
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificacion por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
   - id: D2
     description: La ruta dinamica precede al Mount de /assets y el mount sigue sirviendo ficheros estaticos
     requirement: RD-01
@@ -54,8 +54,8 @@ coverage:
       - kind: integration
         ref: apps/backend/tests/test_manga_pages.py#test_la_ruta_de_paginas_esta_antes_del_mount_de_assets y test_el_mount_de_assets_sigue_sirviendo_ficheros
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificacion por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
   - id: D3
     description: Ocho variantes de traversal y los miembros ZIP ajenos se rechazan sin exponer rutas ni bytes externos
     requirement: RD-01
@@ -63,8 +63,8 @@ coverage:
       - kind: integration
         ref: apps/backend/tests/test_manga_pages.py#test_el_endpoint_rechaza_traversal_sin_filtrar_rutas
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificacion por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
   - id: D4
     description: Las URLs de pagina son relativas y los errores de fuente se traducen a respuestas HTTP tipadas
     requirement: RD-01
@@ -72,8 +72,8 @@ coverage:
       - kind: unit
         ref: apps/backend/tests/test_manga_pages.py#test_la_url_de_pagina_es_relativa_y_codifica_el_id_opaco y test_los_errores_de_pagina_son_tipados_y_no_exponen_paths
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificacion por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
 
 duration: unknown
 completed: 2026-07-16

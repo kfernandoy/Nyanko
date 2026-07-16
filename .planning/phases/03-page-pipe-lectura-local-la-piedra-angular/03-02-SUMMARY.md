@@ -47,8 +47,8 @@ coverage:
       - kind: integration
         ref: apps/backend/tests/test_reader_persistence.py#test_migracion_v8_a_v9_es_aditiva_con_backup_y_recuentos_estables
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificación por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
   - id: D2
     description: Las preferencias de modo se aíslan por serie y aceptan actualizaciones parciales
     requirement: RD-03
@@ -56,8 +56,8 @@ coverage:
       - kind: unit
         ref: apps/backend/tests/test_reader_persistence.py#test_preferencias_se_aislan_por_serie_y_conservan_actualizaciones_parciales
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificación por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
   - id: D3
     description: Doble página y su offset manual persisten sin borrarse al cambiar el modo
     requirement: RD-07
@@ -65,8 +65,8 @@ coverage:
       - kind: unit
         ref: apps/backend/tests/test_reader_persistence.py#test_preferencias_se_aislan_por_serie_y_conservan_actualizaciones_parciales
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificación por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
   - id: D4
     description: El progreso se conserva por capítulo sin duplicar la clave compuesta
     requirement: RD-05
@@ -74,8 +74,8 @@ coverage:
       - kind: unit
         ref: apps/backend/tests/test_reader_persistence.py#test_progreso_se_aisla_por_capitulo_y_actualiza_sin_duplicar
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificación por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
   - id: D5
     description: Los eventos conservan chapter REAL, media_id nulo y progreso decimal
     requirement: RD-06
@@ -83,16 +83,16 @@ coverage:
       - kind: unit
         ref: apps/backend/tests/test_reader_persistence.py#test_evento_de_lectura_conserva_el_capitulo_decimal_y_media_id_nulo
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificación por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
   - id: D6
     description: La guardia FND-05 inspecciona las tablas nuevas tras escrituras reales y rechaza una URL loopback
     verification:
       - kind: integration
         ref: apps/backend/tests/test_reader_persistence.py#test_guardia_rechaza_url_absoluta_en_una_tabla_nueva
         status: pass
-    human_judgment: true
-    rationale: "Pendiente de verificación por el orquestador fuera del sandbox."
+    human_judgment: false
+    rationale: "Cerrado por el orquestador (CODEX-RULES regla 5): el test citado se ejecutó FUERA del sandbox de Codex y pasa. Suite completa 461 passed; los 13 tests citados por 03-02/03/04 re-ejecutados por nombre: 22 passed. El `human_judgment: true` era el marcador de traspaso de Codex («no puedo correrlo»), no criterio humano."
 
 duration: unknown
 completed: 2026-07-16
