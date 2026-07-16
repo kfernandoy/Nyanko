@@ -63,7 +63,7 @@ coverage:
         ref: npm run check --workspace @nyanko/desktop
         status: pass
     human_judgment: false
-    rationale: "UAT manual PASADO por el usuario (2026-07-16): los tres modos, los tres ajustes, doble página y zoom. Destapó 3 defectos de UX, todos cerrados: «alto» no ajustaba (grid rompía la cadena de alturas), saltos de scroll en vertical (915px, `overflow-anchor:none`) y ~92px de hueco en el lomo. Vigilado ahora por `npm run test:reader-fit` (11 casos). NOTA: el paneo y el progreso/reanudar de esta descripción NO se confirmaron uno a uno en la UAT; el progreso lo cubre 03-04 D3 con test de backend."
+    rationale: "UAT manual PASADO por el usuario (2026-07-16): los tres modos, los tres ajustes, doble página y zoom. Destapó 3 defectos de UX, todos cerrados: «alto» no ajustaba (grid rompía la cadena de alturas), saltos de scroll en vertical (915px, `overflow-anchor:none`) y ~92px de hueco en el lomo. Vigilado ahora por `npm run test:reader-fit` (12 casos). RD-05 (reanudar) ERA el hueco que dejó el verifier en `human_needed`: se cerró con WR-02 (el debounce se cancelaba al desmontar sin flush) y ahora tiene gate MEDIDO — cierre dentro de los 500ms y reapertura: sin el flush reabre en la 5 habiendo cerrado en la 7; con él, en la 7."
   - id: D3
     description: El DOM mantiene como máximo cinco imágenes de página y desmonta las restantes
     requirement: RD-09

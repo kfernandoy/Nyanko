@@ -137,15 +137,21 @@ Las fases 7 y 8 llevan `--research-phase` cuando les toque.
 
 Al cablear el engine dejan de ser latentes (ver `02-VERIFICATION.md`):
 
-- **WR-06** — el registry se construye una sola vez en `lifespan`: una carpeta de biblioteca añadida
-  en caliente es invisible para `LocalArchiveSource` hasta reiniciar.
+- ~~**WR-06** — el registry se construye una sola vez en `lifespan`~~ **OBSOLETA** (verificada por el
+  verifier de la 03 y por exploración independiente, 2026-07-16). `add_library_folder` (`main.py:2140`)
+  y `delete_library_folder` (`main.py:2156`) reconstruyen `app.state.source_registry`; son los únicos
+  2 sitios de mutación. Y `_source_engine` (`main.py:1097`) deriva el engine de la IDENTIDAD del
+  registry, así que el caché muere con él. Lo entregó el plan 03-04; la nota simplemente no se borró.
 
 - ~~**WR-03** — el fallback a caché traga `SourceRateLimitError`~~ **CERRADO** (quick 260716-9cd), en el
   mismo commit-set que CR-03. El fallback filtra por `source_error_action(error) == "esperar"` — la
   taxonomía que ya existía, no un `isinstance` nuevo. `SourceParseError` (`actualizar_la_fuente`) sigue
   sirviendo caché.
 
-- **WR-01** — `SourceEngine` no se re-exporta en `sources/__init__.py` (4 líneas).
+- ~~**WR-01** — `SourceEngine` no se re-exporta en `sources/__init__.py`~~ **OBSOLETA**: sí se
+  re-exporta (`sources/__init__.py:11` y en `__all__`). Era deuda de la Fase 2 que el plan 03-01 se
+  comprometió a saldar (H-4) y saldó. OJO: los IDs `WR-0x` se reciclan por fase — el `WR-01` de
+  `03-VERIFICATION.md` es OTRO hallazgo (el `preventDefault()` no-op por rueda pasiva).
 - **WR-08** — los `RateLimitedClient` por fuente nunca se cierran en el shutdown.
 
 ## Performance Metrics
