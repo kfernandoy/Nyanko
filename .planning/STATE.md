@@ -177,7 +177,30 @@ Al cablear el engine dejan de ser latentes (ver `02-VERIFICATION.md`):
 - ~~RD-09 REPROBADO: 621 MB vs techo 500 MB~~ **CERRADO** (quick 260716-6ba, 2026-07-16). Causa raiz: no era la ventana de decodificacion (`decodeWindow` siempre fue correcta), era CSS — `.reader-page--preload img` llevaba `max-width:none; max-height:none` y las reglas de ajuste solo apuntaban a `--visible`, asi que los 4 vecinos se maquetaban a 2000x3000 fuera del lienzo (`left:-100000px` mueve, no saca del layout ni del paint). Ahora paginado monta solo el grupo visible y calienta los vecinos por HTTP sin DOM. Medido: **147-161 MB (pico ~243)** vs techo 500, `test:reader-rss` sale 0. `MAX_LIVE_PAGES`=5 y `TECHO_RSS_MB`=500 SIN TOCAR — el numero baja porque el reader retiene menos, no porque se aflojara el gate.
 - ~~CR-01: los titulos con `!` (`Oh My Goddess!`, `Yotsuba&!`) eran ilegibles~~ **CERRADO** (quick 260716-8fb). `page_bytes()` partia por el PRIMER `!`; ahora la frontera se DERIVA de los datos con un patron `(\.cbr|\.cbz|\.rar|\.zip)!` a `re.IGNORECASE | re.ASCII` (sin `.lower()`: `'İ'.lower()` son DOS caracteres y desplazaba el corte). Test de regresion commiteado EN ROJO antes del arreglo (`ea84237`), verificado: 5 fallan sin el fix, 6 pasan con el. Suite: **452 passed**.
 - ~~CR-03: el cache de capitulos de `SourceEngine` esta MUERTO en produccion~~ **CERRADO** (quick 260716-9cd, 2026-07-16). `_source_engine()` construia un engine nuevo por request; ahora el engine se DERIVA de la identidad del registry al leer y se memoiza en `app.state.source_engine` (mismo patron que `progress.effective_chapter`: los 3 sitios de `build_source_registry` quedan intactos y un rebuild tira el cache por construccion, asi que WR-06 no empeora). **WR-03 se cerro en el MISMO commit-set**: arreglar CR-03 era el instante exacto en que el `except SourceError:` a secas dejaba de ser latente y empezaba a tragarse los 429 — entregarlos por separado habria reproducido a mano el modo de fallo B-1 de 0.2. Tests RED ejecutados, no razonados (`DID NOT RAISE`, `assert 502 == 200`, y el guardian de la costura demostrado a mano: `assert 200 == 429` revirtiendo la guarda). Suite: **455 passed**.
-- PENDIENTE (no bloquea RD-09): UAT manual de los tres modos con un capitulo real — el harness solo cubre paginado. Falta: rtl/ltr pasan pagina y las flechas respetan el sentido; vertical mantiene el scroll continuo sin huecos; doble pagina en rtl muestra DOS paginas.
+### UAT manual (2026-07-16) — 5 hallazgos, ninguno regresion del trabajo de hoy
+
+La fase 03 NO cierra: RD-02 pide los tres modos de lectura y el UAT los encontro rotos.
+
+1. **CBR** — NO ES BUG. Decision de LICENCIA ya escrita en REQUIREMENTS.md «Future Requirements»
+   (clausula de unRAR vs libarchive/archive.dll; pide presupuesto de THIRD-PARTY-NOTICES y «no se
+   cuela dentro de una fase del reader»). RD-01 dice «CBZ / ZIP / carpeta de imagenes». El 415
+   «conviertelo a CBZ» ES el comportamiento especificado. **Reafirmado por el usuario 2026-07-16.**
+2. **Anadir carpeta de manga dispara el escaneo de anime** — hay UNA tabla `library_folders
+   (id, path, recursive)` sin columna de tipo, consumida por `iter_video_files` (anime) Y
+   `build_source_registry` (manga). Decision del usuario: columna `kind` (anime/manga/ambas) +
+   migracion; las existentes quedan como 'ambas'.
+3. **Ajuste «alto» corta la pagina** en paginado LTR/RTL (y en doble pagina). SIN diagnostico: la
+   cadena de alturas cuadra sobre el papel y la hipotesis del `.titlebar + .reader` quedo DESCARTADA
+   (si son hermanos adyacentes). Necesita depuracion en vivo.
+4. **Vertical + ajuste ancho: saltos bruscos al scrollear HACIA ARRIBA.** Diagnostico firme:
+   `.reader-vertical-slot` reserva `min-height:100vh` pero una pagina real a ancho mide ~1800px,
+   asi que el slot crece ~900px al montar el <img>; y `.reader-vertical` lleva `overflow-anchor: none`,
+   que desactiva el anclaje de scroll del navegador que existe justo para compensar eso. Encaja con
+   que sea especifico de ancho (a alto la img mide 100vh = el min-height) y de hacia arriba.
+5. **No se ve la numeracion de pagina** — existe (`ReaderView.tsx:441`, `{paginaActual} / {total}`)
+   pero vive DENTRO del <header> de controles, que se alterna con un clic. Acoplamiento de diseno.
+
+- PENDIENTE: UAT manual de los tres modos con un capitulo real — el harness solo cubre paginado. Falta: rtl/ltr pasan pagina y las flechas respetan el sentido; vertical mantiene el scroll continuo sin huecos; doble pagina en rtl muestra DOS paginas.
 
 ### Quick Tasks Completed
 
