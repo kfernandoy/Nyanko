@@ -169,7 +169,9 @@ def test_sources_endpoint_is_flat_and_handler_does_not_build_registry():
     assert "build_source_registry(" not in handler_source
 
 
-def test_phase_2_does_not_add_source_persistence_columns(tmp_path):
+# El test viejo demostraba que la Fase 2 no persistía identidad de fuente. La Fase 3
+# sí la persiste: lo prohibido es guardar una URL o una ruta, no la identidad opaca.
+def test_source_identity_columns_never_carry_urls_or_paths(tmp_path):
     database = Database(tmp_path / "nyanko.sqlite3")
     database.initialize()
 
@@ -177,19 +179,28 @@ def test_phase_2_does_not_add_source_persistence_columns(tmp_path):
         columns = _columns(connection)
         assert_no_persisted_urls(connection)
 
-    names = {column for _table, column in columns}
-    assert "source_name" not in names
-    assert "source_id" not in names
-    assert "source_url" not in names
-    assert "source_path" not in names
-    assert "source_local" not in names
     assert set(SOURCE_IDENTITY_FIELDS) == {"source_name", "source_id"}
     assert all(
         "url" not in field and "path" not in field and "_local" not in field
         for field in SOURCE_IDENTITY_FIELDS
     )
-    assert "source_name" not in database_module.SCHEMA
-    assert "source_id" not in database_module.SCHEMA
+
+    reader_tables = {"reader_prefs", "reader_progress", "reading_events"}
+    reader_columns = {
+        (table, column) for table, column in columns if table in reader_tables
+    }
+    assert {table for table, _column in reader_columns} == reader_tables
+    assert all(
+        "url" not in column.lower() and "path" not in column.lower()
+        for _table, column in reader_columns
+    )
+
+    for table in reader_tables:
+        definition = database_module.SCHEMA.split(
+            f"CREATE TABLE IF NOT EXISTS {table} (", maxsplit=1
+        )[1].split(");", maxsplit=1)[0]
+        assert "url" not in definition.lower()
+        assert "path" not in definition.lower()
 
 
 def _columns(connection: sqlite3.Connection) -> list[tuple[str, str]]:
