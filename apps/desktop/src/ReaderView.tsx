@@ -438,9 +438,13 @@ export function ReaderView({
             <button type="button" onClick={() => { setZoom(MIN_ZOOM); setPaneo({ x: 0, y: 0 }); }}>{t("reader.zoom.reset")}</button>
           </div>
           <button type="button" onClick={alternarPantallaCompleta}>{t("reader.fullscreen")}</button>
-          <span className="reader-counter">{paginaActual} / {total}</span>
         </header>
       )}
+
+      {/* Fuera del <header>: en que pagina vas es informacion de LECTURA, no un control, y
+          ocultar el chrome para leer a gusto no debe costarte saber donde estas (UAT 03,
+          hallazgo #5). Mismo patron que .reader-notice, que ya vive aqui por lo mismo. */}
+      <span className="reader-counter">{paginaActual} / {total}</span>
 
       {aviso && <p className="reader-notice">{aviso}</p>}
 

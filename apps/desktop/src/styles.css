@@ -401,7 +401,9 @@ button.small { border-radius: 6px; padding: 5px 12px; font-size: 12px; }
 .reader-controls button { padding: 6px 10px; color: #d9deeb; background: #171b27; }
 .reader-title { overflow: hidden; max-width: min(28vw, 360px); text-overflow: ellipsis; white-space: nowrap; }
 .reader-check input { margin: 0; accent-color: var(--accent); }
-.reader-counter { margin-left: auto; color: #cbd1df; font-variant-numeric: tabular-nums; }
+/* Abajo a la izquierda para no chocar con .reader-notice (abajo a la derecha). Discreto y
+   siempre visible: sobrevive al toggle de los controles porque no vive dentro de ellos. */
+.reader-counter { position: absolute; z-index: 24; bottom: 14px; left: 14px; padding: 4px 9px; border-radius: 8px; color: #cbd1df; font-size: 12px; font-variant-numeric: tabular-nums; background: rgba(12, 15, 23, .78); pointer-events: none; }
 .reader-zoom { display: flex; align-items: center; gap: 5px; color: #aeb5c7; font-size: 12px; }
 .reader-zoom button { min-width: 30px; padding-inline: 7px; }
 .reader-notice { position: absolute; z-index: 25; right: 14px; bottom: 14px; max-width: min(520px, calc(100% - 28px)); margin: 0; padding: 9px 12px; border: 1px solid #713444; border-radius: 9px; color: #f0c0ca; background: rgba(50, 24, 33, .94); }
@@ -429,7 +431,14 @@ button.small { border-radius: 6px; padding: 5px 12px; font-size: 12px; }
 .reader-fit-width .reader-page--visible img { width: 100%; height: auto; max-height: none; }
 .reader-fit-height .reader-page--visible img { width: auto; height: 100%; }
 .reader-fit-original .reader-page--visible img { width: auto; height: auto; max-width: none; max-height: none; }
-.reader-vertical { overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; overflow-anchor: none; }
+/* NADA de `overflow-anchor: none` aqui. El anclaje de scroll es la funcion NATIVA del
+   navegador que compensa los cambios de altura por encima del viewport, y este scroller
+   los provoca por diseno: la ventana de decodificacion monta y suelta paginas mientras
+   lees, y a ajuste «ancho» una pagina real (~1635px) mide 915px mas que el `min-height`
+   que su slot reserva vacio (720px). Desactivar el anclaje dejaba ese cambio sin compensar
+   y el ancla pegaba un salto de 915px en cada montaje — medido, en los DOS sentidos (UAT
+   03, hallazgo #4). Lo vigila scripts/reader-fit.mjs. */
+.reader-vertical { overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 .reader-vertical-slot { min-height: 100vh; display: grid; place-items: start center; }
 .reader-page--vertical { width: 100%; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; transform-origin: top center; }
 .reader-page--vertical img { display: block; pointer-events: none; }
@@ -446,7 +455,6 @@ button.small { border-radius: 6px; padding: 5px 12px; font-size: 12px; }
 @media (max-width: 900px) {
   .reader-controls { gap: 6px; }
   .reader-title { width: 100%; max-width: none; }
-  .reader-counter { margin-left: 0; }
 }
 .match-card { padding: 24px; border: 1px solid #252a39; border-radius: 16px; background: var(--surface); }
 .match-card h3 { margin: 0 0 18px; font-size: 16px; }
