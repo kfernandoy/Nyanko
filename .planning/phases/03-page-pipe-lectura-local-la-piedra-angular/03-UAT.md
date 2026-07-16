@@ -1,5 +1,5 @@
 ---
-status: testing
+status: complete
 phase: 03-page-pipe-lectura-local-la-piedra-angular
 source:
   - 03-01-SUMMARY.md
@@ -15,13 +15,11 @@ updated: 2026-07-16
 
 ## Current Test
 
-number: 1
-name: La transicion encadena capitulos y emite UNA fila de reading_events
+number: —
+name: —
 expected: |
-  Al pasar de pagina en la ULTIMA pagina de un capitulo aparece una pantalla de transicion
-  ofreciendo el capitulo siguiente; al continuar, se abre. Y en `reading_events` de la SQLite
-  aparece UNA sola fila para ese capitulo, no varias.
-awaiting: user response
+  UAT COMPLETA: 2/2 pasados, 0 gaps. 31/31 deliverables cubiertos.
+awaiting: nada
 
 ## Tests
 
@@ -32,7 +30,9 @@ expected: |
   Pasar de pagina en la ULTIMA pagina abre la pantalla de transicion con el capitulo
   siguiente; al continuar, se abre ese capitulo. `reading_events` gana UNA fila para el
   capitulo terminado (no dos, aunque vuelvas atras y adelante).
-result: pending
+result: pass
+reported: "las 2 cosas funcionan"
+source: manual
 
 ### 2. La CSP no rompe nada visible (portadas, HMR, splash)
 requirement: RD-09 / Seam G
@@ -65,7 +65,10 @@ Suite completa: **461 passed**. Los 13 tests citados por 03-02/03/04 re-ejecutad
 
 ## Gaps
 
-<!-- Se rellena si algun test falla -->
+Ninguno. Los 2 checkpoints pasaron a la primera.
+
+Los 9 defectos que SI encontro la UAT manual previa (2026-07-16) se cerraron antes de abrir este
+fichero — estan en STATE.md, seccion «UAT manual», con sus commits.
 
 ## Notes
 
