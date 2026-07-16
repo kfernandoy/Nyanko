@@ -775,6 +775,18 @@ async function medirReanudar() {
   // Una pasada mas y cierre inmediato: ESTE es el write que WR-02 tiraba a la basura.
   const contadorAntesDeCerrar = await ejecutarEnRenderer(PASAR_Y_CERRAR_RAPIDO);
   const esperada = Number.parseInt(contadorAntesDeCerrar.split("/")[0].trim(), 10);
+  // Sin esto el caso puede dar VERDE POR ACCIDENTE: si los 120ms no bastan para commitear la
+  // pasada (una maquina mas lenta, un GC inoportuno), `esperada` sigue siendo `asentada`, la
+  // BD YA tiene ese valor de antes, reabre ahi y `ok` sale true sin que el flush haya tenido
+  // nada que salvar. El caso solo mide algo si la pagina de cierre es DISTINTA de la que ya
+  // estaba escrita — si no, no hay perdida posible que observar y el verde no significa nada.
+  if (!Number.isFinite(esperada) || esperada === asentada) {
+    throw new Error(
+      `precondicion de rd-05: la pasada previa al cierre no llego a cambiar de pagina `
+      + `(asentada ${asentada}, al cerrar ${esperada}): el flush no tendria nada que salvar `
+      + "y el caso daria verde sin ejercitarlo",
+    );
+  }
   await esperarCondicion(
     "!document.querySelector('.reader-counter')",
     "el reader no se cerro con Escape",
