@@ -229,6 +229,10 @@ CREATE TABLE IF NOT EXISTS library_folders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     path TEXT NOT NULL UNIQUE,
     recursive INTEGER NOT NULL DEFAULT 1,
+    -- anime / manga / ambas. El vocabulario lo valida LibraryFolderCreate (pydantic)
+    -- en la frontera de confianza; aquí no hay CHECK porque el único escritor es
+    -- add_library_folder. Definición IDÉNTICA a la del _add_column de initialize().
+    kind TEXT NOT NULL DEFAULT 'ambas',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS local_files (
@@ -305,7 +309,7 @@ CREATE TABLE IF NOT EXISTS reading_events (
 );
 """
 
-CANONICAL_SCHEMA_VERSION = 9
+CANONICAL_SCHEMA_VERSION = 10
 # media: alto a propósito — los detalles guardados en local son lo que hace que
 # reabrir/editar una card sea instantáneo (estilo Taiga); son JSON pequeños.
 CACHE_RESOURCE_LIMITS = {"media:": 500, "season:": 24, "discover:": 80}
@@ -378,6 +382,10 @@ class Database:
             # nunca pasó por el reader. Ver docs/specs/progress-model.md.
             self._add_column(connection, "library_entries", "chapter_progress", "REAL")
             self._add_column(connection, "torrent_sources", "kind", "TEXT NOT NULL DEFAULT 'release'")
+            # v10: el tipo de la carpeta. SQLite rellena las filas existentes con el
+            # default, así que esta línea ES la migración completa: las carpetas que ya
+            # hay quedan 'ambas' y siguen sirviendo a los dos mundos, como hoy.
+            self._add_column(connection, "library_folders", "kind", "TEXT NOT NULL DEFAULT 'ambas'")
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_media_titles_normalized "
                 "ON media_titles(normalized_title)"
@@ -753,26 +761,41 @@ class Database:
             return [dict(row) for row in rows]
 
     def get_library_folders(self) -> list[dict]:
+        """Todas las carpetas, del tipo que sean. NO filtra por `kind` a propósito: la
+        lista de Ajustes y el lookup por id tienen que verlas todas. El filtro vive en
+        los dos consumidores (scanner.iter_video_files y LocalArchiveSource._load_roots),
+        así un llamante nuevo lo hereda por construcción en vez de reintroducir el bug."""
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT id, path, recursive FROM library_folders ORDER BY path"
+                "SELECT id, path, recursive, kind FROM library_folders ORDER BY path"
             ).fetchall()
             return [
-                {"id": row["id"], "path": row["path"], "recursive": bool(row["recursive"])}
+                {
+                    "id": row["id"],
+                    "path": row["path"],
+                    "recursive": bool(row["recursive"]),
+                    "kind": row["kind"],
+                }
                 for row in rows
             ]
 
-    def add_library_folder(self, path: str, recursive: bool) -> dict:
+    def add_library_folder(self, path: str, recursive: bool, kind: str = "ambas") -> dict:
         with self.connect() as connection:
             connection.execute(
-                "INSERT INTO library_folders(path, recursive) VALUES (?, ?) "
-                "ON CONFLICT(path) DO UPDATE SET recursive = excluded.recursive",
-                (path, int(recursive)),
+                "INSERT INTO library_folders(path, recursive, kind) VALUES (?, ?, ?) "
+                "ON CONFLICT(path) DO UPDATE SET recursive = excluded.recursive, "
+                "kind = excluded.kind",
+                (path, int(recursive), kind),
             )
             row = connection.execute(
-                "SELECT id, path, recursive FROM library_folders WHERE path = ?", (path,)
+                "SELECT id, path, recursive, kind FROM library_folders WHERE path = ?", (path,)
             ).fetchone()
-            return {"id": row["id"], "path": row["path"], "recursive": bool(row["recursive"])}
+            return {
+                "id": row["id"],
+                "path": row["path"],
+                "recursive": bool(row["recursive"]),
+                "kind": row["kind"],
+            }
 
     def delete_library_folder(self, folder_id: int) -> bool:
         with self.connect() as connection:

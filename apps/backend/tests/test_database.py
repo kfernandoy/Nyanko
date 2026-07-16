@@ -78,7 +78,7 @@ def test_initialize_creates_canonical_provider_schema(monkeypatch):
         "episodes",
         "extension_clients",
     }.issubset(tables)
-    assert version == 9
+    assert version == 10
     assert provider["display_name"] == "AniList"
 
 
@@ -1036,10 +1036,10 @@ def _degrade_to_v7(path: Path) -> None:
     connection.close()
 
 
-def test_canonical_schema_version_is_9():
+def test_canonical_schema_version_is_10():
     from nyanko_api.database import CANONICAL_SCHEMA_VERSION
 
-    assert CANONICAL_SCHEMA_VERSION == 9
+    assert CANONICAL_SCHEMA_VERSION == 10
 
 
 def test_new_database_has_chapter_progress_as_real(monkeypatch):
@@ -1086,13 +1086,13 @@ def test_v7_database_migrates_additively_without_losing_rows(tmp_path):
         assert [row["progress"] for row in rows] == [10, 24]
         assert all(row["chapter_progress"] is None for row in rows)
         version = connection.execute("SELECT MAX(version) AS v FROM schema_migrations").fetchone()["v"]
-        assert version == 9
+        assert version == 10
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     finally:
         connection.close()
 
     # Subir CANONICAL_SCHEMA_VERSION es lo que arma el backup: es el único rollback que hay.
-    backups = list(tmp_path.glob("nyanko.backup-v9-*.sqlite3"))
+    backups = list(tmp_path.glob("nyanko.backup-v10-*.sqlite3"))
     assert len(backups) == 1, f"sin backup pre-migración: {list(tmp_path.iterdir())}"
     backup = sqlite3.connect(backups[0])
     try:

@@ -2134,7 +2134,7 @@ def add_library_folder(
     path = body.path.strip()
     if not path or not os.path.isdir(path):
         raise HTTPException(status_code=422, detail="La carpeta no existe")
-    carpeta = database.add_library_folder(path, body.recursive)
+    carpeta = database.add_library_folder(path, body.recursive, body.kind)
     # WR-06: lifespan construye el registry una vez y LocalArchiveSource congela
     # sus raices. Refrescar solo tras una mutacion evita exigir un reinicio al usuario.
     request.app.state.source_registry = build_source_registry(

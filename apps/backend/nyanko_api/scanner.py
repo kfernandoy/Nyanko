@@ -22,11 +22,17 @@ _SEASON_DIR = re.compile(
 def iter_video_files(folders: list[dict]) -> Iterator[str]:
     """Yield absolute paths of video files across the configured folders.
 
-    Each folder is ``{"path": str, "recursive": bool}``. Missing or unreadable
-    folders are skipped silently — a removed drive shouldn't abort the scan.
+    Each folder is ``{"path": str, "recursive": bool, "kind": str}``. Missing or
+    unreadable folders are skipped silently — a removed drive shouldn't abort the scan.
+
+    Este es el ÚNICO camino al escaneo de anime (el watcher y run_library_scan pasan
+    los dos por aquí), así que el filtro por tipo vive aquí y no en los llamantes: un
+    llamante nuevo lo hereda por construcción. Sin tipo ⇒ ambas, igual que la migración.
     """
     seen: set[str] = set()
     for folder in folders:
+        if (folder.get("kind") or "ambas") not in ("anime", "ambas"):
+            continue
         root = folder.get("path")
         if not root or not os.path.isdir(root):
             continue

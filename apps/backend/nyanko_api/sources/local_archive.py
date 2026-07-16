@@ -289,9 +289,15 @@ class LocalArchiveSource:
         return metadata
 
     def _load_roots(self, library_folders: Iterable[Mapping[str, Any] | str]) -> dict[str, Path]:
+        """Único camino a las raíces de manga (los 3 build_source_registry pasan por
+        aquí), así que el filtro por tipo vive aquí y no en los llamantes. Sin tipo ⇒
+        ambas — mismo criterio que la migración; una carpeta que llega como `str` no
+        lleva tipo y se acepta."""
         roots: dict[str, Path] = {}
         for index, folder in enumerate(library_folders):
             if isinstance(folder, Mapping):
+                if (folder.get("kind") or "ambas") not in ("manga", "ambas"):
+                    continue
                 raw_path = folder.get("path")
                 raw_key = folder.get("id", index)
             else:

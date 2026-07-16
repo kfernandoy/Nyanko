@@ -106,11 +106,16 @@ class LibraryFolder(BaseModel):
     id: int
     path: str
     recursive: bool
+    kind: str
 
 
 class LibraryFolderCreate(BaseModel):
     path: str
     recursive: bool = True
+    # El Literal da el 422 gratis en la frontera de confianza; el default mantiene
+    # compatible al cliente que no mande el campo (y falla a 'ambas', que es el
+    # comportamiento de hoy, no a invisible-en-silencio).
+    kind: Literal["anime", "manga", "ambas"] = "ambas"
 
 
 class ScanSummary(BaseModel):

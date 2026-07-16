@@ -177,10 +177,10 @@ def test_migracion_v8_a_v9_es_aditiva_con_backup_y_recuentos_estables(tmp_path):
         assert set(READER_TABLES) <= tables
         assert _row_counts(connection) == counts_before
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-        assert connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 9
+        assert connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 10
         assert_no_persisted_urls(connection)
 
-    backups = list(tmp_path.glob("nyanko.backup-v9-*.sqlite3"))
+    backups = list(tmp_path.glob("nyanko.backup-v10-*.sqlite3"))
     assert len(backups) == 1
     with sqlite3.connect(backups[0]) as backup:
         backup_tables = {
