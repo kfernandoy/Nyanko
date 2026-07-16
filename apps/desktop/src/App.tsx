@@ -14,6 +14,7 @@ import { DiscoveryView } from "./DiscoveryView";
 import { TorrentsView } from "./TorrentsView";
 import { LocalLibraryView } from "./LocalLibraryView";
 import { MangaLibraryView } from "./MangaLibraryView";
+import { ReaderView } from "./ReaderView";
 import type {
   AccountUpdateResult,
   ActivityItem,
@@ -1157,7 +1158,13 @@ export default function App() {
     {isNative && <Titlebar />}
     {/* El ReaderView se monta aquí, fuera de app-shell: ocupa toda la pantalla y
         la barra lateral no debe existir durante la lectura. */}
-    {readerChapter ? null : (
+    {readerChapter ? (
+      <ReaderView
+        chapter={readerChapter}
+        onClose={() => setReaderChapter(null)}
+        onChapterChange={setReaderChapter}
+      />
+    ) : (
     <div className={`app-shell${isNative ? " with-titlebar" : ""}`}>
       <aside className="sidebar">
         <div className="brand"><KittenLogo /><strong>Nyanko</strong></div>
