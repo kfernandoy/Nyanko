@@ -527,3 +527,59 @@ def _network_imports_for_source(source: Source) -> set[str]:
 def _workdir(name: str) -> Iterator[Path]:
     with tempfile.TemporaryDirectory(prefix=f"nyanko-{name}-") as path:
         yield Path(path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("capitulo_relativo", "nombre_pagina", "es_archivo"),
+    [
+        pytest.param(
+            "Oh My Goddess!/Cap 1", "001.jpg", False, id="regresion-bang-en-la-serie"
+        ),
+        pytest.param(
+            "Bakuman/Cap 1!", "001.jpg", False, id="regresion-bang-en-el-capitulo"
+        ),
+        pytest.param(
+            "Shirobako/Cap 1", "001!.jpg", False, id="regresion-bang-en-la-pagina"
+        ),
+        pytest.param(
+            "Oh My Goddess!/Cap 2.cbz",
+            "1.jpg",
+            True,
+            id="regresion-bang-en-la-ruta-del-cbz",
+        ),
+        pytest.param(
+            "Yotsuba&!/Cap 3.CBZ",
+            "1.jpg",
+            True,
+            id="regresion-extension-en-mayusculas",
+        ),
+    ],
+)
+async def test_regresion_el_bang_de_un_nombre_no_es_frontera_de_miembro(
+    tmp_path, capitulo_relativo, nombre_pagina, es_archivo
+):
+    """CR-01: el `!` solo delimita el miembro DESPUES de una extension de archivo.
+
+    En un titulo (`Yotsuba&!`, `Bakuman!`, `Oh My Goddess!`) es un caracter legal y
+    corriente: partir por el PRIMER `!` deja cada pagina de esas series en 404.
+    """
+    esperado = f"bytes de {capitulo_relativo}/{nombre_pagina}".encode()
+    capitulo_path = tmp_path / capitulo_relativo
+    if es_archivo:
+        capitulo_path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(capitulo_path, "w") as archive:
+            archive.writestr(nombre_pagina, esperado)
+    else:
+        capitulo_path.mkdir(parents=True, exist_ok=True)
+        (capitulo_path / nombre_pagina).write_bytes(esperado)
+    source = LocalArchiveSource(_Fetcher(), [{"id": "0", "path": str(tmp_path)}])
+
+    # El id lo produce pages(): construirlo a mano probaria el parser contra si mismo, y
+    # el bug es justo que productor y consumidor discrepan sobre donde esta la frontera.
+    page = (await source.pages(f"0:{capitulo_relativo}"))[0]
+    content = await source.page_bytes(page)
+
+    # Comparar los BYTES, no solo "no lanza": un parseo mal hecho sirve otro fichero.
+    obtenido = b"".join(content.chunks) if es_archivo else content.path.read_bytes()
+    assert obtenido == esperado
