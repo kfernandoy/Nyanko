@@ -28,7 +28,7 @@ Detalle completo (goals, success criteria, waves): [milestones/v0.2-ROADMAP.md](
 
 - [x] **Phase 1: Fundaciones — limitador, esquema y modelo de progreso** - Nada hace una ráfaga ni escribe una fila hasta que el limitador limita de verdad y el modelo de progreso está decidido y migrado contra la BD real (completed 2026-07-13)
 - [x] **Phase 2: Motor de fuentes — contrato, presupuesto y taxonomía de errores** - Existe un contrato de fuente versionado contra el que construir, con el presupuesto de peticiones en el motor y no en sus llamadores (completed 2026-07-14)
-- [ ] **Phase 3: Page pipe + lectura local — la piedra angular** - Nyanko lee la colección de CBZ del disco: sin red, sin rate limits, sin scraping en la superficie de depuración
+- [x] **Phase 3: Page pipe + lectura local — la piedra angular** - Nyanko lee la colección de CBZ del disco: sin red, sin rate limits, sin scraping en la superficie de depuración (completed 2026-07-16)
 - [ ] **Phase 4: Identidad y vínculo — fuente ↔ entrada del tracker** - El vínculo es explícito, almacenado y confirmado por el usuario; el sync podrá asumirlo o negarse
 - [ ] **Phase 5: Sync de progreso — la tesis del milestone** - Última página → el progreso sube solo al proveedor, con confirmar/deshacer y en el timeline
 - [ ] **Phase 6: Distribución de extensiones — repo, instalación y trust gate** - La app se instala sin catálogo; el usuario pega la URL de un repo y ninguna extensión se ejecuta hasta que acepta su huella
@@ -139,7 +139,7 @@ se enchufa a un pipe que ya corre.
 
 **Research pass**: No. Todo tiene precedente en el árbol: el mount `/assets`, `normalizeAssetUrls` (`api.ts:202`), `zipfile`/`pathlib`/`re` de stdlib. No hay nada que aprender, solo precedente que seguir.
 
-**Plans**: 6/7 plans executed
+**Plans**: 7/7 plans complete
 
 **Wave 1**
 
@@ -164,7 +164,7 @@ se enchufa a un pipe que ya corre.
 
 **Wave 6** *(blocked on Wave 5)*
 
-- [ ] 03-07-PLAN.md — RD-09 **medido** (RSS < 500 MB con 200 páginas reales) + la CSP corregida (Seam G) — RD-09 — wave 6
+- [x] 03-07-PLAN.md — RD-09 **medido** (RSS < 500 MB con 200 páginas reales) + la CSP corregida (Seam G) — RD-09 — wave 6
 
 **UI hint**: yes
 
@@ -407,7 +407,7 @@ backend, el cliente HTTP, la verificación sha256, el gate de seguridad y una UI
 |-------|-----------|----------------|--------|-----------|
 | 1. Electron shell scaffold + data-dir lock | v0.2 | 4/4 | Complete    | 2026-07-13 |
 | 2. Main core — sidecar lifecycle + logging | v0.2 | 3/3 | Complete   | 2026-07-14 |
-| 3. Native boundary + Tauri removal | v0.2 | 6/7 | In Progress|  |
+| 3. Native boundary + Tauri removal | v0.2 | 7/7 | Complete   | 2026-07-16 |
 | 4. Native feature parity | v0.2 | 3/3 | Complete | 2026-07-11 |
 | 5. Packaging + auto-update | v0.2 | 6/6 | Complete | 2026-07-12 |
 | 1. Fundaciones — limitador, esquema y modelo de progreso | v0.3 | 0/? | Not started | - |

@@ -2,19 +2,17 @@
 gsd_state_version: 1.0
 milestone: v0.3
 milestone_name: «Nyanko lee manga»
-current_phase: 03
-current_phase_name: page-pipe-lectura-local-la-piedra-angular
 status: ready_to_execute
 stopped_at: Fase 03 planificada y verificada — lista para ejecutar
-last_updated: "2026-07-14T04:49:03.451Z"
-last_activity: 2026-07-14
-last_activity_desc: Fase 03 planificada (7 planes) y verificada por el plan-checker
+last_updated: "2026-07-16T08:11:40.970Z"
 progress:
   total_phases: 9
-  completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
-  percent: 22
+  completed_phases: 3
+  total_plans: 14
+  completed_plans: 14
+  percent: 33
+current_phase: 03
+current_phase_name: page-pipe-lectura-local-la-piedra-angular
 ---
 
 # Project State
@@ -26,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-07-13)
 **Core value:** Nyanko deja de ser solo un tracker y pasa a ser **donde consumes**: el manga se lee
 dentro de la app, y el tracking ocurre solo — el mismo trato que la detección de reproducción ya le da
 al anime.
-**Current focus:** Phase 03 — page pipe + lectura local (la piedra angular)
+**Current focus:** Phase 03 — page-pipe-lectura-local-la-piedra-angular
 
 ## Current Position
 
@@ -116,7 +114,7 @@ cuenta vinculada, iconos de proveedores). No bloquean la 0.3.
 
 **Resume file:** .planning/phases/03-page-pipe-lectura-local-la-piedra-angular/03-CONTEXT.md
 
-**Last session:** 2026-07-14T04:49:03.435Z
+**Last session:** 2026-07-16T08:11:32.645Z
 **Stopped at:** Fase 03 planificada (7 planes) y verificada por el plan-checker. Lista para ejecutar.
 
 Fases 1 y 2 hechas y con sus gates en verde. Siguiente: `/gsd-execute-phase 3`.
@@ -161,3 +159,7 @@ Al cablear el engine dejan de ser latentes (ver `02-VERIFICATION.md`):
 - [Phase 02]: El presupuesto se concede de UNO EN UNO y en la SALIDA (`_grant_slot` desde `_release_slot`), no drenando el heap — repartir el heap entero hacía que cada waiter ya despachado fuera dueño de su hueco, así que la prioridad de lectura solo reordenaba dentro de la ventana de 1 ms: cosmética justo en el caso real (descargas en curso + lectura interactiva después). Tenía test verde encima; el test nuevo falla contra el dispatcher viejo
 - [Phase 02]: Un mecanismo con kwarg + heap + test verde puede no hacer NADA — la lección de Seam F: el verifier lo pilló ejecutando el limitador, no leyendo el review. Los tests de ritmo se escriben esperando a que algo haya SALIDO de verdad, no metiendo todo en la misma ráfaga
 - [Phase 1]: FND-05: la guardia de URLs persistidas tiene dos capas — la lista blanca exime del prefijo http, pero NADA exime de guardar una URL al propio sidecar (//127.0.0.1, //localhost, //[::1]), esté donde esté dentro del valor
+
+### Blockers
+
+- RD-09 REPROBADO con evidencia medida: 621 MB (pico 691 MB) vs techo 500 MB con la ventana +-2 de D-07. Con ventana=1 el mismo harness mide 153 MB: la medicion es real y responde a la ventana. Prohibido relajar ventana/techo. Decidir: arreglar retencion del reader o recalibrar el techo. Gate: npm run test:reader-rss
