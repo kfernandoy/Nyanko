@@ -15,6 +15,7 @@
     "test:sidecar": "node --import tsx --test electron/main/sidecar.test.ts",
     "test:native": "node --import tsx --test src/native.test.ts",
     "test:reader": "node --import tsx --test src/readerWindow.test.ts",
+    "test:reader-rss": "electron scripts/reader-rss.mjs",
     "test:prefs": "node --import tsx --test electron/main/window-prefs.test.ts",
     "test:publish": "node --test scripts/publish-bridge.test.mjs"
   },
