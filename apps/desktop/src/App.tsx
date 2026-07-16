@@ -13,6 +13,7 @@ import { PlaybackHistoryView } from "./PlaybackHistoryView";
 import { DiscoveryView } from "./DiscoveryView";
 import { TorrentsView } from "./TorrentsView";
 import { LocalLibraryView } from "./LocalLibraryView";
+import { MangaLibraryView } from "./MangaLibraryView";
 import type {
   AccountUpdateResult,
   ActivityItem,
@@ -25,6 +26,7 @@ import type {
   Health,
   LibrarySearchResponse,
   LocalSeries,
+  MangaChapter,
   MediaDetails,
   MediaEntryUpdate,
   MediaItem,
@@ -43,7 +45,7 @@ import type {
 } from "./types";
 
 type Filter = "ALL" | "CURRENT" | "PLANNING" | "COMPLETED" | "PAUSED" | "DROPPED";
-type View = "library" | "manga" | "now-playing" | "history" | "activity" | "seasons" | "statistics" | "discovery" | "torrents" | "local-library";
+type View = "library" | "manga" | "local-manga" | "now-playing" | "history" | "activity" | "seasons" | "statistics" | "discovery" | "torrents" | "local-library";
 type CacheableView = "library" | "activity" | "seasons" | "statistics" | "details";
 type Season = "WINTER" | "SPRING" | "SUMMER" | "FALL";
 type MediaType = "ANIME" | "MANGA";
@@ -179,9 +181,10 @@ export default function App() {
   // #<vista> en la URL abre esa pestaña directamente (deep-link / depuración)
   const [view, setView] = useState<View>(() => {
     const requested = window.location.hash.slice(1) as View;
-    const views: View[] = ["library", "manga", "now-playing", "history", "activity", "seasons", "statistics", "discovery", "torrents", "local-library"];
+    const views: View[] = ["library", "manga", "local-manga", "now-playing", "history", "activity", "seasons", "statistics", "discovery", "torrents", "local-library"];
     return views.includes(requested) ? requested : "library";
   });
+  const [readerChapter, setReaderChapter] = useState<MangaChapter | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(() => window.location.hash.slice(1) === "settings");
   const [season, setSeason] = useState(currentAnimeSeason);
   const [filter, setFilter] = useState<Filter>("CURRENT");
@@ -1152,6 +1155,9 @@ export default function App() {
   return (
     <>
     {isNative && <Titlebar />}
+    {/* El ReaderView se monta aquí, fuera de app-shell: ocupa toda la pantalla y
+        la barra lateral no debe existir durante la lectura. */}
+    {readerChapter ? null : (
     <div className={`app-shell${isNative ? " with-titlebar" : ""}`}>
       <aside className="sidebar">
         <div className="brand"><KittenLogo /><strong>Nyanko</strong></div>
@@ -1159,6 +1165,7 @@ export default function App() {
           {([
             "library",
             ...(capabilities.manga      ? ["manga"]    : []),
+            "local-manga",
             "now-playing",
             "history",
             ...(capabilities.activity   ? ["activity"] : []),
@@ -1235,7 +1242,7 @@ export default function App() {
         ) : view === "library" ? (
           <LibraryView items={media} filter={filter} query={query} loading={loading} setFilter={setFilter} setQuery={setQuery} onProgress={quickProgress} onContext={(event, item) => openMenu(event, libraryItemMenu(item, "ANIME"))} onScore={(event, item) => openMenu(event, scoreMenuItems(item, "ANIME"))} onSelect={(item) => void openDetails(item.id, "ANIME", item.provider && item.account_alias ? { provider: item.provider, alias: item.account_alias } : activeAccount, item.canonical_id, item)} />
         ) : view === "manga" ? (
-          <MangaLibraryView items={manga} loading={sectionLoading && !mangaLoaded} focusFilter={mangaFocusFilter} onContext={(event, item) => openMenu(event, libraryItemMenu(item, "MANGA"))} onScore={(event, item) => openMenu(event, scoreMenuItems(item, "MANGA"))} onSelect={(item) => void openDetails(item.id, "MANGA", item.provider && item.account_alias ? { provider: item.provider, alias: item.account_alias } : activeAccount, item.canonical_id, item)} onProgress={quickProgressManga} />
+          <TrackedMangaLibraryView items={manga} loading={sectionLoading && !mangaLoaded} focusFilter={mangaFocusFilter} onContext={(event, item) => openMenu(event, libraryItemMenu(item, "MANGA"))} onScore={(event, item) => openMenu(event, scoreMenuItems(item, "MANGA"))} onSelect={(item) => void openDetails(item.id, "MANGA", item.provider && item.account_alias ? { provider: item.provider, alias: item.account_alias } : activeAccount, item.canonical_id, item)} onProgress={quickProgressManga} />
         ) : view === "now-playing" ? (
           <NowPlayingView candidate={candidate} match={match} prefs={playbackPrefs} onIgnore={() => void ignorePlayback()} onUndo={() => void undoPlayback()} onSelect={openDetails} onCorrected={async (next) => { setMatch(next); if (next.match) { await confirmMatch(next); } }} onConfirmEpisode={(m, ep) => confirmMatch(m, ep)} onSeeMore={() => setView("local-library")} />
         ) : view === "history" ? (
@@ -1259,6 +1266,8 @@ export default function App() {
           />
         ) : view === "torrents" ? (
           <TorrentsView />
+        ) : view === "local-manga" ? (
+          <MangaLibraryView onOpenChapter={setReaderChapter} />
         ) : view === "local-library" ? (
           <LocalLibraryView onBack={() => setView("now-playing")} onSelect={(s) => void openDetails(s.external_id!, "ANIME", s.provider && s.account_alias ? { provider: s.provider, alias: s.account_alias } : activeAccount, s.media_id)} />
         ) : sectionLoading ? (
@@ -1296,6 +1305,7 @@ export default function App() {
       {detailLoading && <div className="modal-backdrop"><div className="modal-loading"><div className="spinner" role="status" aria-label={t("common.loadingInfo")} /></div></div>}
       {details && <DetailsModal key={`${details.id}-${details.list_entry?.id ?? "preview"}-${details.score_format}`} details={details} canonicalId={detailCanonicalId} mediaType={details.media_type === "MANGA" ? "MANGA" : "ANIME"} detailAccount={detailAccount} onClose={closeDetails} onChanged={handleDetailsChanged} onSelect={(id, type) => { closeDetails(); void openDetails(id, type); }} />}
     </div>
+    )}
     </>
   );
 }
@@ -1729,6 +1739,7 @@ function NavIcon({ view }: { view: string }) {
   const shapes: Record<string, React.ReactNode> = {
     library: <><rect x="2" y="7" width="20" height="15" rx="2" /><polyline points="17 2 12 7 7 2" /></>,
     manga: <><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></>,
+    "local-manga": <><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></>,
     "now-playing": <><circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16 10 8" /></>,
     history: <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
     activity: <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />,
@@ -1948,7 +1959,7 @@ function MediaListRow({ item, mediaType = "ANIME", onSelect, onProgress, onConte
   );
 }
 
-function MangaLibraryView({ items, loading, focusFilter, onSelect, onProgress, onContext, onScore }: {
+function TrackedMangaLibraryView({ items, loading, focusFilter, onSelect, onProgress, onContext, onScore }: {
   items: MediaItem[]; loading: boolean; focusFilter: Filter; onSelect: (item: MediaItem) => void;
   onProgress?: (item: MediaItem, nextProgress: number) => Promise<void>;
   onContext?: (event: React.MouseEvent, item: MediaItem) => void;

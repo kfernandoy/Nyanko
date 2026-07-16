@@ -318,6 +318,36 @@ export interface LocalSeries {
   next_path: string | null;
 }
 
+export type ReaderMode = "rtl" | "ltr" | "vertical";
+
+export interface MangaChapter {
+  source_id: string;
+  title: string;
+  series_id: string;
+  number: number | null;
+  is_chapter: boolean;
+}
+
+export interface MangaPage {
+  index: number;
+  filename: string;
+  // Llega relativa del sidecar y normalizeAssetUrls la resuelve con el puerto vivo.
+  // No se compone ni se guarda: una URL con el puerto del sidecar termina caducando.
+  url: string;
+}
+
+export interface ReaderPrefs {
+  mode: ReaderMode;
+  fit: "width" | "height" | "original" | null;
+  double_page: boolean;
+  double_page_offset: number;
+}
+
+export interface ReaderProgress {
+  page: number;
+  updated_at: string | null;
+}
+
 export interface PendingLocalItem {
   media_id: number;
   external_id: number;

@@ -369,6 +369,22 @@ button.small { border-radius: 6px; padding: 5px 12px; font-size: 12px; }
 .local-library button.small.local-assoc-unlink:hover:not(:disabled) { border-color: #a04a5e; color: #f6c8d2; }
 .local-assoc-status { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 12px; }
 .local-assoc-status select { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; color: var(--text-bright); background: var(--surface-2); }
+.manga-library { display: grid; gap: 18px; }
+.manga-library-header { justify-content: flex-start; align-items: center; gap: 14px; margin: 0; }
+.manga-library-back { flex: none; }
+.manga-library-breadcrumb { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.manga-library-breadcrumb span { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.manga-library-breadcrumb i { color: var(--text-mute); font-style: normal; }
+.manga-library-breadcrumb button { overflow: hidden; padding: 5px 8px; border-color: transparent; color: var(--text-dim); text-overflow: ellipsis; white-space: nowrap; background: transparent; }
+.manga-library-breadcrumb button[aria-current="page"] { color: var(--text-bright); }
+.manga-library-list { display: grid; gap: 8px; }
+.manga-library-item { display: grid; grid-template-columns: minmax(0, 110px) minmax(0, 1fr) auto; align-items: center; gap: 14px; width: 100%; padding: 13px 16px; text-align: left; background: var(--surface); }
+.manga-library-item:hover { background: var(--hover); }
+.manga-library-number { color: var(--accent); font-size: 12px; font-variant-numeric: tabular-nums; }
+.manga-library-title { overflow: hidden; color: var(--text-bright); text-overflow: ellipsis; white-space: nowrap; }
+.manga-library-chevron { color: var(--text-dim); font-size: 22px; line-height: 1; }
+.manga-library-state { min-height: 220px; display: grid; place-content: center; margin: 0; color: var(--text-dim); text-align: center; }
+.manga-library-error { color: #e7a9b5; }
 .match-card { padding: 24px; border: 1px solid #252a39; border-radius: 16px; background: var(--surface); }
 .match-card h3 { margin: 0 0 18px; font-size: 16px; }
 .match-card p { color: var(--text-dim); }

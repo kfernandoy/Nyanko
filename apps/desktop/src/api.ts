@@ -40,6 +40,10 @@ import type {
   TorrentSettings,
   TorrentDownloadResponse,
   LocalSeries,
+  MangaChapter,
+  MangaPage,
+  ReaderPrefs,
+  ReaderProgress,
 } from "./types";
 
 const DEFAULT_API_URL = "http://127.0.0.1:8765";
@@ -312,6 +316,13 @@ export const api = {
   pendingLocal: () => request<PendingLocalItem[]>("/api/library/pending-local"),
   backfillStatus: () => request<{ active: boolean; done: number; total: number }>("/api/library/backfill"),
   getLocalLibrary: () => request<LocalSeries[]>("/api/library/local"),
+  mangaChapters: (sourceName: string, seriesId: string) => request<MangaChapter[]>(`/api/manga/chapters?source=${encodeURIComponent(sourceName)}&series_id=${encodeURIComponent(seriesId)}`),
+  mangaPages: (sourceName: string, chapterId: string) => request<MangaPage[]>(`/api/manga/pages?source=${encodeURIComponent(sourceName)}&chapter_id=${encodeURIComponent(chapterId)}`),
+  readerPrefs: (sourceName: string, seriesId: string) => request<ReaderPrefs | null>(`/api/manga/prefs?source=${encodeURIComponent(sourceName)}&series_id=${encodeURIComponent(seriesId)}`),
+  setReaderPrefs: (sourceName: string, seriesId: string, prefs: Partial<ReaderPrefs>) => request<ReaderPrefs>(`/api/manga/prefs?source=${encodeURIComponent(sourceName)}&series_id=${encodeURIComponent(seriesId)}`, { method: "PUT", body: JSON.stringify(prefs) }),
+  readerProgress: (sourceName: string, chapterId: string) => request<ReaderProgress | null>(`/api/manga/progress?source=${encodeURIComponent(sourceName)}&chapter_id=${encodeURIComponent(chapterId)}`),
+  setReaderProgress: (sourceName: string, chapterId: string, page: number) => request<void>(`/api/manga/progress?source=${encodeURIComponent(sourceName)}&chapter_id=${encodeURIComponent(chapterId)}`, { method: "PUT", body: JSON.stringify({ page }) }),
+  createReadingEvent: (sourceName: string, seriesId: string, chapterId: string, chapter: number | null) => request<{ id: number }>(`/api/manga/reading-events?source=${encodeURIComponent(sourceName)}&series_id=${encodeURIComponent(seriesId)}&chapter_id=${encodeURIComponent(chapterId)}`, { method: "POST", body: JSON.stringify({ chapter }) }),
   associateLocal: (body: { title: string; from_media_id?: number | null; external_id?: number | null; status?: string | null; media?: SearchResult | null }) =>
     request<void>(withAccount("/api/library/local/associate"), { method: "POST", body: JSON.stringify(body) }),
   getScanSettings: () => request<{ scan_on_startup: boolean; watch_folders: boolean }>("/api/library/scan-settings"),
