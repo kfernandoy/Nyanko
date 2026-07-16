@@ -31,7 +31,12 @@ const python = process.platform === "win32"
   ? join(backendDir, ".venv", "Scripts", "python.exe")
   : join(backendDir, ".venv", "bin", "python");
 
-const TOTAL_PAGINAS = 4;
+// NO BAJAR DE 6. `decodeWindow` devuelve TODAS las paginas cuando el total no supera
+// `MAX_LIVE_PAGES` (5), asi que con 4 o 5 paginas no se monta ni se desmonta NADA nunca y
+// los casos de vertical medirian un bug estructuralmente imposible: saldrian verdes sin
+// ejercitar una sola linea de la ventana de decodificacion. El numero tiene que dejar
+// paginas FUERA de la ventana para que haya montaje y desmontaje que observar.
+const TOTAL_PAGINAS = 12;
 const ANCHO_PAGINA = 2000;
 const ALTO_PAGINA = 3000;
 const TIMEOUT_SIDECAR_MS = 30_000;
@@ -39,6 +44,20 @@ const TIMEOUT_RENDERER_MS = 60_000;
 // Redondeos subpixel del layout: 1px de margen es holgado para un rect y estrecho
 // frente al fallo que vigila (una pagina de 3000px dentro de un stage de ~686px).
 const TOLERANCIA_PX = 1;
+
+// La pagina desde la que se ancla el scroll vertical: con la ventana en 6..10 quedan
+// paginas sin montar por ARRIBA (5) y por ABAJO (11), que es la unica forma de provocar
+// un montaje en cada sentido.
+const PAGINA_ANCLA = 8;
+// El scroll se da a pasos y no de un salto: 8 x 300px = 2400px recorre una pagina entera a
+// ajuste ancho (~1635px) y deja atras la frontera de la ventana de decodificacion, pero
+// pasando por todos los estados intermedios en vez de teletransportarse por encima de ellos.
+const PASO_SCROLL_PX = 300;
+const PASOS_SCROLL = 8;
+// Un scrollTop es fraccional y el navegador lo cuantiza al pintar, asi que acumula mas
+// redondeo que un rect estatico y 1px (TOLERANCIA_PX) se queda corto. 2px sigue estando
+// dos ordenes de magnitud por debajo del fallo que vigila (~930px de salto).
+const TOLERANCIA_SCROLL_PX = 2;
 
 // Sin este listener vacio, cerrar la ultima ventana termina la app CON CODIGO 0 y ese
 // quit(0) gana la carrera contra app.exit(codigoSalida) de limpiar(). El harness de
@@ -494,6 +513,185 @@ async function recorrerAjustes() {
   return todoOk;
 }
 
+// --- Vertical: montar una pagina no puede mover lo que estas mirando (UAT 03, #4) ---
+
+async function ponerModoVertical() {
+  await ejecutarEnRenderer(`(${CAMBIAR_SELECT})('vertical', 'vertical'); true`);
+  // En vertical NO existe `.reader-pages`: el scroll continuo cuelga directo del stage,
+  // asi que las esperas del paginado (que miran `.reader-pages`) no valen aqui.
+  await esperarCondicion(
+    "Boolean(document.querySelector('.reader-stage.reader-vertical'))",
+    "el modo vertical no se aplico",
+  );
+}
+
+async function ponerAjusteVertical(ajuste) {
+  await ejecutarEnRenderer(`(${CAMBIAR_SELECT})('original', ${JSON.stringify(ajuste)}); true`);
+  await esperarCondicion(
+    `Boolean(document.querySelector('.reader-vertical.reader-fit-${ajuste}'))`,
+    `el ajuste ${ajuste} no se aplico en vertical`,
+  );
+}
+
+// «La pagina N esta montada Y CARGADA». Exigir la carga no es celo: una <img loading="lazy">
+// recien montada mide 0 de alto, o sea que su slot AUN no ha crecido y el salto que se
+// vigila todavia no ha ocurrido. Medir ahi seria declarar sano un layout a medias.
+function paginaCargada(indice) {
+  return `(() => {
+    const img = document.querySelector('[data-reader-page="${indice}"] img');
+    return Boolean(img && img.complete && img.naturalHeight === ${ALTO_PAGINA});
+  })()`;
+}
+
+const paginaMontada = (indice) => `Boolean(document.querySelector('[data-reader-page="${indice}"] img'))`;
+
+// La ventana de decodificacion asentada alrededor de `pagina`: el ancla cargada (esta a la
+// vista, asi que `loading="lazy"` no la retiene) y los vecinos de FUERA de la ventana sin
+// montar. Es la precondicion del caso: sin paginas fuera de la ventana no hay montaje que
+// provocar y no se mide nada. A los extremos vivos (+-2) NO se les exige carga: quedan lejos
+// del viewport y lazy puede retenerlos legitimamente — el sujeto de la medicion es lo que
+// pasa ARRIBA del ancla, y eso se comprueba por sentido en medirSaltoVertical.
+function ventanaAsentadaEn(pagina) {
+  return `${paginaCargada(pagina)}
+    && !${paginaMontada(pagina - 3)}
+    && !${paginaMontada(pagina + 3)}`;
+}
+
+// Se lee la posicion del ancla EN EL VIEWPORT, y no `scrollTop` a secas, a proposito: asi la
+// comprobacion es agnostica del arreglo (pasa si el slot reserva bien su altura Y pasa si el
+// navegador ancla el scroll compensando scrollTop) y lo que congela es lo que el usuario ve.
+async function medirVertical(pagina) {
+  const medicion = await ejecutarEnRenderer(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => {
+    const raiz = document.querySelector('.reader-vertical');
+    const ancla = raiz && raiz.querySelector('[data-reader-page="${pagina}"]');
+    if (!raiz || !ancla) { resolve(null); return; }
+    const alto = (elemento) => elemento ? Number(elemento.getBoundingClientRect().height.toFixed(2)) : null;
+    const slots = [...raiz.querySelectorAll('[data-reader-page]')];
+    resolve({
+      top: Number((ancla.getBoundingClientRect().top - raiz.getBoundingClientRect().top).toFixed(2)),
+      scrollTop: Number(raiz.scrollTop.toFixed(2)),
+      scrollport: alto(raiz),
+      altoAncla: alto(ancla),
+      altoVacio: alto(slots.find((slot) => !slot.querySelector('img'))),
+      montadas: slots.filter((slot) => slot.querySelector('img')).map((slot) => Number(slot.dataset.readerPage)),
+      cargadas: slots
+        .filter((slot) => {
+          const img = slot.querySelector('img');
+          return img && img.complete && img.naturalHeight > 0;
+        })
+        .map((slot) => Number(slot.dataset.readerPage)),
+      contador: (document.querySelector('.reader-counter')?.textContent ?? '').trim(),
+    });
+  })));`);
+  if (!medicion) throw new Error(`no se encontro el scrollport vertical o el slot de la pagina ${pagina}`);
+  return medicion;
+}
+
+// El propio bug impide anclar de un solo tiro: al asentarse la ventana, los slots de arriba
+// cambian de alto y se llevan el ancla con ellos. Se insiste hasta que la ventana ES la de la
+// pagina pedida Y el ancla esta de verdad pegada al borde superior del scrollport.
+async function anclarEnPagina(pagina) {
+  let ultimo = null;
+  let asentada = false;
+  for (let intento = 0; intento < 15; intento += 1) {
+    await ejecutarEnRenderer(
+      `document.querySelector('.reader-vertical [data-reader-page="${pagina}"]')?.scrollIntoView({ block: "start" }); true`,
+    );
+    await esperar(300);
+    asentada = Boolean(await ejecutarEnRenderer(ventanaAsentadaEn(pagina)));
+    ultimo = await medirVertical(pagina);
+    if (asentada && Math.abs(ultimo.top) <= TOLERANCIA_SCROLL_PX) return ultimo;
+  }
+  throw new Error(
+    `no se pudo anclar el scroll vertical en la pagina ${pagina}: `
+    + `ventana asentada=${asentada}, montadas=[${ultimo?.montadas.join(",")}], contador=${ultimo?.contador}, `
+    + `top del ancla=${ultimo?.top}, scrollTop=${ultimo?.scrollTop}, `
+    + `scrollport=${ultimo?.scrollport}, slot vacio=${ultimo?.altoVacio}, slot ancla=${ultimo?.altoAncla}`,
+  );
+}
+
+// Espera a que el layout deje de moverse. No vale un sleep fijo: montar una pagina y
+// CARGARLA son dos pasos asincronos y encadenados (una <img loading="lazy"> recien montada
+// mide 0 de alto y solo empuja el layout AL CARGAR), y su duracion no es nuestra para
+// suponerla. Quieto = dos lecturas seguidas con el mismo ancla, las mismas montadas y las
+// mismas cargadas. Es seguro esperar la quietud porque el salto que se vigila es PERMANENTE:
+// nada devuelve el ancla a su sitio despues.
+async function esperarQuietud(pagina) {
+  const limite = Date.now() + 8_000;
+  let anterior = await medirVertical(pagina);
+  while (Date.now() < limite) {
+    await esperar(150);
+    const actual = await medirVertical(pagina);
+    const quieto = Math.abs(actual.top - anterior.top) <= TOLERANCIA_SCROLL_PX
+      && actual.montadas.join(",") === anterior.montadas.join(",")
+      && actual.cargadas.join(",") === anterior.cargadas.join(",");
+    anterior = actual;
+    if (quieto) return actual;
+  }
+  throw new Error(`el layout vertical no se quedo quieto alrededor de la pagina ${pagina}`);
+}
+
+// Un scroll a PASOS, que es como lee una persona: el parte del usuario dice «scrollea hacia
+// arriba despacio». Ademas es la unica forma de medir esto sin adivinar — un salto de una
+// pagina entera de una vez monta la de arriba pero la deja FUERA del alcance de
+// `loading="lazy"`, asi que no carga, el slot no crece y el caso pasaria sin haber ejercitado
+// el bug. Acercandose a pasos, la pagina entra en rango de carga como le entra al usuario.
+async function medirSaltoVertical(sentido) {
+  const signo = sentido === "arriba" ? -1 : 1;
+  const inicial = await anclarEnPagina(PAGINA_ANCLA);
+  const pasos = [];
+  let anterior = inicial;
+
+  for (let paso = 0; paso < PASOS_SCROLL; paso += 1) {
+    await ejecutarEnRenderer(
+      `document.querySelector('.reader-vertical').scrollTop = ${anterior.scrollTop + signo * PASO_SCROLL_PX}; true`,
+    );
+    const actual = await esperarQuietud(PAGINA_ANCLA);
+    // Has scrolleado PASO_SCROLL_PX, asi que el ancla se desplaza PASO_SCROLL_PX en el
+    // viewport, en sentido contrario. Ni un pixel mas: lo que monte, cargue o desmonte por el
+    // camino es asunto del reader, no del ojo del usuario.
+    pasos.push({
+      deMas: Number((actual.top - (anterior.top - signo * PASO_SCROLL_PX)).toFixed(2)),
+      montadas: actual.montadas.join(","),
+      cargadas: actual.cargadas.join(","),
+    });
+    anterior = actual;
+  }
+
+  const peor = pasos.reduce((a, b) => (Math.abs(b.deMas) > Math.abs(a.deMas) ? b : a));
+  const ok = Math.abs(peor.deMas) <= TOLERANCIA_SCROLL_PX;
+
+  console.log(
+    `${ok ? "OK  " : "FALLO"} ${`vertical / ancho / ${sentido}`.padEnd(28)} `
+    + `scrollport ${inicial.scrollport} | slot vacio ${inicial.altoVacio} | slot montado ${inicial.altoAncla} `
+    + `| contador ${inicial.contador} -> ${anterior.contador} `
+    + `| montadas ${inicial.montadas.join(",")} -> ${anterior.montadas.join(",")} `
+    + `| cargadas ${inicial.cargadas.join(",")} -> ${anterior.cargadas.join(",")}`,
+  );
+  console.log(`      px de mas por paso de ${PASO_SCROLL_PX}px: ${pasos.map((paso) => paso.deMas).join(", ")}`);
+  if (!ok) {
+    console.log(
+      `      -> la pagina ancla se movio ${Math.abs(peor.deMas)} px de mas al scrollear ${PASO_SCROLL_PX}px hacia `
+      + `${sentido} (montadas ${peor.montadas} | cargadas ${peor.cargadas}): el reader monto o solto una pagina `
+      + "por encima del ancla y nadie compenso el cambio de altura",
+    );
+  }
+  return ok;
+}
+
+async function recorrerVertical() {
+  // Solo ajuste «ancho»: es el unico en el que la pagina real (~1650px) desborda el
+  // `min-height:100vh` del slot, o sea el unico donde montar cambia la altura. A «alto» la
+  // img mide 100vh = el min-height y no hay cambio de layout que compensar.
+  await ponerModoVertical();
+  await ponerAjusteVertical("width");
+  let todoOk = true;
+  for (const sentido of ["arriba", "abajo"]) {
+    todoOk = await medirSaltoVertical(sentido) && todoOk;
+  }
+  return todoOk;
+}
+
 async function esperarSalida(proceso, timeout) {
   if (proceso.exitCode !== null) return true;
   return new Promise((resolvePromise) => {
@@ -545,7 +743,9 @@ async function ejecutarHarness() {
     registrarIpc(dataDir);
     ventana = await abrirAplicacion();
     await abrirPrimerCapitulo();
-    const todoOk = await recorrerAjustes();
+    const ajustesOk = await recorrerAjustes();
+    const verticalOk = await recorrerVertical();
+    const todoOk = ajustesOk && verticalOk;
     console.log(todoOk ? "\nAjustes del reader: OK" : "\nAjustes del reader: FALLO");
     codigoSalida = todoOk ? 0 : 1;
   } catch (error) {
