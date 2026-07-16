@@ -3,7 +3,9 @@ import { native, isNative } from "./native";
 
 import { api } from "./api";
 import { useApp } from "./i18n";
-import type { LibraryFolder, ScanSummary } from "./types";
+import type { LibraryFolder, LibraryFolderKind, ScanSummary } from "./types";
+
+const KINDS = ["anime", "manga", "ambas"] as const;
 
 export function LibrarySettingsView() {
   const { t } = useApp();
@@ -13,6 +15,7 @@ export function LibrarySettingsView() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [subfolders, setSubfolders] = useState<Record<number, string[]>>({});
+  const [kind, setKind] = useState<LibraryFolderKind>("ambas");
 
   const message = (reason: unknown): string =>
     reason instanceof Error ? reason.message : t("libset.error");
@@ -34,7 +37,7 @@ export function LibrarySettingsView() {
       const selected = await native.openFolderDialog();
       if (!selected) return;
       setBusy(true);
-      await api.addLibraryFolder(selected, true);
+      await api.addLibraryFolder(selected, true, kind);
       await load();
     } catch (reason) {
       setError(message(reason));
@@ -47,7 +50,22 @@ export function LibrarySettingsView() {
     setError(null);
     setBusy(true);
     try {
-      await api.addLibraryFolder(folder.path, !folder.recursive);
+      // addLibraryFolder es un upsert y escribe kind: sin pasar el actual, tocar
+      // «incluir subcarpetas» le resetearía el tipo a la carpeta.
+      await api.addLibraryFolder(folder.path, !folder.recursive, folder.kind);
+      await load();
+    } catch (reason) {
+      setError(message(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const changeKind = async (folder: LibraryFolder, next: LibraryFolderKind) => {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.addLibraryFolder(folder.path, folder.recursive, next);
       await load();
     } catch (reason) {
       setError(message(reason));
@@ -91,6 +109,11 @@ export function LibrarySettingsView() {
         <h2>{t("libset.title")}</h2>
         <p>{t("libset.d")}</p>
       </div>
+      <label className="checkbox-field">{t("libset.kind")}
+        <select value={kind} disabled={busy || !isTauri} onChange={(event) => setKind(event.target.value as LibraryFolderKind)}>
+          {KINDS.map((option) => <option key={option} value={option}>{t(`libset.kind.${option}`)}</option>)}
+        </select>
+      </label>
       <button className="primary small" disabled={busy || !isTauri} onClick={() => void addFolder()}>{t("libset.addFolder")}</button>
     </div>
 
@@ -108,6 +131,11 @@ export function LibrarySettingsView() {
               </ul>
             )}
           </div>
+          <label className="checkbox-field">{t("libset.kind")}
+            <select value={folder.kind} disabled={busy} onChange={(event) => void changeKind(folder, event.target.value as LibraryFolderKind)}>
+              {KINDS.map((option) => <option key={option} value={option}>{t(`libset.kind.${option}`)}</option>)}
+            </select>
+          </label>
           <label className="checkbox-field"><input type="checkbox" checked={folder.recursive} disabled={busy} onChange={() => void toggleRecursive(folder)} /> {t("libset.recursive")}</label>
           <button className="danger small" disabled={busy} onClick={() => void remove(folder)}>{t("libset.remove")}</button>
         </article>

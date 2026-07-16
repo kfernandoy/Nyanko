@@ -16,6 +16,7 @@ import type {
   WontWatchState,
   Health,
   LibraryFolder,
+  LibraryFolderKind,
   LibrarySearchResponse,
   PendingLocalItem,
   ScanSummary,
@@ -307,8 +308,8 @@ export const api = {
     request<void>(`/api/extension/clients/${clientId}`, { method: "DELETE" }),
   libraryFolders: () => request<LibraryFolder[]>("/api/library/folders"),
   librarySubfolders: (folderId: number) => request<string[]>(`/api/library/folders/${folderId}/subfolders`),
-  addLibraryFolder: (path: string, recursive: boolean) =>
-    request<LibraryFolder>("/api/library/folders", { method: "POST", body: JSON.stringify({ path, recursive }) }),
+  addLibraryFolder: (path: string, recursive: boolean, kind: LibraryFolderKind = "ambas") =>
+    request<LibraryFolder>("/api/library/folders", { method: "POST", body: JSON.stringify({ path, recursive, kind }) }),
   deleteLibraryFolder: (folderId: number) =>
     request<void>(`/api/library/folders/${folderId}`, { method: "DELETE" }),
   // El escaneo recorre el disco; necesita mucho más que el timeout genérico de 15s.

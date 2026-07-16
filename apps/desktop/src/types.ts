@@ -288,10 +288,13 @@ export interface AccountInfo {
   has_credential_ref: boolean;
 }
 
+export type LibraryFolderKind = "anime" | "manga" | "ambas";
+
 export interface LibraryFolder {
   id: number;
   path: string;
   recursive: boolean;
+  kind: LibraryFolderKind;
 }
 
 export interface ScanSummary {
