@@ -87,6 +87,8 @@ from .models import (
     LibraryFolder,
     LibraryFolderCreate,
     LibrarySearchResponse,
+    MangaChapter,
+    MangaPage,
     MatchCorrectionRequest,
     MediaDetails,
     MediaEntryUpdate,
@@ -106,6 +108,11 @@ from .models import (
     ProgressUpdate,
     ProviderCapabilitiesResponse,
     ProviderInfo,
+    ReaderPrefs,
+    ReaderPrefsUpdate,
+    ReaderProgress,
+    ReaderProgressUpdate,
+    ReadingEventCreate,
     ScanSettings,
     ScanSummary,
     SearchFilters,
@@ -1598,6 +1605,116 @@ def _source_info(registration: SourceRegistration) -> SourceInfo:
     )
 
 
+@app.get("/api/manga/chapters", response_model=list[MangaChapter])
+async def manga_chapters(
+    request: Request,
+    series_id: str,
+    source: str = "local_archive",
+) -> list[MangaChapter]:
+    try:
+        capitulos = await _source_engine(request).chapters(source, series_id)
+    except (SourceError, KeyError) as error:
+        raise_source_http_error(error, source)
+    return [
+        MangaChapter(
+            source_id=capitulo.source_id,
+            title=capitulo.title,
+            series_id=capitulo.series_id,
+            number=capitulo.number,
+            is_chapter=capitulo.is_chapter,
+        )
+        for capitulo in capitulos
+    ]
+
+
+@app.get("/api/manga/pages", response_model=list[MangaPage])
+async def manga_pages(
+    request: Request,
+    chapter_id: str,
+    source: str = "local_archive",
+) -> list[MangaPage]:
+    try:
+        paginas = await _source_engine(request).pages(source, chapter_id)
+    except (SourceError, KeyError) as error:
+        raise_source_http_error(error, source)
+
+    resultado: list[MangaPage] = []
+    for pagina in paginas:
+        url = _page_url(pagina.source_id)
+        if source != "local_archive":
+            url += "?source=" + quote(source, safe="")
+        resultado.append(
+            MangaPage(index=pagina.index, filename=pagina.filename, url=url)
+        )
+    return resultado
+
+
+@app.get("/api/manga/prefs", response_model=ReaderPrefs | None)
+def reader_prefs(
+    series_id: str,
+    source: str = "local_archive",
+    database: Database = Depends(get_database),
+) -> ReaderPrefs | None:
+    preferencias = database.get_reader_prefs(source, series_id)
+    return (
+        ReaderPrefs.model_validate(preferencias)
+        if preferencias is not None
+        else None
+    )
+
+
+@app.put("/api/manga/prefs", response_model=ReaderPrefs)
+def set_reader_prefs(
+    body: ReaderPrefsUpdate,
+    series_id: str,
+    source: str = "local_archive",
+    database: Database = Depends(get_database),
+) -> ReaderPrefs:
+    database.set_reader_prefs(
+        source,
+        series_id,
+        **body.model_dump(exclude_none=True),
+    )
+    return ReaderPrefs.model_validate(database.get_reader_prefs(source, series_id))
+
+
+@app.get("/api/manga/progress", response_model=ReaderProgress | None)
+def reader_progress(
+    chapter_id: str,
+    source: str = "local_archive",
+    database: Database = Depends(get_database),
+) -> ReaderProgress | None:
+    progreso = database.get_reader_progress(source, chapter_id)
+    return ReaderProgress.model_validate(progreso) if progreso is not None else None
+
+
+@app.put("/api/manga/progress", status_code=204)
+def set_reader_progress(
+    body: ReaderProgressUpdate,
+    chapter_id: str,
+    source: str = "local_archive",
+    database: Database = Depends(get_database),
+) -> None:
+    database.set_reader_progress(source, chapter_id, body.page)
+
+
+@app.post("/api/manga/reading-events")
+def create_reading_event(
+    body: ReadingEventCreate,
+    series_id: str,
+    chapter_id: str,
+    source: str = "local_archive",
+    database: Database = Depends(get_database),
+) -> dict[str, int]:
+    id_evento = database.insert_reading_event(
+        source,
+        series_id,
+        chapter_id,
+        body.chapter,
+    )
+    return {"id": id_evento}
+
+
 @app.get("/api/accounts", response_model=list[AccountInfo])
 def accounts(database: Database = Depends(get_database)) -> list[AccountInfo]:
     return [
@@ -2001,21 +2118,34 @@ def list_library_subfolders(
 @app.post("/api/library/folders", response_model=LibraryFolder)
 def add_library_folder(
     body: LibraryFolderCreate,
+    request: Request,
     database: Database = Depends(get_database),
 ) -> LibraryFolder:
     path = body.path.strip()
     if not path or not os.path.isdir(path):
         raise HTTPException(status_code=422, detail="La carpeta no existe")
-    return LibraryFolder.model_validate(database.add_library_folder(path, body.recursive))
+    carpeta = database.add_library_folder(path, body.recursive)
+    # WR-06: lifespan construye el registry una vez y LocalArchiveSource congela
+    # sus raices. Refrescar solo tras una mutacion evita exigir un reinicio al usuario.
+    request.app.state.source_registry = build_source_registry(
+        library_folders=database.get_library_folders()
+    )
+    return LibraryFolder.model_validate(carpeta)
 
 
 @app.delete("/api/library/folders/{folder_id}", status_code=204)
 def delete_library_folder(
     folder_id: int,
+    request: Request,
     database: Database = Depends(get_database),
 ) -> None:
     if not database.delete_library_folder(folder_id):
         raise HTTPException(status_code=404, detail="Carpeta no encontrada")
+    # La baja tambien debe invalidar las raices congeladas, pero nunca se
+    # reconstruye el registry al servir una peticion de lectura.
+    request.app.state.source_registry = build_source_registry(
+        library_folders=database.get_library_folders()
+    )
 
 
 def run_library_scan(database: Database) -> ScanSummary:

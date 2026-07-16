@@ -44,6 +44,49 @@ class SourceInfo(BaseModel):
     capabilities: SourceCapabilitiesResponse | None = None
 
 
+class MangaChapter(BaseModel):
+    source_id: str
+    title: str
+    series_id: str
+    number: float | None = None
+    is_chapter: bool
+
+
+class MangaPage(BaseModel):
+    index: int
+    filename: str
+    # El renderer pone el host y el puerto vivos con normalizeAssetUrls. Guardarlos
+    # aqui es el mismo error que dejo a la biblioteca sin portadas al cambiar el puerto.
+    url: str
+
+
+class ReaderPrefs(BaseModel):
+    mode: Literal["rtl", "ltr", "vertical"]
+    fit: Literal["width", "height", "original"] | None = None
+    double_page: bool
+    double_page_offset: int
+
+
+class ReaderPrefsUpdate(BaseModel):
+    mode: Literal["rtl", "ltr", "vertical"] | None = None
+    fit: Literal["width", "height", "original"] | None = None
+    double_page: bool | None = None
+    double_page_offset: int | None = None
+
+
+class ReaderProgress(BaseModel):
+    page: int = Field(ge=1)
+    updated_at: str | None = None
+
+
+class ReaderProgressUpdate(BaseModel):
+    page: int = Field(ge=1)
+
+
+class ReadingEventCreate(BaseModel):
+    chapter: float | None = None
+
+
 class AccountInfo(BaseModel):
     id: int
     provider: str
