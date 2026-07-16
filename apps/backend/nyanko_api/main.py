@@ -1096,7 +1096,17 @@ def raise_source_http_error(error: Exception, source_name: str) -> NoReturn:
 
 def _source_engine(request: Request) -> SourceEngine:
     registro: SourceRegistry = request.app.state.source_registry
-    return SourceEngine(registro)
+    engine: SourceEngine | None = getattr(request.app.state, "source_engine", None)
+    # El engine se DERIVA de la identidad del registry, no se mantiene a mano en los tres
+    # sitios que llaman a build_source_registry: un invariante con tres escritores se rompe
+    # el dia que aparece un cuarto. Construirlo por request dejaba el cache siempre vacio
+    # (CR-03); memoizarlo sin comparar identidad lo dejaria pegado al registry viejo y una
+    # carpeta añadida en caliente seria invisible (WR-06). El engine vive lo que viva el
+    # registry que envuelve: si se reconstruye, cambian las raices y el cache DEBE morir con el.
+    if engine is None or engine.registry is not registro:
+        engine = SourceEngine(registro)
+        request.app.state.source_engine = engine
+    return engine
 
 
 def raise_provider_auth_error(

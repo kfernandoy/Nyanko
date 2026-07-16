@@ -40,14 +40,17 @@ class _FuenteConError:
     api_version = SOURCE_API_VERSION
     capabilities = SourceCapabilities()
 
-    def __init__(self, error: Exception):
+    def __init__(self, error: Exception | None = None):
         self.error = error
 
     async def search(self, _consulta: str, _limite: int = 20) -> list[SourceSeries]:
         raise self.error
 
-    async def chapters(self, _serie: SourceSeries | str) -> list[SourceChapter]:
-        raise self.error
+    async def chapters(self, serie: SourceSeries | str) -> list[SourceChapter]:
+        if self.error is not None:
+            raise self.error
+        series_id = serie.source_id if isinstance(serie, SourceSeries) else serie
+        return [SourceChapter(source_id="c1", title="1", series_id=series_id)]
 
     async def pages(self, _capitulo: SourceChapter | str) -> list[SourcePage]:
         raise self.error
@@ -197,6 +200,37 @@ def test_los_endpoints_de_fuente_no_convierten_errores_tipados_en_500(
         )
 
     assert respuesta.status_code == estado
+
+
+def test_dos_peticiones_sirven_el_cache_cuando_la_fuente_falla(tmp_path):
+    """El cache vive entre peticiones: dos GET comparten el mismo SourceEngine."""
+    base_de_datos = _base_de_datos(tmp_path)
+    fuente = _FuenteConError()
+    parametros = {"source": "fuente_con_error", "series_id": "serie"}
+
+    with _cliente(base_de_datos, SourceRegistry([fuente])) as cliente:
+        primera = cliente.get("/api/manga/chapters", params=parametros)
+        fuente.error = SourceParseError("Cloudflare devolvio HTML")
+        segunda = cliente.get("/api/manga/chapters", params=parametros)
+
+    assert primera.status_code == 200
+    assert segunda.status_code == 200
+    assert segunda.json() == primera.json()
+
+
+def test_un_429_por_la_api_no_devuelve_cache(tmp_path):
+    """Guardian de la costura CR-03 + WR-03: el cache resucitado no puede tragarse un 429."""
+    base_de_datos = _base_de_datos(tmp_path)
+    fuente = _FuenteConError()
+    parametros = {"source": "fuente_con_error", "series_id": "serie"}
+
+    with _cliente(base_de_datos, SourceRegistry([fuente])) as cliente:
+        primera = cliente.get("/api/manga/chapters", params=parametros)
+        fuente.error = SourceRateLimitError("limitado", retry_after=3)
+        segunda = cliente.get("/api/manga/chapters", params=parametros)
+
+    assert primera.status_code == 200
+    assert segunda.status_code == 429
 
 
 def test_preferencias_progreso_y_evento_hacen_round_trip_sin_persistir_urls(tmp_path):

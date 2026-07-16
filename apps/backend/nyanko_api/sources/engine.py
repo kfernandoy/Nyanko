@@ -77,6 +77,10 @@ class SourceEngine:
         # ponytail: dict de proceso sin TTL/LRU; persistencia diferida a Fase 8.
         self._chapters: dict[tuple[str, str], list[SourceChapter]] = {}
 
+    @property
+    def registry(self) -> SourceRegistry:
+        return self._registry
+
     async def search(
         self, source_name: str, query: str, limit: int = 20
     ) -> list[SourceSeries]:
