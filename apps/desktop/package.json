@@ -14,6 +14,7 @@
     "test:datadir": "node --import tsx --test electron/main/compat-paths.test.ts",
     "test:sidecar": "node --import tsx --test electron/main/sidecar.test.ts",
     "test:native": "node --import tsx --test src/native.test.ts",
+    "test:reader": "node --import tsx --test src/readerWindow.test.ts",
     "test:prefs": "node --import tsx --test electron/main/window-prefs.test.ts",
     "test:publish": "node --test scripts/publish-bridge.test.mjs"
   },
