@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.3
 milestone_name: «Nyanko lee manga»
 status: in_progress
-stopped_at: Fase 03 ejecutada (7/7). Los 3 Critical cerrados: RD-09 verde (147 MB), CR-01 y CR-03+WR-03 (455 passed). Pendiente: UAT manual de los tres modos
+stopped_at: Fase 03: 3 Critical + 4 de los 5 hallazgos del UAT cerrados (el #1 CBR no es bug). Pendiente: reconfirmar el UAT manual
 last_updated: "2026-07-16T08:32:45.489Z"
 progress:
   total_phases: 9
@@ -210,4 +210,5 @@ La fase 03 NO cierra: RD-02 pide los tres modos de lectura y el UAT los encontro
 | 260716-8fb | Derivar la frontera archivo/miembro de los datos: los titulos con `!` eran ilegibles (CR-01) | 2026-07-16 | 7c7dbb8 | [260716-8fb-escapar-el-separador-de-miembro-de-archi](./quick/260716-8fb-escapar-el-separador-de-miembro-de-archi/) |
 | 260716-9cd | Resucitar el cache del SourceEngine (CR-03) sin activar WR-03: un 429 sigue saliendo 429 | 2026-07-16 | ab1cb34 | [260716-9cd-resucitar-el-cache-del-sourceengine-sin-](./quick/260716-9cd-resucitar-el-cache-del-sourceengine-sin-/) |
 | 260716-amb | Carpetas de biblioteca con tipo (`kind`): anadir manga ya no dispara el escaneo de anime (UAT #2) | 2026-07-16 | 1faab19 | [260716-amb-carpetas-de-biblioteca-con-tipo-anadir-m](./quick/260716-amb-carpetas-de-biblioteca-con-tipo-anadir-m/) |
+| 260716-boe | Vertical sin saltos de scroll + contador siempre visible (UAT #4, #5) | 2026-07-16 | b62a83f | [260716-boe-vertical-sin-saltos-de-scroll-y-contador](./quick/260716-boe-vertical-sin-saltos-de-scroll-y-contador/) |
 | 260716-9cd | Resucitar el cache del SourceEngine sin perder el back-pressure (CR-03 + WR-03) | 2026-07-16 | b4d60a8, ab1cb34 | [260716-9cd-resucitar-el-cache-del-sourceengine-sin-](./quick/260716-9cd-resucitar-el-cache-del-sourceengine-sin-/) |
