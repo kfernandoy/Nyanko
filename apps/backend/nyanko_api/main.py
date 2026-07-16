@@ -18,15 +18,15 @@ from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import TypeVar
-from urllib.parse import urlsplit
+from typing import NoReturn, TypeVar
+from urllib.parse import quote, urlsplit
 
 from enum import StrEnum
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -135,7 +135,18 @@ from .models import (
 from .normalizer import fold_title, folded_title, normalize, normalize_title
 from .providers import MyAnimeListProvider, build_provider_registry
 from .scanner import iter_video_files, parse_file
-from .sources import SourceRegistration, SourceRegistry, build_source_registry
+from .sources import (
+    SourceEngine,
+    SourceError,
+    SourceNetworkError,
+    SourceNotFoundError,
+    SourceParseError,
+    SourceRateLimitError,
+    SourceRegistration,
+    SourceRegistry,
+    SourceUnsupportedError,
+    build_source_registry,
+)
 from . import torrents as torrents_mod
 
 
@@ -324,6 +335,13 @@ def _asset_url(settings: Settings, provider: str, external_id: int | str, filena
     # de forma permanente y silenciosa. El renderer la compone contra la base de API que ya
     # resuelve en vivo (`normalizeAssetUrls` en api.ts), así que una ruta relativa no caduca.
     return f"/assets/{provider}/{external_id}/{filename}"
+
+
+def _page_url(page_id: str) -> str:
+    # RELATIVA a propósito, igual que las portadas: si lleva el host:puerto dentro,
+    # el día que el sidecar arranca en otro puerto la página caduca. El renderer la
+    # compone contra la base viva mediante `normalizeAssetUrls` en api.ts.
+    return "/assets/pages/" + quote(page_id, safe="")
 
 
 def _find_local_asset_filename(
@@ -1038,6 +1056,42 @@ def raise_provider_http_error(error: Exception, provider: str) -> None:
     ) from error
 
 
+def raise_source_http_error(error: Exception, source_name: str) -> NoReturn:
+    if isinstance(error, SourceNotFoundError):
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    if isinstance(error, SourceUnsupportedError):
+        raise HTTPException(status_code=415, detail=str(error)) from error
+    if isinstance(error, SourceRateLimitError):
+        cabeceras = (
+            {"Retry-After": str(error.retry_after)}
+            if error.retry_after is not None
+            else None
+        )
+        raise HTTPException(
+            status_code=429,
+            detail=str(error),
+            headers=cabeceras,
+        ) from error
+    if isinstance(error, SourceNetworkError):
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    if isinstance(error, SourceParseError):
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    if isinstance(error, KeyError):
+        # SourceRegistry.get() ocurre antes de SourceEngine._call_source; sin este
+        # caso una fuente elegida por el cliente escaparía como 500.
+        raise HTTPException(status_code=404, detail="Fuente no registrada") from error
+    logger.exception("Error inesperado en la fuente %s", source_name)
+    raise HTTPException(
+        status_code=502,
+        detail=f"No se pudo completar la solicitud a la fuente {source_name}.",
+    ) from error
+
+
+def _source_engine(request: Request) -> SourceEngine:
+    registro: SourceRegistry = request.app.state.source_registry
+    return SourceEngine(registro)
+
+
 def raise_provider_auth_error(
     error: Exception, provider: str, account: str
 ) -> None:
@@ -1439,6 +1493,35 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Nyanko API", version="0.1.0", lifespan=lifespan)
 settings = get_settings()
+
+
+# Starlette casa rutas en orden y el mount de /assets reclama todo su prefijo.
+# Declarada después del mount, esta ruta no se ejecutaría nunca.
+@app.get("/assets/pages/{page_id:path}")
+async def read_page(
+    page_id: str,
+    request: Request,
+    source: str = "local_archive",
+) -> Response:
+    try:
+        contenido = await _source_engine(request).page_bytes(source, page_id)
+    except (SourceError, KeyError) as error:
+        raise_source_http_error(error, source)
+
+    cabeceras = {"Cache-Control": "private, max-age=3600"}
+    if contenido.path is not None:
+        return FileResponse(
+            contenido.path,
+            media_type=contenido.media_type,
+            headers=cabeceras,
+        )
+    return StreamingResponse(
+        contenido.chunks,
+        media_type=contenido.media_type,
+        headers=cabeceras,
+    )
+
+
 app.mount("/assets", StaticFiles(directory=settings.assets_dir, check_dir=False), name="assets")
 app.add_middleware(
     CORSMiddleware,
