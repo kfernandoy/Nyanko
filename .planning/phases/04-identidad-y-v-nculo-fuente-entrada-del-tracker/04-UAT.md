@@ -1,9 +1,9 @@
 ---
-status: complete
+status: diagnosed
 phase: 04-identidad-y-v-nculo-fuente-entrada-del-tracker
 source: [04-VERIFICATION.md]
 started: 2026-07-17T15:14:42Z
-updated: 2026-07-17T15:40:00Z
+updated: 2026-07-17T16:05:00Z
 ---
 
 ## Current Test
@@ -80,12 +80,25 @@ blocked: 0
   reason: "User reported: no veo ningun vinculo en la libreria de manga"
   severity: major
   test: 1
-  artifacts: []
-  missing: []
+  root_cause: "El boton de vincular se renderiza solo cuando `!capitulo.is_chapter` (MangaLibraryView.tsx:252). La unica carpeta de manga registrada del usuario (G:\\manga) es una biblioteca PLANA: los CBZ/CBR cuelgan directamente de la raiz, sin subcarpeta por serie. `local_archive.py:133` clasifica `is_chapter=not is_directory or has_images`, asi que en una raiz plana TODAS las filas salen `is_chapter=true` — cero filas de serie, cero botones de vincular, para cualquier usuario con esta estructura. No es un bug de logica (el condicional esta bien escrito para bibliotecas con subcarpeta por serie); es un caso que 04-04-PLAN.md nombro en su paso 10 de human-check pero nunca especifico que elemento de UI deberia llevar el vinculo cuando la 'serie' es la propia carpeta raiz."
+  artifacts:
+    - path: "apps/desktop/src/MangaLibraryView.tsx"
+      issue: "El boton `manga-library-link` (linea ~252) solo se renderiza por fila cuando `!capitulo.is_chapter`; una biblioteca plana no tiene ninguna fila asi."
+    - path: "apps/backend/nyanko_api/sources/local_archive.py"
+      issue: "Linea 133: `is_chapter=not is_directory or has_images` clasifica todo archivo suelto en la raiz como capitulo, nunca como serie vinculable."
+  missing:
+    - "Decision de producto: como se vincula una carpeta raiz plana (sin subcarpeta de serie) — ver test 10, que pide exactamente este caso y hoy tambien falla por la misma causa."
+    - "Un affordance de vinculo a nivel de carpeta/ruta (p.ej. keyed por `carpeta.id:.`) cuando el listado es plano, en vez de depender de una fila de serie que no existe."
+  debug_session: .planning/debug/manga-link-button-missing.md
 - truth: "Dos controles de foco independientes, cada uno activable con Enter."
   status: failed
   reason: "User reported: no aparece nigun boton"
   severity: major
   test: 2
-  artifacts: []
-  missing: []
+  root_cause: "Mismo root cause que el gap del test 1 — cero filas de serie en esta biblioteca plana, asi que ningun boton de vincular existe para poder enfocarlo."
+  artifacts:
+    - path: "apps/desktop/src/MangaLibraryView.tsx"
+      issue: "El boton `manga-library-link` no se renderiza para ninguna fila en una biblioteca plana."
+  missing:
+    - "Misma resolucion que el gap del test 1 — no es un segundo bug independiente."
+  debug_session: .planning/debug/manga-link-button-missing.md
