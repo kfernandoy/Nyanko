@@ -192,7 +192,7 @@ fuente y una entrada del tracker — para que el sync pueda asumirlo, y **negars
 
 **Research pass**: No. Precedentes: `media_mappings` (la tabla que este problema necesita, con columna de offset y todo, construida para la extensión de navegador), `matcher.py`, `match_corrections`, el flujo detectar→proponer→confirmar→deshacer de `playback_events`.
 
-**Plans**: 2/4 plans executed
+**Plans**: 3/4 plans executed
 
 **Wave 1**
 
@@ -201,7 +201,7 @@ fuente y una entrada del tracker — para que el sync pueda asumirlo, y **negars
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 04-03-PLAN.md — Proponer/confirmar/desvincular en HTTP, SIN las DOS ramas de auto-persistencia por umbral del precedente de anime (`main.py:3616-3621` y `:3688-3691`), + el tripwire de `pending_mutations` en `reading-events` — LNK-01, LNK-02, LNK-04 — wave 2
+- [x] 04-03-PLAN.md — Proponer/confirmar/desvincular en HTTP, SIN las DOS ramas de auto-persistencia por umbral del precedente de anime (`main.py:3616-3621` y `:3688-3691`), + el tripwire de `pending_mutations` en `reading-events` — LNK-01, LNK-02, LNK-04 — wave 2
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -421,7 +421,7 @@ backend, el cliente HTTP, la verificación sha256, el gate de seguridad y una UI
 | 1. Electron shell scaffold + data-dir lock | v0.2 | 4/4 | Complete    | 2026-07-13 |
 | 2. Main core — sidecar lifecycle + logging | v0.2 | 3/3 | Complete   | 2026-07-14 |
 | 3. Native boundary + Tauri removal | v0.2 | 7/7 | Complete   | 2026-07-16 |
-| 4. Native feature parity | v0.2 | 2/4 | In Progress|  |
+| 4. Native feature parity | v0.2 | 3/4 | In Progress|  |
 | 5. Packaging + auto-update | v0.2 | 6/6 | Complete | 2026-07-12 |
 | 1. Fundaciones — limitador, esquema y modelo de progreso | v0.3 | 0/? | Not started | - |
 | 2. Motor de fuentes — contrato, presupuesto y taxonomía | v0.3 | 0/? | Not started | - |
