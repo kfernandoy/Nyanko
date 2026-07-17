@@ -192,12 +192,12 @@ fuente y una entrada del tracker — para que el sync pueda asumirlo, y **negars
 
 **Research pass**: No. Precedentes: `media_mappings` (la tabla que este problema necesita, con columna de offset y todo, construida para la extensión de navegador), `matcher.py`, `match_corrections`, el flujo detectar→proponer→confirmar→deshacer de `playback_events`.
 
-**Plans**: 1/4 plans executed
+**Plans**: 2/4 plans executed
 
 **Wave 1**
 
 - [x] 04-01-PLAN.md — `ChapterRecognition`: tabla de casos en ROJO antes que el código (`extra` = .99, `omake` = .98, `12a` → 12.1), módulo propio y puro, y `LocalArchiveSource` delegando — LNK-03 — wave 1
-- [ ] 04-02-PLAN.md — El vínculo almacenado: `media_mappings.chapter_offset` (schema v11, mirror de `episode_offset`) + el guarda que reserva el namespace de manga en `set_media_mapping` + `linking.py` con `require_link` que falla cerrado — LNK-01, LNK-04 — wave 1
+- [x] 04-02-PLAN.md — El vínculo almacenado: `media_mappings.chapter_offset` (schema v11, mirror de `episode_offset`) + el guarda que reserva el namespace de manga en `set_media_mapping` + `linking.py` con `require_link` que falla cerrado — LNK-01, LNK-04 — wave 1
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -421,7 +421,7 @@ backend, el cliente HTTP, la verificación sha256, el gate de seguridad y una UI
 | 1. Electron shell scaffold + data-dir lock | v0.2 | 4/4 | Complete    | 2026-07-13 |
 | 2. Main core — sidecar lifecycle + logging | v0.2 | 3/3 | Complete   | 2026-07-14 |
 | 3. Native boundary + Tauri removal | v0.2 | 7/7 | Complete   | 2026-07-16 |
-| 4. Native feature parity | v0.2 | 1/4 | In Progress|  |
+| 4. Native feature parity | v0.2 | 2/4 | In Progress|  |
 | 5. Packaging + auto-update | v0.2 | 6/6 | Complete | 2026-07-12 |
 | 1. Fundaciones — limitador, esquema y modelo de progreso | v0.3 | 0/? | Not started | - |
 | 2. Motor de fuentes — contrato, presupuesto y taxonomía | v0.3 | 0/? | Not started | - |
