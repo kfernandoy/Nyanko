@@ -167,7 +167,11 @@ export function ReaderView({
       chapter.series_id,
       chapter.source_id,
       chapter.number,
-    ).catch((reason: unknown) => setAviso(reason instanceof Error ? reason.message : String(reason)));
+    )
+      .then((evento) => {
+        if (!evento.linked && evento.reason) setAviso(evento.reason);
+      })
+      .catch((reason: unknown) => setAviso(reason instanceof Error ? reason.message : String(reason)));
   }, [capituloAnterior, capituloSiguiente, chapter.number, chapter.series_id, chapter.source_id]);
 
   const mover = useCallback((direccion: -1 | 1) => {
