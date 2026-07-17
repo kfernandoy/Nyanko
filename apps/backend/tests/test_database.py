@@ -78,7 +78,7 @@ def test_initialize_creates_canonical_provider_schema(monkeypatch):
         "episodes",
         "extension_clients",
     }.issubset(tables)
-    assert version == 10
+    assert version == 11
     assert provider["display_name"] == "AniList"
 
 
@@ -494,6 +494,78 @@ def test_match_correction_round_trip(monkeypatch):
 
     database.delete_match_correction("raw title")
     assert database.get_match_correction("raw title") is None
+
+
+def test_media_mapping_conserva_la_tupla_de_anime_y_anade_el_offset_de_manga(monkeypatch):
+    database = memory_database(monkeypatch)
+
+    database.set_media_mapping("crunchyroll", "abc", 7, 3)
+    mapping_anime = database.get_media_mapping("crunchyroll", "abc")
+    assert mapping_anime == (7, 3)
+    assert len(mapping_anime) == 2
+
+    database.set_media_mapping(
+        "local_archive",
+        "0:Berserk",
+        42,
+        chapter_offset=100,
+        manga_link=True,
+    )
+    assert database.get_media_mapping_full("local_archive", "0:Berserk") == {
+        "media_id": 42,
+        "episode_offset": 0,
+        "chapter_offset": 100,
+    }
+
+
+def test_el_guarda_impide_reapuntar_un_vinculo_confirmado(monkeypatch):
+    database = memory_database(monkeypatch)
+
+    with pytest.raises(ValueError, match="local_archive"):
+        database.set_media_mapping("local_archive", "0:Berserk", 999)
+    assert database.get_media_mapping_full("local_archive", "0:Berserk") is None
+
+    database.set_media_mapping(
+        "local_archive",
+        "0:Berserk",
+        42,
+        chapter_offset=100,
+        manga_link=True,
+    )
+    with pytest.raises(ValueError, match="local_archive"):
+        database.set_media_mapping("local_archive", "0:Berserk", 999)
+    assert database.get_media_mapping_full("local_archive", "0:Berserk") == {
+        "media_id": 42,
+        "episode_offset": 0,
+        "chapter_offset": 100,
+    }
+
+    with pytest.raises(ValueError, match="crunchyroll"):
+        database.set_media_mapping("crunchyroll", "abc", 7, manga_link=True)
+
+
+def test_el_borrado_respeta_el_namespace_y_es_idempotente(monkeypatch):
+    database = memory_database(monkeypatch)
+    database.set_media_mapping(
+        "local_archive",
+        "0:Berserk",
+        42,
+        chapter_offset=100,
+        manga_link=True,
+    )
+
+    with pytest.raises(ValueError, match="local_archive"):
+        database.delete_media_mapping("local_archive", "0:Berserk")
+    assert database.get_media_mapping_full("local_archive", "0:Berserk") is not None
+
+    database.delete_media_mapping("local_archive", "0:Berserk", manga_link=True)
+    database.delete_media_mapping("local_archive", "0:Berserk", manga_link=True)
+    assert database.get_media_mapping_full("local_archive", "0:Berserk") is None
+
+    database.set_media_mapping("crunchyroll", "abc", 777, 3)
+    with pytest.raises(ValueError, match="crunchyroll"):
+        database.delete_media_mapping("crunchyroll", "abc", manga_link=True)
+    assert database.get_media_mapping("crunchyroll", "abc") == (777, 3)
 
 
 def test_playback_history_filters_and_clear(monkeypatch):
@@ -1036,10 +1108,10 @@ def _degrade_to_v7(path: Path) -> None:
     connection.close()
 
 
-def test_canonical_schema_version_is_10():
+def test_canonical_schema_version_is_11():
     from nyanko_api.database import CANONICAL_SCHEMA_VERSION
 
-    assert CANONICAL_SCHEMA_VERSION == 10
+    assert CANONICAL_SCHEMA_VERSION == 11
 
 
 def test_new_database_has_chapter_progress_as_real(monkeypatch):
@@ -1086,13 +1158,13 @@ def test_v7_database_migrates_additively_without_losing_rows(tmp_path):
         assert [row["progress"] for row in rows] == [10, 24]
         assert all(row["chapter_progress"] is None for row in rows)
         version = connection.execute("SELECT MAX(version) AS v FROM schema_migrations").fetchone()["v"]
-        assert version == 10
+        assert version == 11
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     finally:
         connection.close()
 
     # Subir CANONICAL_SCHEMA_VERSION es lo que arma el backup: es el único rollback que hay.
-    backups = list(tmp_path.glob("nyanko.backup-v10-*.sqlite3"))
+    backups = list(tmp_path.glob("nyanko.backup-v11-*.sqlite3"))
     assert len(backups) == 1, f"sin backup pre-migración: {list(tmp_path.iterdir())}"
     backup = sqlite3.connect(backups[0])
     try:
@@ -1164,13 +1236,13 @@ def test_v9_library_folders_migran_a_ambas(tmp_path):
         assert [row["kind"] for row in rows] == ["ambas", "ambas"]
         assert [bool(row["recursive"]) for row in rows] == [True, False]
         version = connection.execute("SELECT MAX(version) AS v FROM schema_migrations").fetchone()["v"]
-        assert version == 10
+        assert version == 11
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     finally:
         connection.close()
 
     # Subir CANONICAL_SCHEMA_VERSION es lo que arma el backup: es el único rollback que hay.
-    backups = list(tmp_path.glob("nyanko.backup-v10-*.sqlite3"))
+    backups = list(tmp_path.glob("nyanko.backup-v11-*.sqlite3"))
     assert len(backups) == 1, f"sin backup pre-migración: {list(tmp_path.iterdir())}"
     backup = sqlite3.connect(backups[0])
     try:
@@ -1180,6 +1252,85 @@ def test_v9_library_folders_migran_a_ambas(tmp_path):
         assert backup.execute("SELECT COUNT(*) FROM library_folders").fetchone()[0] == 2
     finally:
         backup.close()
+
+
+def _degrade_to_v10(path: Path) -> None:
+    """Quita solo chapter_offset para reproducir una BD v10 con el esquema real."""
+    with sqlite3.connect(path) as connection:
+        connection.execute("ALTER TABLE media_mappings DROP COLUMN chapter_offset")
+        connection.execute("DELETE FROM schema_migrations")
+        connection.execute("INSERT INTO schema_migrations(version) VALUES (10)")
+
+
+def _recuentos_por_tabla(connection: sqlite3.Connection) -> dict[str, int]:
+    tablas = [
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        )
+        if row[0] != "schema_migrations"
+    ]
+    return {
+        tabla: connection.execute(f'SELECT COUNT(*) FROM "{tabla}"').fetchone()[0]
+        for tabla in tablas
+    }
+
+
+def test_nueva_database_declara_chapter_offset_entero_no_nulo_con_default_cero(monkeypatch):
+    database = memory_database(monkeypatch)
+
+    with database.connect() as connection:
+        columnas = {
+            row["name"]: row
+            for row in connection.execute("PRAGMA table_info(media_mappings)").fetchall()
+        }
+
+    assert columnas["chapter_offset"]["type"] == "INTEGER"
+    assert columnas["chapter_offset"]["notnull"] == 1
+    assert columnas["chapter_offset"]["dflt_value"] == "0"
+
+
+def test_v10_media_mappings_migra_sin_perder_filas_y_con_backup(tmp_path):
+    path = tmp_path / "nyanko.sqlite3"
+    Database(path).initialize()
+    _degrade_to_v10(path)
+
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO media_mappings(provider, site_identifier, media_id, episode_offset) "
+            "VALUES ('crunchyroll', 'abc', 777, 3)"
+        )
+        recuentos_antes = _recuentos_por_tabla(connection)
+
+    Database(path).initialize()
+
+    with sqlite3.connect(path) as connection:
+        columnas = {
+            row[1]: row
+            for row in connection.execute("PRAGMA table_info(media_mappings)").fetchall()
+        }
+        fila = connection.execute(
+            "SELECT media_id, episode_offset, chapter_offset FROM media_mappings "
+            "WHERE provider = 'crunchyroll' AND site_identifier = 'abc'"
+        ).fetchone()
+        assert columnas["chapter_offset"][2] == "INTEGER"
+        assert columnas["chapter_offset"][3] == 1
+        assert columnas["chapter_offset"][4] == "0"
+        assert fila == (777, 3, 0)
+        assert _recuentos_por_tabla(connection) == recuentos_antes
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert connection.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 11
+
+    backups = list(tmp_path.glob("nyanko.backup-v11-*.sqlite3"))
+    assert len(backups) == 1, f"sin backup pre-migración: {list(tmp_path.iterdir())}"
+    with sqlite3.connect(backups[0]) as backup:
+        columnas_backup = {
+            row[1] for row in backup.execute("PRAGMA table_info(media_mappings)").fetchall()
+        }
+        assert "chapter_offset" not in columnas_backup
+        assert _recuentos_por_tabla(backup) == recuentos_antes
+        assert backup.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 10
 
 
 def test_set_chapter_progress_keeps_the_pair_coherent(monkeypatch):

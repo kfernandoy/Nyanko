@@ -309,10 +309,26 @@ CREATE TABLE IF NOT EXISTS reading_events (
 );
 """
 
-CANONICAL_SCHEMA_VERSION = 10
+CANONICAL_SCHEMA_VERSION = 11
+# Toda fuente de manga que registre la Fase 8 tiene que entrar en este namespace.
+MANGA_RESERVED_PROVIDERS = frozenset({"local_archive"})
 # media: alto a propósito — los detalles guardados en local son lo que hace que
 # reabrir/editar una card sea instantáneo (estilo Taiga); son JSON pequeños.
 CACHE_RESOURCE_LIMITS = {"media:": 500, "season:": 24, "discover:": 80}
+
+
+def assert_manga_namespace(provider: str, manga_link: bool) -> None:
+    """Mantiene la disjunción de namespaces en una sola regla.
+
+    Escribir, borrar y leer vínculos de manga pasan por aquí; una fuente nueva añadida a
+    MANGA_RESERVED_PROVIDERS protege las tres operaciones sin copiar condiciones.
+    """
+    if provider in MANGA_RESERVED_PROVIDERS and not manga_link:
+        raise ValueError(
+            f"El proveedor {provider!r} pertenece al namespace de manga; falta manga_link=True"
+        )
+    if manga_link and provider not in MANGA_RESERVED_PROVIDERS:
+        raise ValueError(f"El proveedor {provider!r} no pertenece al namespace de manga")
 
 
 @dataclass(frozen=True, slots=True)
@@ -386,6 +402,14 @@ class Database:
             # default, así que esta línea ES la migración completa: las carpetas que ya
             # hay quedan 'ambas' y siguen sirviendo a los dos mundos, como hoy.
             self._add_column(connection, "library_folders", "kind", "TEXT NOT NULL DEFAULT 'ambas'")
+            # v11: SQLite rellena con 0 los mappings vivos; es el offset correcto para anime,
+            # que no tiene capítulo. Esta línea ES la migración completa, sin backfill.
+            self._add_column(
+                connection,
+                "media_mappings",
+                "chapter_offset",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_media_titles_normalized "
                 "ON media_titles(normalized_title)"
@@ -2428,16 +2452,52 @@ class Database:
                 return None
             return row["media_id"], row["episode_offset"]
 
+    def get_media_mapping_full(
+        self, provider: str, site_identifier: str
+    ) -> dict | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT media_id, episode_offset, chapter_offset FROM media_mappings "
+                "WHERE provider = ? AND site_identifier = ?",
+                (provider, site_identifier),
+            ).fetchone()
+            return dict(row) if row else None
+
     def set_media_mapping(
-        self, provider: str, site_identifier: str, media_id: int, episode_offset: int = 0
+        self,
+        provider: str,
+        site_identifier: str,
+        media_id: int,
+        episode_offset: int = 0,
+        chapter_offset: int = 0,
+        *,
+        manga_link: bool = False,
     ) -> None:
+        # Los cuatro llamadores de playback toman provider del cliente. Sin esta guarda,
+        # /api/playback/correction con local_archive reapunta un vínculo de manga confirmado
+        # y pone chapter_offset a 0 porque ese llamador no envía offsets.
+        assert_manga_namespace(provider, manga_link)
+        with self.connect() as connection:
+            # main.py:3617-3618 documenta el precedente medido: DO UPDATE copia excluded y
+            # un llamador sin offset borra el valor a 0. La guarda impide que alcance manga.
+            connection.execute(
+                "INSERT INTO media_mappings"
+                "(provider, site_identifier, media_id, episode_offset, chapter_offset) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(provider, site_identifier) DO UPDATE SET "
+                "media_id = excluded.media_id, episode_offset = excluded.episode_offset, "
+                "chapter_offset = excluded.chapter_offset",
+                (provider, site_identifier, media_id, episode_offset, chapter_offset),
+            )
+
+    def delete_media_mapping(
+        self, provider: str, site_identifier: str, *, manga_link: bool = False
+    ) -> None:
+        assert_manga_namespace(provider, manga_link)
         with self.connect() as connection:
             connection.execute(
-                "INSERT INTO media_mappings(provider, site_identifier, media_id, episode_offset) "
-                "VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(provider, site_identifier) DO UPDATE SET "
-                "media_id = excluded.media_id, episode_offset = excluded.episode_offset",
-                (provider, site_identifier, media_id, episode_offset),
+                "DELETE FROM media_mappings WHERE provider = ? AND site_identifier = ?",
+                (provider, site_identifier),
             )
 
     def set_match_correction(
