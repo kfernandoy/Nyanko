@@ -331,6 +331,28 @@ export interface MangaChapter {
   is_chapter: boolean;
 }
 
+export interface MangaLink {
+  media_id: number;
+  chapter_offset: number;
+  title: string | null;
+}
+
+export interface MangaLinkMatch {
+  series_id: string;
+  series_title: string;
+  link: MangaLink | null;
+  match: MediaItem | null;
+  match_score: number;
+  suggestions: MediaItem[];
+}
+
+export interface ReadingEventResponse {
+  id: number;
+  media_id: number | null;
+  linked: boolean;
+  reason: string | null;
+}
+
 export interface MangaPage {
   index: number;
   filename: string;
