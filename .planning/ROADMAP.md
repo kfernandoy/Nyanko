@@ -197,15 +197,15 @@ fuente y una entrada del tracker — para que el sync pueda asumirlo, y **negars
 **Wave 1**
 
 - [ ] 04-01-PLAN.md — `ChapterRecognition`: tabla de casos en ROJO antes que el código (`extra` = .99, `omake` = .98, `12a` → 12.1), módulo propio y puro, y `LocalArchiveSource` delegando — LNK-03 — wave 1
-- [ ] 04-02-PLAN.md — El vínculo almacenado: `media_mappings.chapter_offset` (schema v11, mirror de `episode_offset`) + `linking.py` con `require_link` que falla cerrado — LNK-01, LNK-04 — wave 1
+- [ ] 04-02-PLAN.md — El vínculo almacenado: `media_mappings.chapter_offset` (schema v11, mirror de `episode_offset`) + el guarda que reserva el namespace de manga en `set_media_mapping` + `linking.py` con `require_link` que falla cerrado — LNK-01, LNK-04 — wave 1
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 04-03-PLAN.md — Proponer/confirmar/desvincular en HTTP, SIN la rama de auto-persistencia por umbral del precedente de anime (`main.py:3688-3690`), + el tripwire de `pending_mutations` en `reading-events` — LNK-01, LNK-02, LNK-04 — wave 2
+- [ ] 04-03-PLAN.md — Proponer/confirmar/desvincular en HTTP, SIN las DOS ramas de auto-persistencia por umbral del precedente de anime (`main.py:3616-3621` y `:3688-3691`), + el tripwire de `pending_mutations` en `reading-events` — LNK-01, LNK-02, LNK-04 — wave 2
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 04-04-PLAN.md — El panel de vínculo: score visible, sugerencias al mismo nivel que la propuesta, offset y desvincular — LNK-01, LNK-02 — wave 3
+- [ ] 04-04-PLAN.md — El panel de vínculo: score visible, sugerencias al mismo nivel que la propuesta, offset y desvincular + el aviso de «sin vincular» en el lector (la mitad «se lo dice al usuario» del criterio 4) — LNK-01, LNK-02, LNK-04 — wave 3
 
 ---
 
