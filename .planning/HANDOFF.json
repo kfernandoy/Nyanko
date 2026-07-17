@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-07-17T06:45:15.599Z",
+  "phase": "04",
+  "phase_name": "identidad-y-v-nculo-fuente-entrada-del-tracker",
+  "phase_dir": ".planning/phases/04-identidad-y-v-nculo-fuente-entrada-del-tracker",
+  "plan": 2,
+  "task": 1,
+  "total_tasks": 2,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "04-01 ChapterRecognition: tabla en ROJO antes del codigo, modulo puro, LocalArchiveSource delegando", "status": "done", "commit": "227ca7d"}
+  ],
+  "remaining_tasks": [
+    {"id": 2, "name": "04-02 (wave 1): esquema v11 + chapter_offset, assert_manga_namespace en set_media_mapping/delete_media_mapping/resolve_link, linking.py con require_link", "status": "not_started"},
+    {"id": 3, "name": "04-03 (wave 2): proponer/confirmar/desvincular en HTTP, sin las DOS ramas de auto-persistencia al 0.85, tripwire de pending_mutations", "status": "not_started"},
+    {"id": 4, "name": "04-04 (wave 3): panel de vinculo + aviso 'sin vincular' en el lector", "status": "not_started"}
+  ],
+  "blockers": [],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {"action": "Decidir si se pushean los 117 commits de main a origin", "context": "origin/main esta 117 commits atras (tip c9a7d62). Todo v0.3 sin pushear. Envenena cualquier worktree que se cree desde origin/main. NO lo hice: publica el milestone entero en el GitHub publico y es hacia afuera.", "blocking": false},
+    {"action": "NO correr /codex:cancel a ciegas", "context": "El companion comprueba si un job vive mirando solo si su PID existe, sin verificar identidad. Un job del 2026-07-13 tenia PID 35216, ahora reciclado a Discord: cancelarlo ejecuta taskkill /PID 35216 /T /F y mata Discord. Hay mas entradas zombi listadas como running (task-mroa9isn-155dow, task-mro88rz5-k1eqc5).", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "Fase 4 planificada sin CONTEXT.md ni RESEARCH.md", "rationale": "El ROADMAP dice literalmente 'Research pass: No' y sus 4 Success Criteria sirvieron de decisiones fijadas. Confirmado por el usuario.", "phase": "04"},
+    {"decision": "Codex ejecuta los planes; el orquestador corre la suite, commitea y cierra .planning/", "rationale": "Practica establecida en las fases 1-3, segun .planning/CODEX-RULES.md. Los planes de la 04 estan escritos para ese reparto (el gate del rojo de 04-01 es del orquestador porque la regla 2 le prohibe pytest a Codex). Elegido por el usuario.", "phase": "04"},
+    {"decision": "Criterio 4 cierra con el test de require_link de 04-02 + el tripwire declarado de pending_mutations", "rationale": "Codex pedia un test de integracion sobre el enqueue de la Fase 5; el usuario lo rechazo. No entra alcance de la Fase 5 en la 4. El tripwire pasa vacuo hoy y el plan lo DICE en vez de disimularlo.", "phase": "04"},
+    {"decision": "La cuarta costura (main.py:3539) se documenta, no se guarda", "rationale": "Codex la puntuo HIGH alegando que llega a escrituras automaticas de progreso. MEDIDO: match_playback no encola nada; los dos enqueue_mutation viven en update_progress (:2776) y bulk_update_library_entry (:3276), endpoints aparte. Solo propone. T-04-02-08 low/accept. get_media_mapping queda congelada.", "phase": "04"},
+    {"decision": "Olas secuenciales, no paralelas, pese a parallelization:true", "rationale": "El companion de Codex esta en modo 'shared session' (un runtime unico). La paralelizacion de GSD asume subagentes con contexto propio; dos jobs contra un runtime compartido se pisan.", "phase": "04"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Ejecutar el plan 04-02 con Codex: node <companion> task --write --fresh --prompt-file <fichero>, en PRIMER PLANO dentro de una llamada Bash con run_in_background:true. Despues correr la suite completa fuera del sandbox (baseline actual: 476 passed) y commitear atomico por tarea.",
+  "context_notes": "La Fase 4 esta planificada y verificada a fondo: 3 rondas de revision con DOS revisores independientes (gsd-plan-checker + Codex), 6 issues -> 2 -> 3 -> 0. Ninguno era de diseno; todos de precision. El plan 04-01 esta ejecutado y cerrado con 4 commits atomicos y la suite en 476 passed (baseline Fase 3: 461, +15 de la tabla nueva). El criterio 3 del ROADMAP quedo verificado como HECHO DE GIT: git merge-base --is-ancestor 9ada90e 3096d27 sale 0. El patron mas importante de esta fase, y el que mas dinero ahorra: CUATRO de cuatro gates escritos razonando han fallado al medirse, y dos de ellos habrian reprobado la fase por su propio exito. 04-02 es el plan mas delicado: mete assert_manga_namespace DENTRO de set_media_mapping, que es codigo de anime ya en produccion con cuatro llamadores vivos. Es el unico punto de la fase donde un error rompe algo que hoy funciona."
+}
