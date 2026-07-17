@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.3
 milestone_name: «Nyanko lee manga»
 status: phase_complete
-stopped_at: "Fase 04 PLANIFICADA (4 planes, 3 olas; 3 rondas de revision, 2 revisores). Lista para ejecutar"
-last_updated: "2026-07-17T05:42:48.189Z"
+stopped_at: Fase 04 PLANIFICADA (4 planes, 3 olas; 3 rondas de revision, 2 revisores). Lista para ejecutar
+last_updated: "2026-07-17T05:50:54.246Z"
 progress:
   total_phases: 9
   completed_phases: 3
-  total_plans: 14
+  total_plans: 18
   completed_plans: 14
   percent: 33
 current_phase: 04
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-07-13)
 **Core value:** Nyanko deja de ser solo un tracker y pasa a ser **donde consumes**: el manga se lee
 dentro de la app, y el tracking ocurre solo — el mismo trato que la detección de reproducción ya le da
 al anime.
-**Current focus:** Phase 04 — identidad y vínculo (planificada, lista para ejecutar)
+**Current focus:** Phase 04 — identidad-y-v-nculo-fuente-entrada-del-tracker
 
 ## Current Position
 
@@ -55,9 +55,11 @@ precisión. Lo que cazaron, y que vale como contexto para ejecutar:
 - El invariante «un solo escritor de manga» era **falso**: los 4 llamadores de `set_media_mapping`
   toman el provider del cliente. La guarda (`assert_manga_namespace`) vive **dentro** de
   `set_media_mapping`, no en las rutas — un diff en vez de cuatro, y el quinto lo hereda.
+
 - La guarda cubría solo **escrituras**. `resolve_link` leía el namespace con `source` del cliente:
   un reading event de manga con `source=crunchyroll` resolvía un mapping de anime como vínculo
   confirmado, y el DELETE podía borrarlo. Cerrado en los tres seams (escribir/borrar/leer).
+
 - **Tres gates se escribieron razonando y fallaron al medirse** (dos habrían reprobado la fase por su
   propio éxito). Regla que sale de aquí: un gate de grep sobre este `main.py` se **mide** contra una
   llamada multilínea real antes de escribirse. `rg -c` sin matches imprime **nada** y sale 1 — leer

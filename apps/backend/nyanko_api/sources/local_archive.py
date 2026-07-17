@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
+from ..chapter_recognition import recognize_chapter
 from .contract import (
     SOURCE_API_VERSION,
     SourceCapabilities,
@@ -124,7 +125,10 @@ class LocalArchiveSource:
                     number=(
                         self._chapter_number(number_text)
                         if number_text is not None
-                        else self._chapter_number(path.name)
+                        else self._chapter_number(
+                            path.name if is_directory else path.stem,
+                            series_path.name,
+                        )
                     ),
                     is_chapter=not is_directory or has_images,
                 )
@@ -239,9 +243,12 @@ class LocalArchiveSource:
             chunks=chunks(),
         )
 
-    def _chapter_number(self, name: str) -> float | None:
-        match = re.search(r"\d+(?:\.\d+)?", name)
-        return float(match.group()) if match else None
+    def _chapter_number(
+        self,
+        name: str,
+        series_title: str | None = None,
+    ) -> float | None:
+        return recognize_chapter(name, series_title)
 
     def _comic_info(self, chapter_path: Path) -> dict[str, str]:
         raw: bytes
