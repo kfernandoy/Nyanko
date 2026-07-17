@@ -29,7 +29,7 @@ Detalle completo (goals, success criteria, waves): [milestones/v0.2-ROADMAP.md](
 - [x] **Phase 1: Fundaciones — limitador, esquema y modelo de progreso** - Nada hace una ráfaga ni escribe una fila hasta que el limitador limita de verdad y el modelo de progreso está decidido y migrado contra la BD real (completed 2026-07-13)
 - [x] **Phase 2: Motor de fuentes — contrato, presupuesto y taxonomía de errores** - Existe un contrato de fuente versionado contra el que construir, con el presupuesto de peticiones en el motor y no en sus llamadores (completed 2026-07-14)
 - [x] **Phase 3: Page pipe + lectura local — la piedra angular** - Nyanko lee la colección de CBZ del disco: sin red, sin rate limits, sin scraping en la superficie de depuración (completed 2026-07-16)
-- [ ] **Phase 4: Identidad y vínculo — fuente ↔ entrada del tracker** - El vínculo es explícito, almacenado y confirmado por el usuario; el sync podrá asumirlo o negarse
+- [x] **Phase 4: Identidad y vínculo — fuente ↔ entrada del tracker** - El vínculo es explícito, almacenado y confirmado por el usuario; el sync podrá asumirlo o negarse (completed 2026-07-17)
 - [ ] **Phase 5: Sync de progreso — la tesis del milestone** - Última página → el progreso sube solo al proveedor, con confirmar/deshacer y en el timeline
 - [ ] **Phase 6: Distribución de extensiones — repo, instalación y trust gate** - La app se instala sin catálogo; el usuario pega la URL de un repo y ninguna extensión se ejecuta hasta que acepta su huella
 - [ ] **Phase 7: Lectura online — el camino de la app hasta una fuente instalada** - Buscar, explorar y leer manga online, verificado en build empaquetado (los adapters los escribe el autor, fuera de GSD)
@@ -192,7 +192,7 @@ fuente y una entrada del tracker — para que el sync pueda asumirlo, y **negars
 
 **Research pass**: No. Precedentes: `media_mappings` (la tabla que este problema necesita, con columna de offset y todo, construida para la extensión de navegador), `matcher.py`, `match_corrections`, el flujo detectar→proponer→confirmar→deshacer de `playback_events`.
 
-**Plans**: 3/4 plans executed
+**Plans**: 4/4 plans complete
 
 **Wave 1**
 
@@ -205,7 +205,7 @@ fuente y una entrada del tracker — para que el sync pueda asumirlo, y **negars
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 04-04-PLAN.md — El panel de vínculo: score visible, sugerencias al mismo nivel que la propuesta, offset y desvincular + el aviso de «sin vincular» en el lector (la mitad «se lo dice al usuario» del criterio 4) — LNK-01, LNK-02, LNK-04 — wave 3
+- [x] 04-04-PLAN.md — El panel de vínculo: score visible, sugerencias al mismo nivel que la propuesta, offset y desvincular + el aviso de «sin vincular» en el lector (la mitad «se lo dice al usuario» del criterio 4) — LNK-01, LNK-02, LNK-04 — wave 3
 
 ---
 
@@ -426,7 +426,7 @@ backend, el cliente HTTP, la verificación sha256, el gate de seguridad y una UI
 | 1. Fundaciones — limitador, esquema y modelo de progreso | v0.3 | 0/? | Not started | - |
 | 2. Motor de fuentes — contrato, presupuesto y taxonomía | v0.3 | 0/? | Not started | - |
 | 3. Page pipe + lectura local | v0.3 | 0/? | Not started | - |
-| 4. Identidad y vínculo | v0.3 | 0/? | Not started | - |
+| 4. Identidad y vínculo | v0.3 | 4/4 | Complete | 2026-07-17 |
 | 5. Sync de progreso | v0.3 | 0/? | Not started | - |
 | 6. Distribución de extensiones — repo, instalación y trust gate | v0.3 | 0/? | Not started | - |
 | 7. Fuentes online — 2-3 fuentes propias | v0.3 | 0/? | Not started | - |
