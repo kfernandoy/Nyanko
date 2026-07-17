@@ -87,6 +87,13 @@ class ReadingEventCreate(BaseModel):
     chapter: float | None = None
 
 
+class ReadingEventResponse(BaseModel):
+    id: int
+    media_id: int | None
+    linked: bool
+    reason: str | None
+
+
 class AccountInfo(BaseModel):
     id: int
     provider: str
@@ -196,6 +203,26 @@ class MediaItem(BaseModel):
     started_at: str | None = None
     completed_at: str | None = None
     id_mal: int | None = None  # referencia cruzada de AniList al id de MyAnimeList
+
+
+class MangaLink(BaseModel):
+    media_id: int
+    chapter_offset: int
+    title: str | None = None
+
+
+class MangaLinkConfirm(BaseModel):
+    media_id: int
+    chapter_offset: int = Field(default=0, ge=-9999, le=9999)
+
+
+class MangaLinkMatchResponse(BaseModel):
+    series_id: str
+    series_title: str
+    link: MangaLink | None = None
+    match: MediaItem | None = None
+    match_score: float
+    suggestions: list[MediaItem] = Field(default_factory=list)
 
 
 class ProgressUpdate(BaseModel):

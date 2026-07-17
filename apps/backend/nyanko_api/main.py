@@ -49,6 +49,7 @@ from .detectors import (
     set_detection_paused,
 )
 from .instance import find_free_port, generate_token, read_token_file, write_port_file, write_token_file
+from .linking import UnlinkedSeriesError, resolve_link
 from .matcher import build_token_index, find_best_match, find_best_search_match, match_from_index, rank_matches
 from .stats import statistics_from_items
 from .kitsu import KitsuClient, KitsuCredential, KitsuError
@@ -88,6 +89,9 @@ from .models import (
     LibraryFolderCreate,
     LibrarySearchResponse,
     MangaChapter,
+    MangaLink,
+    MangaLinkConfirm,
+    MangaLinkMatchResponse,
     MangaPage,
     MatchCorrectionRequest,
     MediaDetails,
@@ -113,6 +117,7 @@ from .models import (
     ReaderProgress,
     ReaderProgressUpdate,
     ReadingEventCreate,
+    ReadingEventResponse,
     ScanSettings,
     ScanSummary,
     SearchFilters,
@@ -1659,6 +1664,148 @@ async def manga_pages(
     return resultado
 
 
+@app.post("/api/manga/link/match", response_model=MangaLinkMatchResponse)
+async def match_manga_link(
+    series_id: str,
+    source: str = "local_archive",
+    database: Database = Depends(get_database),
+) -> MangaLinkMatchResponse:
+    link = resolve_link(database, source, series_id)
+    series_title = _series_title_from_id(database, series_id)
+    if link is not None:
+        library = _scan_match_library(database, media_type="MANGA")
+        linked_media = next((item for item in library if item.id == link.media_id), None)
+        return MangaLinkMatchResponse(
+            series_id=series_id,
+            series_title=series_title,
+            link=MangaLink(
+                media_id=link.media_id,
+                chapter_offset=link.chapter_offset,
+                title=linked_media.title if linked_media is not None else None,
+            ),
+            match=linked_media,
+            match_score=1.0,
+        )
+
+    library = _scan_match_library(database, media_type="MANGA")
+    if not library:
+        return MangaLinkMatchResponse(
+            series_id=series_id,
+            series_title=series_title,
+            match_score=0.0,
+        )
+
+    match, score = await asyncio.to_thread(
+        find_best_match,
+        series_title,
+        None,
+        None,
+        library,
+    )
+    ranked = await asyncio.to_thread(
+        rank_matches,
+        series_title,
+        None,
+        library,
+        limit=6,
+    )
+    suggestions = [item for _, item in ranked if match is None or item.id != match.id][:5]
+
+    # No se copian las DOS ramas de playback que persisten con score >= 0.85, ni la de
+    # biblioteca ni la de catálogo. El ROADMAP trata el mal-vínculo como corrupción: un
+    # 5 % invisible en una demo es devastador en una biblioteca grande. Incluso un score
+    # 1.0 sigue siendo propuesta hasta el PUT.
+    return MangaLinkMatchResponse(
+        series_id=series_id,
+        series_title=series_title,
+        match=match,
+        match_score=score,
+        suggestions=suggestions,
+    )
+
+
+@app.get("/api/manga/link", response_model=MangaLink | None)
+def get_manga_link(
+    series_id: str,
+    source: str = "local_archive",
+    database: Database = Depends(get_database),
+) -> MangaLink | None:
+    link = resolve_link(database, source, series_id)
+    if link is None:
+        return None
+    media = next(
+        (
+            item
+            for item in _scan_match_library(database, media_type="MANGA")
+            if item.id == link.media_id
+        ),
+        None,
+    )
+    return MangaLink(
+        media_id=link.media_id,
+        chapter_offset=link.chapter_offset,
+        title=media.title if media is not None else None,
+    )
+
+
+@app.put("/api/manga/link", response_model=MangaLink)
+async def confirm_manga_link(
+    body: MangaLinkConfirm,
+    request: Request,
+    series_id: str,
+    source: str = "local_archive",
+    database: Database = Depends(get_database),
+) -> MangaLink:
+    try:
+        await _source_engine(request).chapters(source, series_id)
+    except (SourceError, KeyError) as error:
+        raise_source_http_error(error, source)
+
+    media = next(
+        (
+            item
+            for item in _scan_match_library(database, media_type="MANGA")
+            if item.id == body.media_id
+        ),
+        None,
+    )
+    if media is None:
+        raise HTTPException(
+            status_code=422,
+            detail="La entrada no pertenece a la biblioteca de manga.",
+        )
+
+    # Manga guarda una sola especie: el id canónico que propuso y validó la biblioteca.
+    # La Fase 5 lo convertirá al id externo al hablar con el proveedor mediante
+    # database.external_id_for_account. Anime mezcla hoy ambas especies en esta tabla;
+    # ese precedente es justo por lo que se explicita aquí.
+    database.set_media_mapping(
+        source,
+        series_id,
+        body.media_id,
+        chapter_offset=body.chapter_offset,
+        manga_link=True,
+    )
+    # No hay una segunda verdad en match_corrections: el series_id estable ya es la clave
+    # del vínculo y ningún otro consumidor de manga leería esa corrección difusa.
+    return MangaLink(
+        media_id=body.media_id,
+        chapter_offset=body.chapter_offset,
+        title=media.title,
+    )
+
+
+@app.delete("/api/manga/link", status_code=204)
+def delete_manga_link(
+    series_id: str,
+    source: str = "local_archive",
+    database: Database = Depends(get_database),
+) -> None:
+    # El opt-in también protege el borrado: sin él, un source elegido por el cliente
+    # podría borrar desde manga el mapping de anime que usa la extensión del navegador.
+    database.delete_media_mapping(source, series_id, manga_link=True)
+
+
 @app.get("/api/manga/prefs", response_model=ReaderPrefs | None)
 def reader_prefs(
     series_id: str,
@@ -1708,21 +1855,37 @@ def set_reader_progress(
     database.set_reader_progress(source, chapter_id, body.page)
 
 
-@app.post("/api/manga/reading-events")
+@app.post("/api/manga/reading-events", response_model=ReadingEventResponse)
 def create_reading_event(
     body: ReadingEventCreate,
     series_id: str,
     chapter_id: str,
     source: str = "local_archive",
     database: Database = Depends(get_database),
-) -> dict[str, int]:
+) -> ReadingEventResponse:
+    link = resolve_link(database, source, series_id)
+    media_id = link.media_id if link is not None else None
     id_evento = database.insert_reading_event(
         source,
         series_id,
         chapter_id,
         body.chapter,
+        media_id=media_id,
     )
-    return {"id": id_evento}
+    # Registrar la lectura es un log local y RD-06 exige emitirlo aunque no haya vínculo:
+    # por eso se responde 200, no 409. La Fase 5 engancha enqueue_mutation AQUÍ y entonces
+    # debe cambiar esta resolución informativa por require_link, la puerta que falla cerrada.
+    # Al cerrar la Fase 4 require_link aún no tiene llamadores de producción.
+    reason = None
+    if link is None:
+        # El mensaje vive en linking.py; la excepción se construye para leerlo, no se lanza.
+        reason = UnlinkedSeriesError(source, series_id).message
+    return ReadingEventResponse(
+        id=id_evento,
+        media_id=media_id,
+        linked=link is not None,
+        reason=reason,
+    )
 
 
 @app.get("/api/accounts", response_model=list[AccountInfo])
@@ -2073,14 +2236,17 @@ SCAN_ON_STARTUP_KEY = "scan_on_startup"
 SCAN_WATCH_KEY = "scan_watch_folders"
 
 
-def _scan_match_library(database: Database) -> list[MediaItem]:
-    """Build the local library as MediaItems for filename matching (no network)."""
+def _scan_match_library(database: Database, media_type: str = "ANIME") -> list[MediaItem]:
+    """Construye la biblioteca local como MediaItems para el matcher, sin red."""
     primary = database.get_setting("primary_provider") or "anilist"
     items: list[MediaItem] = []
-    for entry in database.get_combined_library("ANIME", primary, DEFAULT_ACCOUNT_ALIAS):
+    for entry in database.get_combined_library(media_type, primary, DEFAULT_ACCOUNT_ALIAS):
         canonical_id = entry.get("canonical_id")
         if canonical_id is None:
             continue
+        chapter_count = entry.get("chapters")
+        if chapter_count is None:
+            chapter_count = entry.get("chapter_count")
         items.append(
             MediaItem(
                 id=int(canonical_id),
@@ -2088,13 +2254,37 @@ def _scan_match_library(database: Database) -> list[MediaItem]:
                 status=entry.get("status") or "",
                 progress=int(entry.get("progress") or 0),
                 episodes=entry.get("episodes"),
+                chapters=chapter_count,
                 title_romaji=entry.get("title_romaji"),
                 title_english=entry.get("title_english"),
                 title_native=entry.get("title_native"),
                 synonyms=entry.get("synonyms") or [],
+                media_type=media_type,
             )
         )
     return items
+
+
+def _series_title_from_id(database: Database, series_id: str) -> str:
+    if ":" not in series_id:
+        raise HTTPException(status_code=400, detail="Identificador de serie inválido.")
+    root_key, relative = series_id.split(":", 1)
+    folder = next(
+        (
+            item
+            for item in database.get_library_folders()
+            if str(item["id"]) == root_key and (item.get("kind") or "ambas") != "anime"
+        ),
+        None,
+    )
+    if folder is None:
+        raise HTTPException(status_code=400, detail="Raíz local no registrada.")
+    if relative == ".":
+        return Path(folder["path"]).name
+    title = relative.rstrip("/").rsplit("/", 1)[-1]
+    if not title or title == ".":
+        raise HTTPException(status_code=400, detail="Identificador de serie inválido.")
+    return title
 
 
 @app.get("/api/library/folders", response_model=list[LibraryFolder])
