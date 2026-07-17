@@ -7,28 +7,31 @@
 Nyanko es una app de escritorio (Windows) para trackear anime/manga: sincroniza
 con AniList/MAL/Kitsu, escanea biblioteca local, detecta reproducción en curso,
 sugiere torrents y trae una extensión companion de navegador. Es una app
-gratuita orientada a comunidad. Hoy el shell de escritorio es Tauri 2 (frontend
-React/Vite + Rust) con un backend Python (FastAPI) empaquetado como sidecar.
+gratuita orientada a comunidad. El shell de escritorio es Electron
+(electron-vite: main + preload + renderer React/Vite) con un backend Python
+(FastAPI) empaquetado como sidecar PyInstaller.
 
-**Core Value:** El tracking tiene que seguir funcionando idéntico después de cambiar el motor:
-misma biblioteca, mismos datos, misma detección — solo cambia el shell de Tauri
-a Electron.
+**Core Value:** Nyanko deja de ser solo un tracker y pasa a ser **donde
+consumes**: el manga se lee dentro de la app, y el tracking ocurre solo — el
+mismo trato que la detección de reproducción ya le da al anime.
 
 ### Constraints
 
 - **Compatibility**: `userData` debe quedar en `%APPDATA%\app.nyanko.desktop`
-  (identifier Tauri) o la biblioteca de prod existente queda huérfana.
+  (identifier Tauri) o la biblioteca de prod existente queda huérfana. Hay un
+  assert que crashea el arranque si se rompe.
 
-- **Scope**: 0.2 es engine-swap puro — nada de features nuevas (regla dura por
-  versión: 0.2.0 migración / 0.2.x fixes / 0.3.0+ features).
+- **Versionado**: el updater exige **semver estricto** — nada de sufijos
+  `a`/`b`/`c`; los parches van `0.2.N`. Regla por versión: 0.2.x fixes /
+  0.3.0+ features.
 
 - **Tech stack**: electron-vite + electron-builder (NSIS) + electron-updater +
-  TypeScript; sidecar Python PyInstaller onedir sin cambios.
+  TypeScript; sidecar Python PyInstaller onedir.
 
 - **Security**: `contextIsolation:true`, `nodeIntegration:false`, `sandbox:true`,
-  `webSecurity:true` desde el día 1.
+  `webSecurity:true`.
 
-- **Platform**: Windows es el target primario (igual que hoy).
+- **Platform**: Windows es el target primario.
 
 <!-- GSD:project-end -->
 
