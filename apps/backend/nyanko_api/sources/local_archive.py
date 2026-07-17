@@ -87,6 +87,33 @@ class LocalArchiveSource:
     async def chapters(self, series: SourceSeries | str) -> list[SourceChapter]:
         series_id = series.source_id if isinstance(series, SourceSeries) else series
         root_key, root, series_path = self._resolve_id(series_id)
+        if series_path.is_file():
+            # Biblioteca plana SOLO: el archivo suelto es "serie" unicamente si cuelga
+            # DIRECTO de la raiz registrada (confirm_manga_link valida existencia llamando
+            # chapters() sobre el series_id). Un capitulo dentro de una carpeta de serie
+            # anidada (`root/Serie/Cap.cbz`) sigue sin ser una serie valida — solo se le
+            # quita el "no tiene hijos que listar" al caso que de verdad lo es, la raiz.
+            if series_path.parent != root or series_path.suffix.lower() not in (
+                ARCHIVE_EXTENSIONS | UNSUPPORTED_ARCHIVE_EXTENSIONS
+            ):
+                raise SourceNotFoundError("Serie local no encontrada")
+            chapter_id = self._make_id(root_key, root, series_path)
+            comic_info = self._comic_info(series_path)
+            number_text = comic_info.get("Number")
+            return [
+                SourceChapter(
+                    source_id=chapter_id,
+                    title=comic_info.get("Title") or series_path.name,
+                    series_id=chapter_id,
+                    source_name=self.name,
+                    number=(
+                        self._chapter_number(number_text)
+                        if number_text is not None
+                        else self._chapter_number(series_path.stem)
+                    ),
+                    is_chapter=True,
+                )
+            ]
         if not series_path.is_dir():
             raise SourceNotFoundError("Serie local no encontrada")
         try:

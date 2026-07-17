@@ -2284,6 +2284,14 @@ def _series_title_from_id(database: Database, series_id: str) -> str:
     title = relative.rstrip("/").rsplit("/", 1)[-1]
     if not title or title == ".":
         raise HTTPException(status_code=400, detail="Identificador de serie inválido.")
+    # Biblioteca plana: la "serie" es un archivo suelto en la raiz y su nombre arrastra la
+    # extension del contenedor (.cbz/.cbr/...), basura para el matcher. Se quita SOLO si es
+    # una extension de archivo conocida (no el ".1" de una carpeta "Vol.1").
+    # ponytail: set literal — las extensiones de comic son estables; espeja
+    # ARCHIVE_EXTENSIONS|UNSUPPORTED_ARCHIVE_EXTENSIONS de local_archive.py.
+    segmento = Path(title)
+    if segmento.suffix.lower() in {".cbz", ".cbr", ".zip", ".rar"}:
+        return segmento.stem
     return title
 
 

@@ -10,6 +10,12 @@ type NodoNavegacion = {
   title: string;
 };
 
+// Una fila es "serie vinculable" si es una carpeta (biblioteca anidada: la serie es la
+// subcarpeta) o si cuelga directamente de la raiz registrada (biblioteca plana: los .cbz
+// sueltos SON la serie, keyed por su source_id). `is_chapter` sigue mandando en la
+// navegacion (abrir = leer) — la vinculabilidad es un eje aparte.
+const esVinculable = (nodo: MangaChapter, enRaiz: boolean) => enRaiz || !nodo.is_chapter;
+
 export function MangaLibraryView({ onOpenChapter }: { onOpenChapter: (chapter: MangaChapter) => void }) {
   const { t, lang } = useApp();
   const [capitulos, setCapitulos] = useState<MangaChapter[]>([]);
@@ -35,7 +41,8 @@ export function MangaLibraryView({ onOpenChapter }: { onOpenChapter: (chapter: M
       setVinculos({});
       try {
         const cargarVinculos = async (nodos: MangaChapter[]) => {
-          const series = nodos.filter((nodo) => !nodo.is_chapter);
+          const enRaiz = ruta.length === 0;
+          const series = nodos.filter((nodo) => esVinculable(nodo, enRaiz));
           const resultados = await Promise.allSettled(
             series.map((nodo) => (
               // En chapters(), local_archive.py:120-122 distingue el nodo de su padre:
@@ -239,6 +246,7 @@ export function MangaLibraryView({ onOpenChapter }: { onOpenChapter: (chapter: M
             const vinculo = vinculos[capitulo.source_id];
             const panelAbierto = serieAbierta?.source_id === capitulo.source_id;
             const panelId = `manga-link-panel-${indice}`;
+            const vinculable = esVinculable(capitulo, ruta.length === 0);
             return (
               <div key={capitulo.source_id} className="manga-library-entry">
                 <div className="manga-library-item">
@@ -249,7 +257,7 @@ export function MangaLibraryView({ onOpenChapter }: { onOpenChapter: (chapter: M
                     <strong className="manga-library-title">{capitulo.title}</strong>
                     {!capitulo.is_chapter && <span className="manga-library-chevron" aria-hidden="true">›</span>}
                   </button>
-                  {!capitulo.is_chapter && (
+                  {vinculable && (
                     <button
                       type="button"
                       className="manga-library-link"
