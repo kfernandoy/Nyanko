@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v0.3
 milestone_name: «Nyanko lee manga»
 status: phase_complete
-stopped_at: Fase 03 CERRADA (verify passed 7/7, UAT 2/2). Siguiente: Fase 04 — identidad y vinculo
-last_updated: "2026-07-16T08:32:45.489Z"
+stopped_at: "Fase 04 PLANIFICADA (4 planes, 3 olas; 3 rondas de revision, 2 revisores). Lista para ejecutar"
+last_updated: "2026-07-17T05:42:48.189Z"
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 14
   completed_plans: 14
   percent: 33
-current_phase: 03
-current_phase_name: page-pipe-lectura-local-la-piedra-angular
+current_phase: 04
+current_phase_name: identidad-y-v-nculo-fuente-entrada-del-tracker
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-07-13)
 **Core value:** Nyanko deja de ser solo un tracker y pasa a ser **donde consumes**: el manga se lee
 dentro de la app, y el tracking ocurre solo — el mismo trato que la detección de reproducción ya le da
 al anime.
-**Current focus:** Phase 03 — page-pipe-lectura-local-la-piedra-angular
+**Current focus:** Phase 04 — identidad y vínculo (planificada, lista para ejecutar)
 
 ## Current Position
 
@@ -35,6 +35,7 @@ Fase 03 — **CERRADA** (verify: **passed, 7/7 verdades**; UAT: 2/2, 0 gaps; sui
 - **RD-09 medido y en verde**: 619-621 MB → **147-161 MB** (pico ~243) contra el techo de 500.
   La causa no era la ventana de decodificación (siempre fue correcta) sino CSS: los 4 vecinos de
   preload se maquetaban a 2000x3000. `MAX_LIVE_PAGES`=5 y `TECHO_RSS_MB`=500 sin tocar.
+
 - **CR-01 cerrado**: los títulos con `!` ya no son ilegibles. Suite: **452 passed**.
 - **CR-03 cerrado** (+ **WR-03** en el mismo commit-set): el cache de capítulos vive entre peticiones y
   un 429 sigue saliendo 429 con el cache caliente. Suite: **455 passed**.
@@ -44,7 +45,29 @@ hueco: el verifier lo dejó en `human_needed` porque nadie había ejercitado el 
 escondía **WR-02** (el debounce se cancelaba al desmontar sin flush). Cerrado y con **gate medido**
 (`test:reader-fit`, caso `rd-05`): sin el flush cierra en la 7 y reabre en la 5; con él, en la 7.
 
-Siguiente comando: `/gsd-plan-phase 4` (o `/gsd-discuss-phase 4`).
+Fase 04 — **PLANIFICADA** (4 planes, 3 olas). Siguiente comando: `/gsd-execute-phase 4`.
+
+Planificada sin CONTEXT.md ni RESEARCH.md, por decisión explícita: el ROADMAP dice `Research pass: No`
+y sus 4 Success Criteria hicieron de decisiones fijadas. Tres rondas de revisión con **dos revisores
+independientes** (`gsd-plan-checker` + Codex): 6 issues → 2 → 3 → 0. Ninguno era de diseño; todos de
+precisión. Lo que cazaron, y que vale como contexto para ejecutar:
+
+- El invariante «un solo escritor de manga» era **falso**: los 4 llamadores de `set_media_mapping`
+  toman el provider del cliente. La guarda (`assert_manga_namespace`) vive **dentro** de
+  `set_media_mapping`, no en las rutas — un diff en vez de cuatro, y el quinto lo hereda.
+- La guarda cubría solo **escrituras**. `resolve_link` leía el namespace con `source` del cliente:
+  un reading event de manga con `source=crunchyroll` resolvía un mapping de anime como vínculo
+  confirmado, y el DELETE podía borrarlo. Cerrado en los tres seams (escribir/borrar/leer).
+- **Tres gates se escribieron razonando y fallaron al medirse** (dos habrían reprobado la fase por su
+  propio éxito). Regla que sale de aquí: un gate de grep sobre este `main.py` se **mide** contra una
+  llamada multilínea real antes de escribirse. `rg -c` sin matches imprime **nada** y sale 1 — leer
+  vacío como `0` y `0` como aprobado des-verifica LNK-01 en silencio.
+
+**Cuarta costura, documentada y NO guardada** (T-04-02-08, low/accept): `main.py:3539` lee el namespace
+de manga desde el camino de anime con provider del cliente, sin guarda. No rompe ningún invariante —
+`match_playback` solo **propone**; los dos `enqueue_mutation` viven en `update_progress` (:2776) y
+`bulk_update_library_entry` (:3276), endpoints aparte. `get_media_mapping` queda congelada (el
+desempaquetado de 2-tupla en `main.py:3553`). Al ejecutar: **va a picar, no la toques.**
 
 | Plan | Ola | Qué entrega |
 |------|-----|-------------|
@@ -154,6 +177,7 @@ Al cablear el engine dejan de ser latentes (ver `02-VERIFICATION.md`):
   re-exporta (`sources/__init__.py:11` y en `__all__`). Era deuda de la Fase 2 que el plan 03-01 se
   comprometió a saldar (H-4) y saldó. OJO: los IDs `WR-0x` se reciclan por fase — el `WR-01` de
   `03-VERIFICATION.md` es OTRO hallazgo (el `preventDefault()` no-op por rueda pasiva).
+
 - **WR-08** — los `RateLimitedClient` por fuente nunca se cierran en el shutdown.
 
 ## Performance Metrics
@@ -185,6 +209,7 @@ Al cablear el engine dejan de ser latentes (ver `02-VERIFICATION.md`):
 - ~~RD-09 REPROBADO: 621 MB vs techo 500 MB~~ **CERRADO** (quick 260716-6ba, 2026-07-16). Causa raiz: no era la ventana de decodificacion (`decodeWindow` siempre fue correcta), era CSS — `.reader-page--preload img` llevaba `max-width:none; max-height:none` y las reglas de ajuste solo apuntaban a `--visible`, asi que los 4 vecinos se maquetaban a 2000x3000 fuera del lienzo (`left:-100000px` mueve, no saca del layout ni del paint). Ahora paginado monta solo el grupo visible y calienta los vecinos por HTTP sin DOM. Medido: **147-161 MB (pico ~243)** vs techo 500, `test:reader-rss` sale 0. `MAX_LIVE_PAGES`=5 y `TECHO_RSS_MB`=500 SIN TOCAR — el numero baja porque el reader retiene menos, no porque se aflojara el gate.
 - ~~CR-01: los titulos con `!` (`Oh My Goddess!`, `Yotsuba&!`) eran ilegibles~~ **CERRADO** (quick 260716-8fb). `page_bytes()` partia por el PRIMER `!`; ahora la frontera se DERIVA de los datos con un patron `(\.cbr|\.cbz|\.rar|\.zip)!` a `re.IGNORECASE | re.ASCII` (sin `.lower()`: `'İ'.lower()` son DOS caracteres y desplazaba el corte). Test de regresion commiteado EN ROJO antes del arreglo (`ea84237`), verificado: 5 fallan sin el fix, 6 pasan con el. Suite: **452 passed**.
 - ~~CR-03: el cache de capitulos de `SourceEngine` esta MUERTO en produccion~~ **CERRADO** (quick 260716-9cd, 2026-07-16). `_source_engine()` construia un engine nuevo por request; ahora el engine se DERIVA de la identidad del registry al leer y se memoiza en `app.state.source_engine` (mismo patron que `progress.effective_chapter`: los 3 sitios de `build_source_registry` quedan intactos y un rebuild tira el cache por construccion, asi que WR-06 no empeora). **WR-03 se cerro en el MISMO commit-set**: arreglar CR-03 era el instante exacto en que el `except SourceError:` a secas dejaba de ser latente y empezaba a tragarse los 429 — entregarlos por separado habria reproducido a mano el modo de fallo B-1 de 0.2. Tests RED ejecutados, no razonados (`DID NOT RAISE`, `assert 502 == 200`, y el guardian de la costura demostrado a mano: `assert 200 == 429` revirtiendo la guarda). Suite: **455 passed**.
+
 ### UAT manual (2026-07-16) — 5 hallazgos, ninguno regresion del trabajo de hoy
 
 La fase 03 NO cierra: RD-02 pide los tres modos de lectura y el UAT los encontro rotos.
@@ -193,18 +218,22 @@ La fase 03 NO cierra: RD-02 pide los tres modos de lectura y el UAT los encontro
    (clausula de unRAR vs libarchive/archive.dll; pide presupuesto de THIRD-PARTY-NOTICES y «no se
    cuela dentro de una fase del reader»). RD-01 dice «CBZ / ZIP / carpeta de imagenes». El 415
    «conviertelo a CBZ» ES el comportamiento especificado. **Reafirmado por el usuario 2026-07-16.**
+
 2. **Anadir carpeta de manga dispara el escaneo de anime** — hay UNA tabla `library_folders
    (id, path, recursive)` sin columna de tipo, consumida por `iter_video_files` (anime) Y
    `build_source_registry` (manga). Decision del usuario: columna `kind` (anime/manga/ambas) +
    migracion; las existentes quedan como 'ambas'.
+
 3. **Ajuste «alto» corta la pagina** en paginado LTR/RTL (y en doble pagina). SIN diagnostico: la
    cadena de alturas cuadra sobre el papel y la hipotesis del `.titlebar + .reader` quedo DESCARTADA
    (si son hermanos adyacentes). Necesita depuracion en vivo.
+
 4. **Vertical + ajuste ancho: saltos bruscos al scrollear HACIA ARRIBA.** Diagnostico firme:
    `.reader-vertical-slot` reserva `min-height:100vh` pero una pagina real a ancho mide ~1800px,
    asi que el slot crece ~900px al montar el <img>; y `.reader-vertical` lleva `overflow-anchor: none`,
    que desactiva el anclaje de scroll del navegador que existe justo para compensar eso. Encaja con
    que sea especifico de ancho (a alto la img mide 100vh = el min-height) y de hacia arriba.
+
 5. **No se ve la numeracion de pagina** — existe (`ReaderView.tsx:441`, `{paginaActual} / {total}`)
    pero vive DENTRO del <header> de controles, que se alterna con un clic. Acoplamiento de diseno.
 
@@ -222,16 +251,19 @@ Salieron al usar el reader de verdad, ya con los 5 primeros arreglados:
    asumia que todas eran raices de manga. **Leccion: el grep de llamantes se quedo en el borde de Python.**
    Sin cobertura automatica (no hay infra de tests de componentes React; montarla seria una dependencia
    nueva para un `.filter()`).
+
 7. **«Ancho»/«original» no dejaban ver la pagina entera y no habia forma de llegar al resto** (`7430607`):
    la pagina mide 1650px en un stage de 686, `.reader-stage` era `overflow:hidden` y el paneo estaba
    capado a `zoom <= MIN_ZOOM` con `MIN_ZOOM=1` — o sea inalcanzable en el ajuste POR DEFECTO. RD-04 pide
    «modos de ajuste, zoom y paneo» y faltaba la mitad del mecanismo. Decision del usuario: convencion
    Mihon → scroll vertical en ancho/original; la rueda scrollea y pasa de pagina al llegar al final; a
    «alto» (que cabe entera) sigue pasando directa.
+
 8. **Doble pagina con ~92px de hueco en el lomo** (`7430607`): CONSECUENCIA de arreglar el #3 — antes la
    cadena de alturas rota hacia que cada pagina midiera 550px y llenara su mitad, tocandose por accidente.
    Al definir la altura pasa a 457.33 en un hueco de 550 y aparece el aire. Arreglado alineando los bordes
    interiores (dos parejas de selectores: en RTL `row-reverse` invierte quien es "interior"). Medido: **lomo 0px**.
+
 9. **Zoom minimo al 25%** (`7430607`): `MIN_ZOOM` 1 → 0.25, separando `ZOOM_BASE=1` para el estado inicial,
    el reset y **la puerta del paneo** — bajar la constante a secas habria activado el paneo al 100% y
    habria competido con el scroll nuevo.
@@ -240,6 +272,7 @@ Los 7/8/9 los escribio **Codex** (contrato de `.planning/CODEX-RULES.md`: el esc
 mide y commitea).
 
 **Dos correcciones que la MEDICION le hizo al parte del usuario** — el metodo del #3 dando fruto:
+
 - «Ancho» tampoco funcionaba nunca: pintaba `1100x1650`, IDENTICO a «alto». Un solo bug.
 - El vertical tambien salta HACIA ABAJO (-915px), no solo hacia arriba.
 
